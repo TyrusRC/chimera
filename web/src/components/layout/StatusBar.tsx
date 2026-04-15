@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { api } from '../../api/client'
+import { api, ProjectDetail } from '../../api/client'
 
 interface Props { projectId: string }
 
 export function StatusBar({ projectId }: Props) {
-  const [project, setProject] = useState<any>(null)
+  const [project, setProject] = useState<ProjectDetail | null>(null)
 
   useEffect(() => {
     api.getProject(projectId).then(setProject).catch(() => {})

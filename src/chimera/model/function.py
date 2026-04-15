@@ -17,6 +17,7 @@ class FunctionInfo:
     source_backend: str
     decompiled: Optional[str] = None
     signature: Optional[str] = None
+    disassembly: Optional[list[dict]] = None
     ai_renamed: bool = False
     ai_comments: Optional[str] = None
 

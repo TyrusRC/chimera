@@ -82,3 +82,20 @@ async def get_function(project_id: str, address: str) -> dict:
         "callees": [{"address": c.address, "name": c.name} for c in callees],
         "callers": [{"address": c.address, "name": c.name} for c in callers],
     }
+
+
+@router.get("/functions/{address}/disassembly")
+async def get_disassembly(project_id: str, address: str) -> dict:
+    """Return disassembly instructions for a function.
+
+    Falls back to stub data when the backend has not produced raw
+    disassembly (e.g. only decompiled source is available).
+    """
+    model = _get_model(project_id)
+    func = model.get_function(address)
+    if not func:
+        raise HTTPException(status_code=404, detail=f"Function {address} not found")
+
+    # If the model stores disassembly per-function, use it
+    instructions = getattr(func, "disassembly", None) or []
+    return {"address": address, "name": func.name, "instructions": instructions}

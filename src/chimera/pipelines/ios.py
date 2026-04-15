@@ -31,12 +31,9 @@ async def analyze_ipa(
     binary = BinaryInfo.from_path(ipa_path)
 
     if cache.has(binary.sha256):
-        cached = cache.get_json(binary.sha256, "unified_model")
+        cached = cache.get_json(binary.sha256, "triage")
         if cached:
-            logger.info("Cache hit — returning cached analysis for %s", binary.sha256[:12])
-            model = UnifiedProgramModel(binary)
-            model.findings = cached.get("findings", [])
-            return model
+            logger.info("Cache hit for %s — skipping to vuln detection", binary.sha256[:12])
 
     model = UnifiedProgramModel(binary)
 
@@ -67,11 +64,11 @@ async def analyze_ipa(
     logger.info("Bundle: %s (%s)", plist.get("CFBundleName", "?"), unpack_result["bundle_id"])
 
     # Phase 2: r2 triage on main binary + frameworks
-    all_binaries = []
+    all_binaries: list[Path] = []
     if unpack_result["main_binary"]:
         all_binaries.append(unpack_result["main_binary"])
-    all_binaries.extend(unpack_result["frameworks"])
-    all_binaries.extend(unpack_result["extensions"])
+    all_binaries.extend(p for p in unpack_result["frameworks"] if p is not None)
+    all_binaries.extend(p for p in unpack_result["extensions"] if p is not None)
 
     r2 = registry.get("radare2")
     if r2 and r2.is_available() and all_binaries:
@@ -89,10 +86,13 @@ async def analyze_ipa(
                         )
                 for f in triage.get("functions", []):
                     if isinstance(f, dict) and "offset" in f:
+                        offset = f["offset"]
+                        addr = hex(offset) if isinstance(offset, int) else str(offset)
+                        fname = f.get("name") or f"FUN_{addr}"
                         model.add_function(FunctionInfo(
-                            address=hex(f["offset"]),
-                            name=f.get("name", f"FUN_{f['offset']:08x}"),
-                            original_name=f.get("name", f"FUN_{f['offset']:08x}"),
+                            address=addr,
+                            name=fname,
+                            original_name=fname,
                             language="objc",
                             classification="unknown",
                             layer="native",

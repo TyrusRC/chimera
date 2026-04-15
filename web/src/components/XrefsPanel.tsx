@@ -1,16 +1,6 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api/client'
+import { api, FunctionDetail } from '../api/client'
 import { useStore } from '../store'
-
-interface XrefEntry {
-  address: string
-  name: string
-}
-
-interface FuncDetail {
-  callers?: XrefEntry[]
-  callees?: XrefEntry[]
-}
 
 interface Props {
   projectId: string
@@ -18,7 +8,7 @@ interface Props {
 }
 
 export function XrefsPanel({ projectId, address }: Props) {
-  const [func, setFunc] = useState<FuncDetail | null>(null)
+  const [func, setFunc] = useState<FunctionDetail | null>(null)
   const selectFunction = useStore((s) => s.selectFunction)
 
   useEffect(() => {

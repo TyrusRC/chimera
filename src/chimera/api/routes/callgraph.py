@@ -1,13 +1,13 @@
 """Call graph route."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["callgraph"])
 
 
 @router.get("/callgraph/{address}")
-async def get_callgraph(project_id: str, address: str, depth: int = 2) -> dict:
+async def get_callgraph(project_id: str, address: str, depth: int = Query(2, ge=1, le=10)) -> dict:
     from chimera.api.routes.projects import _projects
 
     p = _projects.get(project_id)

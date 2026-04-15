@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,7 @@ class GhidraAdapter(BackendAdapter):
     def __init__(self, ghidra_home: str | None = None, max_mem: str = "4g"):
         self._ghidra_home_override = ghidra_home
         self._max_mem = max_mem
+        self._temp_dirs: list[str] = []
 
     def name(self) -> str:
         return "ghidra"
@@ -65,6 +67,7 @@ class GhidraAdapter(BackendAdapter):
         project_dir = options.get("project_dir")
         if project_dir is None:
             project_dir = tempfile.mkdtemp(prefix="chimera_ghidra_")
+            self._temp_dirs.append(project_dir)
         project_name = f"chimera_{Path(binary_path).stem}"
         output_dir = Path(project_dir) / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -95,4 +98,6 @@ class GhidraAdapter(BackendAdapter):
         return result
 
     async def cleanup(self) -> None:
-        pass
+        for d in self._temp_dirs:
+            shutil.rmtree(d, ignore_errors=True)
+        self._temp_dirs.clear()

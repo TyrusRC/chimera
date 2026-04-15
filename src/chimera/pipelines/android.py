@@ -29,12 +29,9 @@ async def analyze_apk(
     binary = BinaryInfo.from_path(apk_path)
 
     if cache.has(binary.sha256):
-        cached_triage = cache.get_json(binary.sha256, "unified_model")
+        cached_triage = cache.get_json(binary.sha256, "triage")
         if cached_triage:
-            logger.info("Cache hit — returning cached analysis for %s", binary.sha256[:12])
-            model = UnifiedProgramModel(binary)
-            model.findings = cached_triage.get("findings", [])
-            return model
+            logger.info("Cache hit for %s — skipping to vuln detection", binary.sha256[:12])
 
     model = UnifiedProgramModel(binary)
 
@@ -72,10 +69,13 @@ async def analyze_apk(
                         )
                 for f in triage.get("functions", []):
                     if isinstance(f, dict) and "offset" in f:
+                        offset = f["offset"]
+                        addr = hex(offset) if isinstance(offset, int) else str(offset)
+                        fname = f.get("name") or f"FUN_{addr}"
                         model.add_function(FunctionInfo(
-                            address=hex(f["offset"]),
-                            name=f.get("name", f"FUN_{f['offset']:08x}"),
-                            original_name=f.get("name", f"FUN_{f['offset']:08x}"),
+                            address=addr,
+                            name=fname,
+                            original_name=fname,
                             language="c", classification="unknown",
                             layer="native", source_backend="radare2",
                         ))

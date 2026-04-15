@@ -91,11 +91,11 @@ const severityOrder: Record<string, number> = {
 }
 
 const severityBadge: Record<string, string> = {
-  critical: 'bg-red-700 text-white',
-  high: 'bg-orange-500 text-black',
-  medium: 'bg-yellow-400 text-black',
-  low: 'bg-blue-500 text-white',
-  info: 'bg-gray-600 text-white',
+  critical: 'bg-chimera-critical text-white',
+  high: 'bg-chimera-high text-black',
+  medium: 'bg-chimera-medium text-black',
+  low: 'bg-chimera-low text-white',
+  info: 'bg-chimera-muted text-white',
 }
 
 function matchesProtection(finding: Finding, protection: Omit<ProtectionItem, 'detected'>): boolean {
@@ -130,11 +130,11 @@ export function ProtectionReport({ projectId }: Props) {
 
   function handleExport() {
     setExporting(true)
-    fetch(`/api/projects/${projectId}/export/${exportFormat}`)
-      .then((r) => r.text())
+    api.exportReport(projectId, exportFormat)
       .then((text) => {
         const ext = exportFormat === 'sarif' ? 'sarif.json' : exportFormat === 'json' ? 'json' : 'md'
-        const blob = new Blob([text], { type: 'text/plain' })
+        const mime = exportFormat === 'markdown' ? 'text/markdown' : 'application/json'
+        const blob = new Blob([text], { type: mime })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url

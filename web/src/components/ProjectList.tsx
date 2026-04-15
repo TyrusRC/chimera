@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api/client'
+import { api, ProjectSummary } from '../api/client'
 import { useStore } from '../store'
 
 export function ProjectList() {
-  const [projects, setProjects] = useState<any[]>([])
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [path, setPath] = useState('')
   const [loading, setLoading] = useState(false)
-  const [info, setInfo] = useState<any>(null)
+  const [info, setInfo] = useState<{ name: string; version: string } | null>(null)
   const setProject = useStore((s) => s.setProject)
 
   useEffect(() => {

@@ -1,12 +1,5 @@
 import { useEffect, useState } from 'react'
-
-interface Instruction {
-  address: string
-  mnemonic: string
-  operands: string
-  bytes: string
-  comment?: string
-}
+import { api, Instruction } from '../api/client'
 
 interface Props {
   projectId: string
@@ -24,11 +17,7 @@ export function DisassemblyView({ projectId, address }: Props) {
       return
     }
     setError(null)
-    fetch(`/api/projects/${projectId}/functions/${address}/disassembly`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
+    api.getDisassembly(projectId, address)
       .then((d) => setInstructions(d.instructions ?? []))
       .catch((e: Error) => setError(e.message))
   }, [projectId, address])
@@ -41,20 +30,7 @@ export function DisassemblyView({ projectId, address }: Props) {
     )
   }
 
-  if (error) {
-    return (
-      <div className="p-4 text-xs font-mono">
-        <div className="text-chimera-accent mb-2">Disassembly for {address}</div>
-        <div className="text-chimera-muted">
-          Disassembly view requires r2/Ghidra backend data.
-          <br />
-          Use the Decompiled Code tab for source-level analysis.
-        </div>
-      </div>
-    )
-  }
-
-  if (instructions.length === 0) {
+  if (error || instructions.length === 0) {
     return (
       <div className="p-4 text-xs font-mono">
         <div className="text-chimera-accent mb-2">Disassembly for {address}</div>

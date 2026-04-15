@@ -1,20 +1,27 @@
 import { useEffect, useState } from 'react'
+import { api, DeviceEntry } from '../../api/client'
 
 export function DevicePanel() {
-  const [devices, setDevices] = useState<any[]>([])
+  const [devices, setDevices] = useState<DeviceEntry[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/devices').then(r => r.json()).then(setDevices).catch(() => {})
+    api.listDevices()
+      .then(setDevices)
+      .catch((e: Error) => setError(e.message))
   }, [])
 
   return (
     <div className="p-4">
       <h3 className="text-sm font-bold text-chimera-text mb-3">Connected Devices</h3>
-      {devices.length === 0 ? (
+      {error && (
+        <div className="text-chimera-critical text-xs mb-2">Failed to fetch devices: {error}</div>
+      )}
+      {devices.length === 0 && !error ? (
         <div className="text-chimera-muted text-xs">No devices connected. Connect via USB and ensure ADB/libimobiledevice is available.</div>
       ) : (
         <div className="space-y-2">
-          {devices.map((d: any) => (
+          {devices.map((d) => (
             <div key={d.id} className="bg-chimera-surface border border-chimera-border rounded p-3 text-xs">
               <div className="flex justify-between">
                 <span className="text-chimera-accent font-bold">{d.platform}</span>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api/client'
+import { api, FindingEntry } from '../api/client'
 
 interface Props { projectId: string }
 
@@ -12,16 +12,22 @@ const severityColors: Record<string, string> = {
 }
 
 export function FindingsPanel({ projectId }: Props) {
-  const [findings, setFindings] = useState<any[]>([])
-  const [selected, setSelected] = useState<any>(null)
+  const [findings, setFindings] = useState<FindingEntry[]>([])
+  const [selected, setSelected] = useState<FindingEntry | null>(null)
   const [total, setTotal] = useState(0)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    setError(null)
     api.listFindings(projectId).then((data) => {
       setFindings(data.findings)
       setTotal(data.total)
-    }).catch(() => {})
+    }).catch((e: Error) => setError(e.message))
   }, [projectId])
+
+  if (error) {
+    return <div className="p-4 text-xs text-chimera-muted">Failed to load findings: {error}</div>
+  }
 
   return (
     <div className="flex h-full">
@@ -29,9 +35,12 @@ export function FindingsPanel({ projectId }: Props) {
         <div className="px-3 py-2 text-xs text-chimera-muted border-b border-chimera-border">
           {total} findings
         </div>
-        {findings.map((f, i) => (
+        {findings.length === 0 && (
+          <div className="px-3 py-4 text-xs text-chimera-muted">No findings detected.</div>
+        )}
+        {findings.map((f) => (
           <button
-            key={i}
+            key={`${f.rule_id}-${f.location}`}
             onClick={() => setSelected(f)}
             className={`w-full text-left px-3 py-2 text-xs border-b border-chimera-border/30 hover:bg-chimera-panel ${
               selected === f ? 'bg-chimera-panel' : ''
@@ -52,7 +61,9 @@ export function FindingsPanel({ projectId }: Props) {
             <div className="space-y-2 text-chimera-text">
               <div><span className="text-chimera-muted">Rule:</span> {selected.rule_id}</div>
               <div><span className="text-chimera-muted">Severity:</span> {selected.severity}</div>
+              <div><span className="text-chimera-muted">Confidence:</span> {selected.confidence}</div>
               <div><span className="text-chimera-muted">MASVS:</span> {selected.masvs_category || 'N/A'}</div>
+              <div><span className="text-chimera-muted">MASTG:</span> {selected.mastg_test || 'N/A'}</div>
               <div><span className="text-chimera-muted">Location:</span> <code className="text-chimera-accent">{selected.location}</code></div>
               <div className="mt-3">{selected.description}</div>
               {selected.evidence_static && (
