@@ -1,0 +1,159 @@
+"""Android device manager — wraps ADB for device interaction."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import shutil
+from pathlib import Path
+from typing import Optional
+
+from chimera.device.base import DeviceManager, DeviceInfo, DevicePlatform
+
+logger = logging.getLogger(__name__)
+
+
+class AndroidDeviceManager(DeviceManager):
+    @property
+    def name(self) -> str:
+        return "android"
+
+    @property
+    def is_available(self) -> bool:
+        return shutil.which("adb") is not None
+
+    async def list_devices(self) -> list[DeviceInfo]:
+        output = await self._adb("devices")
+        devices = []
+        for line in output.strip().splitlines()[1:]:  # skip header
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[1].strip() == "device":
+                device_id = parts[0].strip()
+                info = await self.get_device_info(device_id)
+                if info:
+                    devices.append(info)
+        return devices
+
+    async def get_device_info(self, device_id: str) -> DeviceInfo | None:
+        try:
+            model = (await self._adb_device(device_id, "shell getprop ro.product.model")).strip()
+            version = (await self._adb_device(device_id, "shell getprop ro.build.version.release")).strip()
+            arch = (await self._adb_device(device_id, "shell getprop ro.product.cpu.abi")).strip()
+
+            # Check root
+            su_check = await self._adb_device(device_id, "shell su -c id")
+            is_rooted = "uid=0" in su_check
+
+            return DeviceInfo(
+                id=device_id,
+                platform=DevicePlatform.ANDROID,
+                model=model or None,
+                os_version=version or None,
+                arch=arch or None,
+                is_rooted=is_rooted,
+            )
+        except Exception as e:
+            logger.warning("Failed to get device info for %s: %s", device_id, e)
+            return DeviceInfo(id=device_id, platform=DevicePlatform.ANDROID)
+
+    async def list_packages(self, device_id: str) -> list[str]:
+        output = await self._adb_device(device_id, "shell pm list packages")
+        return [line.replace("package:", "").strip()
+                for line in output.splitlines() if line.startswith("package:")]
+
+    async def pull_app(self, device_id: str, package: str, output_dir: str) -> str | None:
+        output = await self._adb_device(device_id, f"shell pm path {package}")
+        paths = [line.replace("package:", "").strip()
+                 for line in output.splitlines() if line.startswith("package:")]
+        if not paths:
+            return None
+
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        pulled = []
+        for apk_path in paths:
+            local = out / Path(apk_path).name
+            await self._adb_device(device_id, f"pull {apk_path} {local}")
+            pulled.append(str(local))
+        return pulled[0] if pulled else None
+
+    async def start_frida_server(self, device_id: str) -> bool:
+        try:
+            # Check if already running
+            check = await self._adb_device(device_id, "shell su -c 'pidof frida-server'")
+            if check.strip():
+                logger.info("frida-server already running (PID %s)", check.strip())
+                return True
+
+            # Start frida-server
+            await self._adb_device(
+                device_id,
+                "shell su -c '/data/local/tmp/frida-server -D &'"
+            )
+            await asyncio.sleep(1)
+
+            # Verify
+            check = await self._adb_device(device_id, "shell su -c 'pidof frida-server'")
+            running = bool(check.strip())
+            if running:
+                logger.info("frida-server started successfully")
+            else:
+                logger.warning("frida-server failed to start")
+            return running
+        except Exception as e:
+            logger.error("Failed to start frida-server: %s", e)
+            return False
+
+    async def forward_port(self, device_id: str, local: int, remote: int) -> bool:
+        try:
+            await self._adb_device(device_id, f"forward tcp:{local} tcp:{remote}")
+            return True
+        except Exception:
+            return False
+
+    async def setup_proxy(self, device_id: str, host: str, port: int) -> bool:
+        try:
+            await self._adb_device(
+                device_id, f"shell settings put global http_proxy {host}:{port}"
+            )
+            return True
+        except Exception:
+            return False
+
+    async def clear_proxy(self, device_id: str) -> bool:
+        try:
+            await self._adb_device(device_id, "shell settings delete global http_proxy")
+            return True
+        except Exception:
+            return False
+
+    async def logcat(self, device_id: str, package: str, lines: int = 100) -> str:
+        pid_output = await self._adb_device(device_id, f"shell pidof {package}")
+        pid = pid_output.strip()
+        if pid:
+            return await self._adb_device(device_id, f"logcat --pid={pid} -d -t {lines}")
+        return await self._adb_device(device_id, f"logcat -d -t {lines}")
+
+    async def run_command(self, device_id: str, command: str) -> str:
+        return await self._adb_device(device_id, f"shell {command}")
+
+    async def cleanup(self) -> None:
+        pass
+
+    async def _adb(self, args: str) -> str:
+        proc = await asyncio.create_subprocess_exec(
+            "adb", *args.split(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return stdout.decode(errors="replace")
+
+    async def _adb_device(self, device_id: str, args: str) -> str:
+        proc = await asyncio.create_subprocess_exec(
+            "adb", "-s", device_id, *args.split(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return stdout.decode(errors="replace")

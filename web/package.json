@@ -1,0 +1,27 @@
+{
+  "name": "chimera-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6",
+    "react": "^19.0",
+    "react-dom": "^19.0",
+    "zustand": "^5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0",
+    "@types/react-dom": "^19.0",
+    "@vitejs/plugin-react": "^4.3",
+    "autoprefixer": "^10.4",
+    "postcss": "^8.4",
+    "tailwindcss": "^3.4",
+    "typescript": "^5.6",
+    "vite": "^6.0"
+  }
+}
