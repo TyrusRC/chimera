@@ -304,10 +304,9 @@ def tui():
 @main.command()
 def mcp():
     """Start the Chimera MCP server (for Claude Code / LLM integration)."""
-    import asyncio as _asyncio
     from chimera.mcp_server import main as mcp_main
     click.echo("Starting Chimera MCP server...")
-    _asyncio.run(mcp_main())
+    asyncio.run(mcp_main())
 
 
 if __name__ == "__main__":

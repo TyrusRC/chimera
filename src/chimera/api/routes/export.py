@@ -36,10 +36,7 @@ async def export_report(project_id: str, format: str) -> PlainTextResponse:
         from chimera.report.json_report import generate_json
 
         return PlainTextResponse(generate_json(findings, binary_info), media_type="application/json")
-    elif format == "markdown":
+    else:
         from chimera.report.markdown import generate_markdown
 
         return PlainTextResponse(generate_markdown(findings, binary_info), media_type="text/markdown")
-
-    # Should be unreachable after the guard above
-    raise HTTPException(status_code=400, detail=f"Unknown format: {format}")

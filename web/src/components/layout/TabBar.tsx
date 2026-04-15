@@ -1,4 +1,4 @@
-export type TabId = 'code' | 'findings' | 'callgraph' | 'hex' | 'disassembly' | 'protection'
+export type TabId = 'code' | 'findings' | 'callgraph' | 'hex' | 'disassembly' | 'protection' | 'devices' | 'network'
 
 interface Props {
   activeTab: TabId
@@ -9,9 +9,10 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'code', label: 'Decompiled Code' },
   { id: 'findings', label: 'Findings' },
   { id: 'callgraph', label: 'Call Graph' },
-  { id: 'hex', label: 'Hex View' },
   { id: 'disassembly', label: 'Disassembly' },
   { id: 'protection', label: 'Protection Report' },
+  { id: 'devices', label: 'Devices' },
+  { id: 'network', label: 'Network' },
 ]
 
 export function TabBar({ activeTab, onTabChange }: Props) {

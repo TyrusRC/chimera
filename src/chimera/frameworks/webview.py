@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import re
-import logging
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 
 class WebViewFrameworkAnalyzer:

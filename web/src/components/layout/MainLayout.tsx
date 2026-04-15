@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { TabBar, TabId } from './TabBar'
+import { AnalysisProgress } from '../AnalysisProgress'
 import { CodeView } from '../CodeView'
 import { FindingsPanel } from '../FindingsPanel'
 import { CallGraph } from '../CallGraph'
-import { HexView } from '../HexView'
 import { DisassemblyView } from '../DisassemblyView'
 import { XrefsPanel } from '../XrefsPanel'
 import { ProtectionReport } from '../ProtectionReport'
+import { DevicePanel } from '../device/DevicePanel'
+import { NetworkPanel } from '../NetworkPanel'
 import { useStore } from '../../store'
 
 interface Props { projectId: string }
@@ -31,12 +33,11 @@ export function MainLayout({ projectId }: Props) {
         </button>
       </div>
 
+      <AnalysisProgress projectId={projectId} />
+
       <div className="flex flex-1 overflow-hidden">
         {/* Left sidebar */}
         <Sidebar projectId={projectId} />
-
-        {/* Resizer */}
-        <div className="resizer" />
 
         {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -53,19 +54,22 @@ export function MainLayout({ projectId }: Props) {
               {activeTab === 'callgraph' && (
                 <CallGraph projectId={projectId} address={selectedFunction} />
               )}
-              {activeTab === 'hex' && (
-                <HexView />
-              )}
               {activeTab === 'disassembly' && (
                 <DisassemblyView projectId={projectId} address={selectedFunction} />
               )}
               {activeTab === 'protection' && (
                 <ProtectionReport projectId={projectId} />
               )}
+              {activeTab === 'devices' && (
+                <DevicePanel />
+              )}
+              {activeTab === 'network' && (
+                <NetworkPanel projectId={projectId} />
+              )}
             </div>
 
             {/* Right panel — cross-references */}
-            {selectedFunction && activeTab !== 'findings' && activeTab !== 'protection' && (
+            {selectedFunction && activeTab !== 'findings' && activeTab !== 'protection' && activeTab !== 'devices' && activeTab !== 'network' && (
               <>
                 <div className="w-px bg-chimera-border" />
                 <div className="w-56 flex flex-col overflow-hidden bg-chimera-surface border-l border-chimera-border">

@@ -26,7 +26,6 @@ class SemgrepAdapter(BackendAdapter):
     async def analyze(self, binary_path: str, options: dict) -> dict:
         """Run semgrep on a directory of decompiled source code."""
         rules = options.get("rules", "auto")
-        output_format = options.get("format", "json")
 
         cmd = [
             "semgrep", "scan",

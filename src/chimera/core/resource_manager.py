@@ -4,13 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from enum import Enum
 from typing import AsyncIterator
-
-
-class ToolCategory(Enum):
-    HEAVY = "heavy"
-    LIGHT = "light"
 
 
 class ResourceManager:

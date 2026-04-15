@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 # In-memory project store (replaced by DB in production)
 _projects: dict[str, dict] = {}
-_engines: dict[str, ChimeraEngine] = {}
 
 
 class AnalyzeRequest(BaseModel):
@@ -93,7 +92,6 @@ async def _run_analysis(project_id: str, req: AnalyzeRequest):
             "model": model,
             "findings": findings,
         })
-        _engines[project_id] = engine
         logger.info("Analysis complete for %s", project_id)
     except Exception as e:
         logger.error("Analysis failed for %s: %s", project_id, e)
