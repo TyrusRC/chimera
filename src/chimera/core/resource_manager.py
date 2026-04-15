@@ -8,14 +8,22 @@ from typing import AsyncIterator
 
 
 class ResourceManager:
-    MIN_RAM_MB = 16384
+    MIN_RAM_MB = 4096  # Minimum 4GB for basic static analysis
 
     def __init__(self, total_ram_mb: int | None = None):
+        import logging
+        logger = logging.getLogger(__name__)
         if total_ram_mb is None:
             total_ram_mb = _detect_ram_mb()
         if total_ram_mb < self.MIN_RAM_MB:
             raise SystemError(
-                f"Chimera requires minimum 16GB RAM. Detected: {total_ram_mb}MB"
+                f"Chimera requires minimum 4GB RAM. Detected: {total_ram_mb}MB"
+            )
+        if total_ram_mb < 16384:
+            logger.warning(
+                "Less than 16GB RAM detected (%dMB). "
+                "Heavy tools (Ghidra) may be slow or fail. 16GB+ recommended.",
+                total_ram_mb,
             )
         self.total_ram_mb = total_ram_mb
         self.high_memory = total_ram_mb >= 32768

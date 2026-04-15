@@ -118,15 +118,30 @@ async def analyze_apk(
     vuln_engine = VulnEngine()
 
     manifest_xml = None
-    if unpack_result["manifest_path"].exists():
-        try:
-            manifest_xml = unpack_result["manifest_path"].read_text(errors="replace")
-        except OSError:
-            pass
-
+    # jadx produces a decoded text AndroidManifest.xml in its resources dir
     jadx_sources = None
     if jadx and jadx.is_available():
         jadx_sources = config.project_dir / "jadx" / binary.sha256[:12] / "sources"
+        jadx_manifest = config.project_dir / "jadx" / binary.sha256[:12] / "resources" / "AndroidManifest.xml"
+        if jadx_manifest.exists():
+            try:
+                manifest_xml = jadx_manifest.read_text(errors="replace")
+            except OSError:
+                pass
+
+    # Fallback: try raw manifest (works if APK was not binary-encoded, e.g. debug builds)
+    if manifest_xml is None and unpack_result["manifest_path"].exists():
+        try:
+            raw = unpack_result["manifest_path"].read_text(errors="replace")
+            if raw.lstrip().startswith("<?xml") or raw.lstrip().startswith("<manifest"):
+                manifest_xml = raw
+            else:
+                logger.warning(
+                    "AndroidManifest.xml is binary-encoded. "
+                    "Install jadx for proper manifest analysis."
+                )
+        except OSError:
+            pass
 
     findings = await vuln_engine.scan(
         platform="android",
