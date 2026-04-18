@@ -71,11 +71,18 @@ class TestDatabasePg:
             classification="init",
             layer="java",
             source_backend="jadx",
+            ai_renamed=True,
+            ai_comments="hand-inspected",
         )
         await db.save_function(binary.sha256, func)
         functions = await db.load_functions(binary.sha256)
         assert len(functions) == 1
-        assert functions[0].name == "main"
+        loaded = functions[0]
+        assert loaded.name == "main"
+        # These fields use non-default types (BOOLEAN, nullable TEXT) —
+        # round-tripping catches codec regressions.
+        assert loaded.ai_renamed is True
+        assert loaded.ai_comments == "hand-inspected"
 
     async def test_binary_exists(self, db):
         binary = _make_binary()
@@ -84,8 +91,15 @@ class TestDatabasePg:
         assert await db.binary_exists("a" * 64) is True
 
     async def test_save_binary_is_upsert(self, db):
-        # Re-saving with the same sha256 should replace, not raise.
-        await db.save_binary(_make_binary())
-        await db.save_binary(_make_binary())
+        import dataclasses
+
+        original = _make_binary()
+        await db.save_binary(original)
+        # Same sha256 but different size_bytes — ON CONFLICT DO UPDATE
+        # must overwrite the row, not silently discard the new data.
+        mutated = dataclasses.replace(original, size_bytes=9999)
+        await db.save_binary(mutated)
         loaded = await db.load_binary("a" * 64)
         assert loaded is not None
+        assert loaded.size_bytes == 9999, \
+            "upsert must overwrite existing columns, not DO NOTHING"
