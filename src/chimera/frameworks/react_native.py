@@ -16,7 +16,7 @@ _HERMES_MAGIC = b"\xc6\x1f\xbc\x03"
 _SECURITY_PATTERNS = [
     {"pattern": r"AsyncStorage\.(?:setItem|getItem)\s*\(\s*['\"](?:password|token|secret|session|auth|jwt|credential)",
      "rule_id": "AUTH-003", "title": "Sensitive data in AsyncStorage", "severity": "high"},
-    {"pattern": r"__DEV__\s*(?:===?\s*true|&&|\|\||\?)",
+    {"pattern": r"__DEV__(?:\s*(?:===?\s*true|&&|\|\||\?|[)\s]))",
      "rule_id": "DATA-003", "title": "Dev mode check (may be enabled)", "severity": "medium"},
     {"pattern": r"Flipper|flipperClient|ReactNativeFlipper",
      "rule_id": "DATA-003", "title": "Flipper debug tool reference", "severity": "medium"},

@@ -17,7 +17,7 @@ class BypassOrchestrator:
             source = self._loader.get_script_for_bypass(platform, bypass_type)
             if source:
                 chain.append({
-                    "name": bypass_type if bypass_type != "root_detection" else "root_bypass",
+                    "name": {"root_detection": "root_bypass", "jailbreak_detection": "jailbreak_bypass"}.get(bypass_type, bypass_type),
                     "type": bypass_type,
                     "source": source,
                 })

@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from chimera.core.resource_manager import ResourceManager, ToolCategory
+from chimera.core.resource_manager import ResourceManager
 
 
 class TestResourceManager:
@@ -14,8 +14,8 @@ class TestResourceManager:
         assert rm.high_memory is True
 
     def test_rejects_low_ram(self):
-        with pytest.raises(SystemError, match="16GB RAM required"):
-            ResourceManager(total_ram_mb=8192)
+        with pytest.raises(SystemError, match="4GB RAM"):
+            ResourceManager(total_ram_mb=2048)
 
     async def test_heavy_tasks_serialize(self):
         rm = ResourceManager(total_ram_mb=16384)

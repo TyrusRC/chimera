@@ -6,7 +6,7 @@ class TestUnityAnalyzer:
     def test_find_metadata(self, tmp_path):
         meta = tmp_path / "assets" / "bin" / "Data" / "Managed" / "Metadata"
         meta.mkdir(parents=True)
-        (meta / "global-metadata.dat").write_bytes(b"\xaf\x1b\xb1\xfa" + b"\x00" * 60)
+        (meta / "global-metadata.dat").write_bytes(b"\xaf\x1b\xb1\xfa" + b"\x00" * 100)
         analyzer = UnityAnalyzer()
         result = analyzer.find_metadata(tmp_path)
         assert result is not None
