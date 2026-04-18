@@ -46,6 +46,15 @@ def init_cmd(dsn: str) -> None:
     admin = _admin_dsn(dsn)
     target = _target_dbname(dsn)
 
+    if target in {"postgres", "template0", "template1"}:
+        click.echo(
+            f"Refusing to init against system database {target!r}. "
+            f"Set --dsn / CHIMERA_DB_URL to target a chimera project database "
+            f"(e.g., postgresql://user:pass@host:5432/chimera_projects).",
+            err=True,
+        )
+        sys.exit(2)
+
     try:
         # Step 1: ensure the target DB exists.
         with psycopg.connect(admin, autocommit=True) as conn:

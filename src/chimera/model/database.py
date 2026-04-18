@@ -94,10 +94,10 @@ class ChimeraDatabase:
 
     async def binary_exists(self, sha256: str) -> bool:
         async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
+            result = await conn.fetchval(
                 "SELECT 1 FROM binaries WHERE sha256 = $1", sha256
             )
-        return row is not None
+        return result is not None
 
     async def save_function(
         self, binary_sha256: str, func: FunctionInfo

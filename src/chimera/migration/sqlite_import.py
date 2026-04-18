@@ -67,18 +67,24 @@ _CONFLICT_KEYS: dict[str, tuple[str, ...]] = {
 def _rows_from_sqlite(
     sqlite_path: Path, table: str, columns: tuple[str, ...]
 ) -> list[tuple]:
-    with sqlite3.connect(str(sqlite_path)) as conn:
-        cursor = conn.cursor()
-        tables_present = {
-            row[0]
-            for row in cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
-        if table not in tables_present:
-            return []
-        col_list = ", ".join(columns)
-        return list(cursor.execute(f"SELECT {col_list} FROM {table}"))
+    try:
+        with sqlite3.connect(str(sqlite_path)) as conn:
+            cursor = conn.cursor()
+            tables_present = {
+                row[0]
+                for row in cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            if table not in tables_present:
+                return []
+            col_list = ", ".join(columns)
+            return list(cursor.execute(f"SELECT {col_list} FROM {table}"))
+    except sqlite3.DatabaseError as exc:
+        raise RuntimeError(
+            f"Failed to read table {table!r} from {sqlite_path}: {exc}. "
+            f"Is this a valid chimera SQLite project file?"
+        ) from exc
 
 
 def _coerce_row(table: str, row: tuple) -> tuple:
@@ -105,9 +111,13 @@ async def import_sqlite_to_postgres(
 ) -> dict[str, int]:
     """Copy each known table from SQLite into Postgres.
 
-    Returns a dict of `{table_name: rows_inserted}`. Idempotent for tables
-    with a defined conflict key; tables without a conflict key append on
-    re-run (see `_CONFLICT_KEYS`).
+    The whole migration runs inside a single transaction — partial failures
+    (bad data, FK violation, Ctrl+C mid-run) roll back atomically, leaving
+    Postgres in the pre-migration state. On successful completion, tables
+    with a conflict key upsert on re-run; tables without one accumulate
+    duplicates (see `_CONFLICT_KEYS`).
+
+    Returns a dict of `{table_name: rows_processed}`.
     """
     if not sqlite_path.exists():
         raise FileNotFoundError(f"SQLite file not found: {sqlite_path}")
@@ -116,34 +126,34 @@ async def import_sqlite_to_postgres(
 
     conn = await asyncpg.connect(dsn=pg_dsn)
     try:
-        for table in _TABLE_ORDER:
-            columns = _COLUMNS_BY_TABLE[table]
-            rows = _rows_from_sqlite(sqlite_path, table, columns)
-            if not rows:
-                continue
-            rows = [_coerce_row(table, r) for r in rows]
-            placeholders = ", ".join(f"${i+1}" for i in range(len(columns)))
-            col_list = ", ".join(columns)
-            conflict = _CONFLICT_KEYS.get(table, ())
-            if conflict:
-                conflict_list = ", ".join(conflict)
-                assignments = ", ".join(
-                    f"{c} = EXCLUDED.{c}"
-                    for c in columns
-                    if c not in conflict
-                )
-                sql = (
-                    f"INSERT INTO {table} ({col_list}) VALUES ({placeholders}) "
-                    f"ON CONFLICT ({conflict_list}) DO UPDATE SET {assignments}"
-                )
-            else:
-                sql = (
-                    f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
-                )
-            async with conn.transaction():
+        async with conn.transaction():
+            for table in _TABLE_ORDER:
+                columns = _COLUMNS_BY_TABLE[table]
+                rows = _rows_from_sqlite(sqlite_path, table, columns)
+                if not rows:
+                    continue
+                rows = [_coerce_row(table, r) for r in rows]
+                placeholders = ", ".join(f"${i+1}" for i in range(len(columns)))
+                col_list = ", ".join(columns)
+                conflict = _CONFLICT_KEYS.get(table, ())
+                if conflict:
+                    conflict_list = ", ".join(conflict)
+                    assignments = ", ".join(
+                        f"{c} = EXCLUDED.{c}"
+                        for c in columns
+                        if c not in conflict
+                    )
+                    sql = (
+                        f"INSERT INTO {table} ({col_list}) VALUES ({placeholders}) "
+                        f"ON CONFLICT ({conflict_list}) DO UPDATE SET {assignments}"
+                    )
+                else:
+                    sql = (
+                        f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+                    )
                 for row in rows:
                     await conn.execute(sql, *row)
-            report[table] = len(rows)
+                report[table] = len(rows)
     finally:
         await conn.close()
 
