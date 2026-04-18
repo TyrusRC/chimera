@@ -7,7 +7,9 @@ of the asyncio runtime used by the main analysis path.
 
 from __future__ import annotations
 
+import asyncio
 import sys
+from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
 import click
@@ -86,3 +88,20 @@ def status_cmd(dsn: str) -> None:
         sys.exit(1)
     click.echo(f"Connected: {version.split(',')[0]}")
     click.echo(f"Public tables: {tables}")
+
+
+@db_cli.command("migrate")
+@click.option("--from-sqlite", "sqlite_path", required=True,
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Path to the legacy SQLite project file.")
+@click.option("--dsn", envvar="CHIMERA_DB_URL", required=True)
+def migrate_cmd(sqlite_path: Path, dsn: str) -> None:
+    """Copy data from a legacy SQLite project DB into Postgres."""
+    from chimera.migration.sqlite_import import import_sqlite_to_postgres
+
+    report = asyncio.run(import_sqlite_to_postgres(sqlite_path, dsn))
+    click.echo(f"Migrated from {sqlite_path}:")
+    for table, count in report.items():
+        if count:
+            click.echo(f"  {table}: {count} rows")
+    click.echo("Done.")
