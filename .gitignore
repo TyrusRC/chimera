@@ -18,3 +18,4 @@ node_modules/
 web/dist/
 .claude/
 e2e/material/
+.worktrees/
