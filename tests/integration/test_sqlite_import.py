@@ -63,7 +63,13 @@ class TestSqliteImport:
             )
         assert row["package_name"] == "com.x"
 
-    async def test_is_idempotent(self, sqlite_file: Path, pg_clean) -> None:
+    async def test_keyed_tables_upsert_on_reimport(
+        self, sqlite_file: Path, pg_clean
+    ) -> None:
+        # Tables with ON CONFLICT keys (binaries, functions, call_graph,
+        # permissions) upsert on re-import — count stays stable. Tables
+        # without natural keys (strings, protections, sdks) will accumulate
+        # duplicates on re-import by design; this test does not cover them.
         dsn = pg_clean.dsn
         await import_sqlite_to_postgres(sqlite_file, dsn)
         await import_sqlite_to_postgres(sqlite_file, dsn)
