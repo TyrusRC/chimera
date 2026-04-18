@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from chimera import __version__
+from chimera.cli_db import db_cli
 
 
 @click.group()
@@ -22,6 +23,9 @@ def main(verbose: bool):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+
+main.add_command(db_cli)
 
 
 @main.command()
