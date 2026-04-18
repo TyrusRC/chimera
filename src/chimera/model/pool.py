@@ -30,12 +30,17 @@ class ConnectionPool:
     async def connect(self) -> None:
         if self._pool is not None:
             return
-        self._pool = await asyncpg.create_pool(
+        pool = await asyncpg.create_pool(
             dsn=self.dsn,
             min_size=self.min_size,
             max_size=self.max_size,
             command_timeout=self.command_timeout,
         )
+        if pool is None:
+            raise RuntimeError(
+                "asyncpg.create_pool returned None; check DSN and server availability"
+            )
+        self._pool = pool
 
     async def disconnect(self) -> None:
         if self._pool is not None:
