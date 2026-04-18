@@ -6,7 +6,8 @@ license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1",
-    "aiosqlite>=0.20",
+    "asyncpg>=0.29",
+    "psycopg[binary]>=3.2",
     "r2pipe>=1.8",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -19,6 +20,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
+    "testcontainers[postgres]>=4.0",
 ]
 
 [project.scripts]
