@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -18,6 +19,18 @@ class ChimeraConfig:
     skip_fuzzing: bool = True
     adb_device: Optional[str] = None
     ios_udid: Optional[str] = None
+    db_url: str = field(
+        default_factory=lambda: os.getenv(
+            "CHIMERA_DB_URL",
+            "postgresql://chimera:chimera@localhost:5432/chimera_projects",
+        )
+    )
+    pattern_db_url: str = field(
+        default_factory=lambda: os.getenv(
+            "CHIMERA_PATTERN_DB_URL",
+            "postgresql://chimera:chimera@localhost:5432/chimera_patterns",
+        )
+    )
 
     def __post_init__(self):
         self.project_dir = Path(self.project_dir)
