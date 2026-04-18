@@ -12,6 +12,7 @@ from urllib.parse import urlparse, urlunparse
 
 import click
 import psycopg
+from psycopg import sql as pgsql
 
 from chimera.model.schema import PROJECT_SCHEMA
 
@@ -43,22 +44,29 @@ def init_cmd(dsn: str) -> None:
     admin = _admin_dsn(dsn)
     target = _target_dbname(dsn)
 
-    # Step 1: ensure the target DB exists.
-    with psycopg.connect(admin, autocommit=True) as conn:
-        existing = conn.execute(
-            "SELECT 1 FROM pg_database WHERE datname = %s", (target,)
-        ).fetchone()
-        if existing is None:
-            conn.execute(f'CREATE DATABASE "{target}"')
-            click.echo(f"Created database {target!r}")
-        else:
-            click.echo(f"Database {target!r} already exists")
+    try:
+        # Step 1: ensure the target DB exists.
+        with psycopg.connect(admin, autocommit=True) as conn:
+            existing = conn.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s", (target,)
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(target))
+                )
+                click.echo(f"Created database {target!r}")
+            else:
+                click.echo(f"Database {target!r} already exists")
 
-    # Step 2: install extensions + apply schema in the target DB.
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
-        conn.execute("CREATE EXTENSION IF NOT EXISTS btree_gin;")
-        conn.execute(PROJECT_SCHEMA)
+        # Step 2: install extensions + apply schema in the target DB.
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+            conn.execute("CREATE EXTENSION IF NOT EXISTS btree_gin;")
+            conn.execute(PROJECT_SCHEMA)
+    except (psycopg.OperationalError, psycopg.ProgrammingError) as exc:
+        click.echo(f"Init failed: {exc}", err=True)
+        sys.exit(1)
+
     click.echo("Extensions + schema applied.")
 
 
