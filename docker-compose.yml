@@ -1,8 +1,43 @@
 services:
+  postgres:
+    image: postgres:16
+    container_name: chimera-postgres
+    environment:
+      POSTGRES_USER: chimera
+      POSTGRES_PASSWORD: chimera
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command:
+      - postgres
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - work_mem=64MB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - max_parallel_workers_per_gather=4
+      - -c
+      - jit=off
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chimera -d chimera_projects"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+
   chimera:
     build: .
     image: chimera:latest
     container_name: chimera
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./projects:/projects
       - ./cache:/cache
@@ -13,6 +48,8 @@ services:
     environment:
       - GHIDRA_HOME=/opt/ghidra
       - GHIDRA_MAX_MEM=4g
+      - CHIMERA_DB_URL=postgresql://chimera:chimera@postgres:5432/chimera_projects
+      - CHIMERA_PATTERN_DB_URL=postgresql://chimera:chimera@postgres:5432/chimera_patterns
     deploy:
       resources:
         limits:
@@ -21,3 +58,6 @@ services:
           memory: 4G
     stdin_open: true
     tty: true
+
+volumes:
+  pgdata:
