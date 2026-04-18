@@ -7,6 +7,7 @@ tests do not see each other's data.
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
 
 import pytest
@@ -14,7 +15,7 @@ import pytest_asyncio
 from testcontainers.postgres import PostgresContainer
 
 from chimera.model.pool import ConnectionPool
-from chimera.model.schema import PROJECT_SCHEMA
+from chimera.model.schema import PROJECT_SCHEMA, PROJECT_TABLES
 
 
 @pytest.fixture(scope="session")
@@ -34,9 +35,11 @@ def pg_container():
 
 @pytest.fixture(scope="session")
 def pg_dsn(pg_container) -> str:
-    # testcontainers returns a SQLAlchemy URL; asyncpg wants plain postgresql://
+    # testcontainers returns a SQLAlchemy URL with a driver qualifier like
+    # postgresql+psycopg2:// or postgresql+asyncpg://. asyncpg wants a bare
+    # postgresql:// URL, so strip any +<driver> segment regardless of name.
     raw = pg_container.get_connection_url()
-    return raw.replace("postgresql+psycopg2://", "postgresql://")
+    return re.sub(r"^postgresql\+[^:]+://", "postgresql://", raw)
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -55,9 +58,10 @@ async def pg_pool(pg_dsn) -> AsyncIterator[ConnectionPool]:
 @pytest_asyncio.fixture(loop_scope="session")
 async def pg_clean(pg_pool) -> AsyncIterator[ConnectionPool]:
     # Truncate project tables before each test so tests are isolated.
+    # CASCADE handles FK order; RESTART IDENTITY resets sequences.
+    table_list = ", ".join(PROJECT_TABLES)
     async with pg_pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE TABLE binaries, functions, call_graph, strings, "
-            "permissions, protections, sdks RESTART IDENTITY CASCADE;"
+            f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE;"
         )
     yield pg_pool
