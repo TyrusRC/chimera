@@ -5,10 +5,13 @@ services:
     environment:
       POSTGRES_USER: chimera
       POSTGRES_PASSWORD: chimera
-      POSTGRES_DB: postgres
+      POSTGRES_DB: postgres  # maintenance DB; application DBs created by init.sql
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # Tuning targets a workstation with >=8GB RAM available to this container.
+    # For constrained machines, override via compose override file or reduce
+    # shared_buffers to 256MB (Postgres default) at analysis-performance cost.
     command:
       - postgres
       - -c
