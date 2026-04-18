@@ -52,7 +52,7 @@ CREATE INDEX IF NOT EXISTS functions_name_trgm_idx
     ON functions USING gin (name gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS call_graph (
-    caller_binary TEXT NOT NULL,
+    caller_binary TEXT NOT NULL REFERENCES binaries(sha256) ON DELETE CASCADE,
     caller_addr TEXT NOT NULL,
     callee_addr TEXT NOT NULL,
     call_type TEXT NOT NULL DEFAULT 'direct',

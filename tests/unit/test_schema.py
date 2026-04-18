@@ -19,4 +19,7 @@ def test_schema_uses_postgres_types():
 
 
 def test_schema_uses_trigram_index_on_name():
-    assert "gin_trgm_ops" in PROJECT_SCHEMA, "expected trigram index for regex predicates"
+    assert "functions_name_trgm_idx" in PROJECT_SCHEMA
+    assert "strings_value_trgm_idx" in PROJECT_SCHEMA
+    assert PROJECT_SCHEMA.count("gin_trgm_ops") == 2, \
+        "expected one trigram index per searchable text column (functions.name, strings.value)"
