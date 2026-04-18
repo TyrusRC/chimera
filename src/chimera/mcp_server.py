@@ -54,28 +54,6 @@ async def list_tools() -> list[Tool]:
                  "path": {"type": "string", "description": "Absolute path to APK or IPA file"},
              }, "required": ["path"]}),
 
-        # --- Query: Findings ---
-        Tool(name="get_findings",
-             description="Get vulnerability findings. Filter by severity or rule_id. Supports pagination via offset.",
-             inputSchema={"type": "object", "properties": {
-                 "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
-                 "rule_id": {"type": "string"},
-                 "offset": {"type": "integer", "default": 0, "description": "Skip first N findings"},
-                 "limit": {"type": "integer", "default": 30},
-             }}),
-        Tool(name="search_finding_evidence",
-             description="Search across all finding titles, descriptions, evidence, and locations for a text pattern.",
-             inputSchema={"type": "object", "properties": {
-                 "pattern": {"type": "string", "description": "Text to search for (case-insensitive)"},
-             }, "required": ["pattern"]}),
-        Tool(name="update_finding",
-             description="Mark a finding as false_positive or confirmed. Use the finding index from get_findings results.",
-             inputSchema={"type": "object", "properties": {
-                 "index": {"type": "integer", "description": "Finding index in the findings list"},
-                 "status": {"type": "string", "enum": ["confirmed", "false_positive"]},
-                 "reason": {"type": "string", "description": "Why this status was set"},
-             }, "required": ["index", "status"]}),
-
         # --- Query: Code ---
         Tool(name="get_functions",
              description="List functions. Search by name, filter by classification/layer. Returns address, name, whether decompiled code exists.",
@@ -141,15 +119,132 @@ async def list_tools() -> list[Tool]:
                  "rules": {"type": "string", "default": "auto", "description": "Semgrep rule config (auto, p/java, path to rules)"},
              }}),
 
-        # --- Export & Devices ---
-        Tool(name="export_report",
-             description="Export findings as SARIF, JSON, or Markdown report.",
-             inputSchema={"type": "object", "properties": {
-                 "format": {"type": "string", "enum": ["sarif", "json", "markdown"], "default": "sarif"},
-             }}),
+        # --- Devices ---
         Tool(name="list_devices",
              description="List connected Android (ADB) and iOS (libimobiledevice) devices.",
              inputSchema={"type": "object", "properties": {}}),
+
+        # --- Source & Artifact Browsing ---
+        Tool(name="list_source_files",
+             description="List decompiled source files from jadx output. Browse by package path. Essential for reading Java/Kotlin source after analysis.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "default": "", "description": "Relative path within jadx sources (e.g. 'com/example/app'). Empty for root."},
+                 "pattern": {"type": "string", "description": "Glob pattern to filter files (e.g. '*.java', '**/*Activity*')"},
+             }}),
+        Tool(name="read_source",
+             description="Read a decompiled source file from jadx output. Use list_source_files to find paths first.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Relative path within jadx sources (e.g. 'com/example/app/MainActivity.java')"},
+                 "offset": {"type": "integer", "default": 0, "description": "Line offset to start reading from"},
+                 "limit": {"type": "integer", "default": 200, "description": "Max lines to return"},
+             }, "required": ["path"]}),
+        Tool(name="read_cache",
+             description="Read a cached analysis artifact (r2 triage, Ghidra output, jadx summary). Use list_artifacts to find keys.",
+             inputSchema={"type": "object", "properties": {
+                 "category": {"type": "string", "description": "Cache key (e.g. 'triage', 'r2_libnative.so', 'ghidra_libnative.so', 'jadx')"},
+             }, "required": ["category"]}),
+        Tool(name="list_artifacts",
+             description="List all cached analysis artifacts and on-disk outputs for the current binary.",
+             inputSchema={"type": "object", "properties": {}}),
+        Tool(name="get_disassembly",
+             description="Get disassembly instructions for a function by address.",
+             inputSchema={"type": "object", "properties": {
+                 "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
+             }, "required": ["address"]}),
+        Tool(name="get_class_headers",
+             description="Read ObjC class-dump headers from iOS analysis. Lists header files or reads a specific header.",
+             inputSchema={"type": "object", "properties": {
+                 "file": {"type": "string", "description": "Header filename to read (e.g. 'AppDelegate.h'). Omit to list all headers."},
+             }}),
+        # --- Device Interaction ---
+        Tool(name="list_packages",
+             description="List installed packages/apps on a connected device.",
+             inputSchema={"type": "object", "properties": {
+                 "device_id": {"type": "string", "description": "Device ID from list_devices"},
+             }, "required": ["device_id"]}),
+        Tool(name="get_logcat",
+             description="Get Android logcat output filtered by package. Useful for observing runtime behavior.",
+             inputSchema={"type": "object", "properties": {
+                 "device_id": {"type": "string", "description": "Device ID"},
+                 "package": {"type": "string", "description": "Package name to filter logs for"},
+                 "lines": {"type": "integer", "default": 100, "description": "Number of log lines"},
+             }, "required": ["device_id", "package"]}),
+        Tool(name="setup_proxy",
+             description="Configure HTTP proxy on an Android device for traffic interception (e.g. Burp Suite).",
+             inputSchema={"type": "object", "properties": {
+                 "device_id": {"type": "string"}, "host": {"type": "string"}, "port": {"type": "integer"},
+             }, "required": ["device_id", "host", "port"]}),
+        Tool(name="clear_proxy",
+             description="Remove HTTP proxy configuration from an Android device.",
+             inputSchema={"type": "object", "properties": {
+                 "device_id": {"type": "string"},
+             }, "required": ["device_id"]}),
+
+        # --- Frida Dynamic Analysis ---
+        Tool(name="start_frida_server",
+             description="Start frida-server on a connected device (requires root/jailbreak). Must be called before frida_attach/frida_spawn.",
+             inputSchema={"type": "object", "properties": {
+                 "device_id": {"type": "string", "description": "Device ID"},
+             }, "required": ["device_id"]}),
+        Tool(name="frida_spawn",
+             description="Spawn an app with Frida instrumentation. Optionally inject a script (e.g. bypass script from get_bypass_scripts).",
+             inputSchema={"type": "object", "properties": {
+                 "package": {"type": "string", "description": "Package name to spawn"},
+                 "device_id": {"type": "string", "description": "Device ID (optional, uses USB device if omitted)"},
+                 "script": {"type": "string", "description": "JavaScript source to inject at spawn"},
+             }, "required": ["package"]}),
+        Tool(name="frida_attach",
+             description="Attach Frida to a running app process for live instrumentation.",
+             inputSchema={"type": "object", "properties": {
+                 "target": {"type": "string", "description": "Package name or PID to attach to"},
+                 "device_id": {"type": "string", "description": "Device ID (optional)"},
+             }, "required": ["target"]}),
+        Tool(name="frida_exec",
+             description="Execute JavaScript code in an active Frida session. Use to call RPC exports or run ad-hoc hooks.",
+             inputSchema={"type": "object", "properties": {
+                 "session_key": {"type": "string", "description": "Session key (package name or PID used in attach/spawn)"},
+                 "code": {"type": "string", "description": "JavaScript code to evaluate"},
+             }, "required": ["session_key", "code"]}),
+        Tool(name="frida_load_script",
+             description="Load a Frida script into an active session. Use with bypass scripts or custom hooks.",
+             inputSchema={"type": "object", "properties": {
+                 "session_key": {"type": "string", "description": "Session key from frida_attach/frida_spawn"},
+                 "script": {"type": "string", "description": "JavaScript source code to load"},
+             }, "required": ["session_key", "script"]}),
+        Tool(name="frida_messages",
+             description="Get all Frida messages from an active session. Shows hook output, code capture events, errors.",
+             inputSchema={"type": "object", "properties": {
+                 "session_key": {"type": "string", "description": "Session key"},
+                 "since": {"type": "integer", "default": 0, "description": "Return messages after this index"},
+             }, "required": ["session_key"]}),
+        Tool(name="frida_detach",
+             description="Detach from a Frida session and clean up.",
+             inputSchema={"type": "object", "properties": {
+                 "session_key": {"type": "string", "description": "Session key to detach"},
+             }, "required": ["session_key"]}),
+
+        # --- Fuzzing ---
+        Tool(name="start_fuzz",
+             description="Start an AFL++ fuzzing campaign on a native library. Requires afl-fuzz installed.",
+             inputSchema={"type": "object", "properties": {
+                 "binary": {"type": "string", "description": "Path to native binary/library to fuzz"},
+                 "input_dir": {"type": "string", "description": "Directory with seed inputs"},
+                 "output_dir": {"type": "string", "description": "Directory for fuzzing output"},
+                 "duration": {"type": "integer", "default": 300, "description": "Fuzzing duration in seconds"},
+                 "qemu": {"type": "boolean", "default": True, "description": "Use QEMU mode for ARM binaries"},
+             }, "required": ["binary", "input_dir", "output_dir"]}),
+        Tool(name="fuzz_status",
+             description="Check status and results of a running or completed fuzzing campaign.",
+             inputSchema={"type": "object", "properties": {
+                 "campaign_id": {"type": "string", "description": "Campaign ID from start_fuzz result"},
+             }, "required": ["campaign_id"]}),
+
+        # --- Configuration ---
+        Tool(name="get_config",
+             description="Get or modify Chimera analysis configuration. Call with no params to read current config.",
+             inputSchema={"type": "object", "properties": {
+                 "set": {"type": "object", "description": "Key-value pairs to update (e.g. {\"skip_dynamic\": false, \"ghidra_max_mem\": \"8g\"})"},
+             }}),
     ]
 
 
@@ -173,16 +268,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         }
         if _current_model:
             b = _current_model.binary
-            findings = getattr(_current_model, "findings", [])
             result.update({
                 "binary": b.path.name,
                 "platform": b.platform.value,
                 "framework": b.framework.value,
+                "sha256": b.sha256[:16],
                 "functions": len(_current_model.functions),
                 "strings": len(_current_model.get_strings()),
-                "findings": len(findings),
                 "analysis_config": _analysis_config,
             })
+            # Active Frida sessions
+            frida = engine.registry.get("frida")
+            if frida and hasattr(frida, "_sessions"):
+                result["frida_sessions"] = list(frida._sessions.keys())
+            # Active fuzzing campaigns
+            afl = engine.registry.get("afl++")
+            if afl and hasattr(afl, "_campaigns"):
+                result["fuzz_campaigns"] = [
+                    {"id": c.campaign_id, "status": c.status}
+                    for c in afl._campaigns.values()
+                ]
         else:
             result["hint"] = "Call analyze(path=...) to load a binary."
         return _json(result)
@@ -192,7 +297,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         path = arguments["path"]
         model = await engine.analyze(path)
         _current_model = model
-        findings = getattr(model, "findings", [])
         _analysis_config = {
             "path": str(Path(path).resolve()),
             "backends_used": [a.name() for a in engine.registry.all_available()],
@@ -206,69 +310,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "size_bytes": model.binary.size_bytes,
             "functions": len(model.functions),
             "strings": len(model.get_strings()),
-            "findings": len(findings),
-            "findings_summary": {
-                sev: sum(1 for f in findings if f.severity.value == sev)
-                for sev in ("critical", "high", "medium", "low", "info")
-            },
-            "hint": "Next: get_findings, detect_protections, get_functions, detect_protocols",
+            "hint": "Next: detect_protections, get_functions, list_source_files, detect_protocols",
         })
-
-    # ── get_findings ────────────────────────────────────────────────────
-    elif name == "get_findings":
-        if not _require_model():
-            return _error("No analysis loaded. Call analyze first.")
-        findings = getattr(_current_model, "findings", [])
-        severity = arguments.get("severity")
-        rule_id = arguments.get("rule_id")
-        if severity:
-            findings = [f for f in findings if f.severity.value == severity]
-        if rule_id:
-            findings = [f for f in findings if f.rule_id == rule_id]
-        offset = arguments.get("offset", 0)
-        limit = arguments.get("limit", 30)
-        page = findings[offset:offset + limit]
-        return _json({
-            "total": len(findings),
-            "offset": offset,
-            "limit": limit,
-            "has_more": offset + limit < len(findings),
-            "findings": [f.to_dict() for f in page],
-        })
-
-    # ── search_finding_evidence ─────────────────────────────────────────
-    elif name == "search_finding_evidence":
-        if not _require_model():
-            return _error("No analysis loaded.")
-        pattern = arguments["pattern"].lower()
-        findings = getattr(_current_model, "findings", [])
-        matched = []
-        for f in findings:
-            searchable = " ".join(filter(None, [
-                f.title, f.description, f.evidence_static,
-                f.evidence_dynamic, f.rule_id, f.location,
-            ])).lower()
-            if pattern in searchable:
-                matched.append(f.to_dict())
-        return _json({"pattern": arguments["pattern"], "matches": len(matched), "findings": matched[:30]})
-
-    # ── update_finding ──────────────────────────────────────────────────
-    elif name == "update_finding":
-        if not _require_model():
-            return _error("No analysis loaded.")
-        findings = getattr(_current_model, "findings", [])
-        idx = arguments["index"]
-        if idx < 0 or idx >= len(findings):
-            return _error(f"Index {idx} out of range (0-{len(findings)-1}).")
-        finding = findings[idx]
-        status = arguments["status"]
-        reason = arguments.get("reason", "")
-        if status == "false_positive":
-            finding.mark_false_positive(reason)
-        elif status == "confirmed":
-            finding.confirm(reason)
-        return _json({"updated": True, "index": idx, "new_status": finding.status.value,
-                       "rule_id": finding.rule_id, "title": finding.title})
 
     # ── get_functions ───────────────────────────────────────────────────
     elif name == "get_functions":
@@ -389,7 +432,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "size_bytes": b.size_bytes, "package_name": b.package_name,
             "functions": len(_current_model.functions),
             "strings": len(_current_model.get_strings()),
-            "findings": len(getattr(_current_model, "findings", [])),
         })
 
     # ── detect_protections ──────────────────────────────────────────────
@@ -527,28 +569,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "errors": result.get("errors", [])[:10],
         })
 
-    # ── export_report ───────────────────────────────────────────────────
-    elif name == "export_report":
-        if not _require_model():
-            return _error("No analysis loaded.")
-        findings = getattr(_current_model, "findings", [])
-        binary_info = {
-            "name": _current_model.binary.path.name,
-            "sha256": _current_model.binary.sha256,
-            "platform": _current_model.binary.platform.value,
-            "format": _current_model.binary.format.value,
-        }
-        fmt = arguments.get("format", "sarif")
-        if fmt == "sarif":
-            from chimera.report.sarif import generate_sarif
-            return [TextContent(type="text", text=generate_sarif(findings))]
-        elif fmt == "json":
-            from chimera.report.json_report import generate_json
-            return [TextContent(type="text", text=generate_json(findings, binary_info))]
-        else:
-            from chimera.report.markdown import generate_markdown
-            return [TextContent(type="text", text=generate_markdown(findings, binary_info))]
-
     # ── list_devices ────────────────────────────────────────────────────
     elif name == "list_devices":
         from chimera.device.android import AndroidDeviceManager
@@ -567,6 +587,347 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if not devices:
             return _json({"devices": [], "hint": "No devices found. Connect via USB and ensure adb/libimobiledevice is installed."})
         return _json({"devices": devices})
+
+    # ── list_source_files ──────────────────────────────────────────────
+    elif name == "list_source_files":
+        if not _require_model():
+            return _error("No analysis loaded.")
+        sha = _current_model.binary.sha256[:12]
+        sources_dir = engine.config.project_dir / "jadx" / sha / "sources"
+        if not sources_dir.exists():
+            return _error("No decompiled sources. jadx must be installed and analysis must have run.")
+        rel_path = arguments.get("path", "")
+        target = sources_dir / rel_path if rel_path else sources_dir
+        try:
+            target.resolve().relative_to(sources_dir.resolve())
+        except ValueError:
+            return _error("Path traversal not allowed.")
+        if not target.exists():
+            return _error(f"Path not found: {rel_path}")
+        pattern = arguments.get("pattern")
+        if pattern:
+            files = sorted(target.rglob(pattern))
+        elif target.is_dir():
+            files = sorted(target.iterdir())
+        else:
+            files = [target]
+        entries = []
+        for f in files[:200]:
+            rel = f.relative_to(sources_dir)
+            entries.append({"path": str(rel), "type": "dir" if f.is_dir() else "file",
+                            "size": f.stat().st_size if f.is_file() else None})
+        return _json({"base": rel_path, "count": len(entries), "entries": entries})
+
+    # ── read_source ─────────────────────────────────────────────────────
+    elif name == "read_source":
+        if not _require_model():
+            return _error("No analysis loaded.")
+        sha = _current_model.binary.sha256[:12]
+        sources_dir = engine.config.project_dir / "jadx" / sha / "sources"
+        file_path = sources_dir / arguments["path"]
+        # Security: prevent path traversal
+        try:
+            file_path.resolve().relative_to(sources_dir.resolve())
+        except ValueError:
+            return _error("Path traversal not allowed.")
+        if not file_path.exists():
+            return _error(f"File not found: {arguments['path']}")
+        content = file_path.read_text(errors="replace")
+        lines = content.splitlines()
+        offset = arguments.get("offset", 0)
+        limit = arguments.get("limit", 200)
+        page = lines[offset:offset + limit]
+        return _json({
+            "path": arguments["path"],
+            "total_lines": len(lines),
+            "offset": offset,
+            "lines": len(page),
+            "has_more": offset + limit < len(lines),
+            "content": "\n".join(page),
+        })
+
+    # ── read_cache ──────────────────────────────────────────────────────
+    elif name == "read_cache":
+        if not _require_model():
+            return _error("No analysis loaded.")
+        category = arguments["category"]
+        data = engine.cache.get_json(_current_model.binary.sha256, category)
+        if data is None:
+            return _error(f"No cached data for category '{category}'. Use list_artifacts to see available keys.")
+        return _json({"category": category, "data": data})
+
+    # ── list_artifacts ──────────────────────────────────────────────────
+    elif name == "list_artifacts":
+        if not _require_model():
+            return _error("No analysis loaded.")
+        sha = _current_model.binary.sha256
+        artifacts = {"cache": [], "directories": []}
+
+        # Cache entries
+        cache_dir = engine.cache._entry_dir(sha)
+        if cache_dir.exists():
+            for f in sorted(cache_dir.iterdir()):
+                if f.is_file():
+                    artifacts["cache"].append({
+                        "key": f.name,
+                        "size": f.stat().st_size,
+                    })
+
+        # On-disk output directories
+        sha_short = sha[:12]
+        for label, path in [
+            ("unpacked", engine.config.project_dir / "unpacked" / sha_short),
+            ("jadx_sources", engine.config.project_dir / "jadx" / sha_short / "sources"),
+            ("jadx_resources", engine.config.project_dir / "jadx" / sha_short / "resources"),
+            ("ghidra", engine.config.project_dir / "ghidra"),
+            ("headers", engine.config.project_dir / "headers" / sha_short),
+        ]:
+            if path.exists():
+                file_count = sum(1 for _ in path.rglob("*") if _.is_file())
+                artifacts["directories"].append({"name": label, "path": str(path), "files": file_count})
+
+        return _json(artifacts)
+
+    # ── get_disassembly ─────────────────────────────────────────────────
+    elif name == "get_disassembly":
+        if not _require_model():
+            return _error("No analysis loaded.")
+        func = _current_model.get_function(arguments["address"])
+        if not func:
+            return _error(f"Function {arguments['address']} not found.")
+        instructions = getattr(func, "disassembly", None) or []
+        return _json({
+            "address": func.address, "name": func.name,
+            "instruction_count": len(instructions),
+            "instructions": instructions,
+        })
+
+    # ── get_class_headers ───────────────────────────────────────────────
+    elif name == "get_class_headers":
+        if not _require_model():
+            return _error("No analysis loaded.")
+        sha = _current_model.binary.sha256[:12]
+        headers_dir = engine.config.project_dir / "headers" / sha
+        if not headers_dir.exists():
+            return _error("No class-dump headers found. iOS analysis with class-dump must have run.")
+        target_file = arguments.get("file")
+        if target_file:
+            header_path = headers_dir / target_file
+            try:
+                header_path.resolve().relative_to(headers_dir.resolve())
+            except ValueError:
+                return _error("Path traversal not allowed.")
+            if not header_path.exists():
+                return _error(f"Header not found: {target_file}")
+            return _json({"file": target_file, "content": header_path.read_text(errors="replace")})
+        # List all headers
+        headers = sorted(headers_dir.glob("*.h"))
+        return _json({
+            "count": len(headers),
+            "headers": [{"name": h.name, "size": h.stat().st_size} for h in headers[:200]],
+        })
+
+    # ── list_packages ───────────────────────────────────────────────────
+    elif name == "list_packages":
+        device_id = arguments["device_id"]
+        from chimera.device.android import AndroidDeviceManager
+        from chimera.device.ios import IOSDeviceManager
+        for ManagerCls in [AndroidDeviceManager, IOSDeviceManager]:
+            mgr = ManagerCls()
+            if mgr.is_available:
+                try:
+                    packages = await mgr.list_packages(device_id)
+                    await mgr.cleanup()
+                    return _json({"device_id": device_id, "count": len(packages), "packages": packages})
+                except (OSError, RuntimeError):
+                    pass
+                await mgr.cleanup()
+        return _error(f"Cannot list packages on device {device_id}. Check connection.")
+
+    # ── get_logcat ──────────────────────────────────────────────────────
+    elif name == "get_logcat":
+        from chimera.device.android import AndroidDeviceManager
+        mgr = AndroidDeviceManager()
+        if not mgr.is_available:
+            return _error("ADB not found. logcat is Android-only.")
+        device_id = arguments["device_id"]
+        package = arguments["package"]
+        lines = arguments.get("lines", 100)
+        output = await mgr.logcat(device_id, package, lines)
+        await mgr.cleanup()
+        return _json({"device_id": device_id, "package": package, "lines": output})
+
+    # ── setup_proxy ─────────────────────────────────────────────────────
+    elif name == "setup_proxy":
+        from chimera.device.android import AndroidDeviceManager
+        mgr = AndroidDeviceManager()
+        if not mgr.is_available:
+            return _error("ADB not found.")
+        ok = await mgr.setup_proxy(arguments["device_id"], arguments["host"], arguments["port"])
+        await mgr.cleanup()
+        return _json({"status": "ok" if ok else "failed",
+                       "proxy": f"{arguments['host']}:{arguments['port']}"})
+
+    # ── clear_proxy ─────────────────────────────────────────────────────
+    elif name == "clear_proxy":
+        from chimera.device.android import AndroidDeviceManager
+        mgr = AndroidDeviceManager()
+        if not mgr.is_available:
+            return _error("ADB not found.")
+        ok = await mgr.clear_proxy(arguments["device_id"])
+        await mgr.cleanup()
+        return _json({"status": "ok" if ok else "failed"})
+
+    # ── start_frida_server ──────────────────────────────────────────────
+    elif name == "start_frida_server":
+        device_id = arguments["device_id"]
+        from chimera.device.android import AndroidDeviceManager
+        from chimera.device.ios import IOSDeviceManager
+        for ManagerCls in [AndroidDeviceManager, IOSDeviceManager]:
+            mgr = ManagerCls()
+            if mgr.is_available:
+                try:
+                    ok = await mgr.start_frida_server(device_id)
+                    await mgr.cleanup()
+                    if ok:
+                        return _json({"status": "running", "device_id": device_id})
+                except (OSError, RuntimeError) as e:
+                    await mgr.cleanup()
+                    return _error(f"Failed to start frida-server: {e}")
+        return _error("No device manager available. Install ADB or libimobiledevice.")
+
+    # ── frida_spawn ─────────────────────────────────────────────────────
+    elif name == "frida_spawn":
+        frida = engine.registry.get("frida")
+        if not frida or not frida.is_available():
+            return _error("Frida is not installed. Install via: pip install frida frida-tools")
+        package = arguments["package"]
+        device_id = arguments.get("device_id")
+        script = arguments.get("script")
+        session = await frida.spawn(package, device_id, script)
+        if not session:
+            return _error(f"Failed to spawn {package}. Check device connection and frida-server.")
+        return _json({"status": "spawned", "session_key": package,
+                       "hint": "Use frida_load_script to inject hooks, frida_messages to read output."})
+
+    # ── frida_attach ────────────────────────────────────────────────────
+    elif name == "frida_attach":
+        frida = engine.registry.get("frida")
+        if not frida or not frida.is_available():
+            return _error("Frida is not installed.")
+        target = arguments["target"]
+        device_id = arguments.get("device_id")
+        # Try as PID if numeric
+        try:
+            target_val = int(target)
+        except ValueError:
+            target_val = target
+        session = await frida.attach(target_val, device_id)
+        if not session:
+            return _error(f"Failed to attach to {target}. Is the app running?")
+        return _json({"status": "attached", "session_key": str(target),
+                       "hint": "Use frida_load_script or frida_exec to instrument."})
+
+    # ── frida_exec ──────────────────────────────────────────────────────
+    elif name == "frida_exec":
+        frida = engine.registry.get("frida")
+        if not frida or not frida.is_available():
+            return _error("Frida is not installed.")
+        session_key = arguments["session_key"]
+        session = frida._sessions.get(session_key)
+        if not session:
+            return _error(f"No active session '{session_key}'. Use frida_attach or frida_spawn first.")
+        result = await session.evaluate(arguments["code"])
+        return _json({"session_key": session_key, "result": result})
+
+    # ── frida_load_script ───────────────────────────────────────────────
+    elif name == "frida_load_script":
+        frida = engine.registry.get("frida")
+        if not frida or not frida.is_available():
+            return _error("Frida is not installed.")
+        session_key = arguments["session_key"]
+        session = frida._sessions.get(session_key)
+        if not session:
+            return _error(f"No active session '{session_key}'.")
+        await session.load_script(arguments["script"])
+        return _json({"status": "loaded", "session_key": session_key})
+
+    # ── frida_messages ──────────────────────────────────────────────────
+    elif name == "frida_messages":
+        frida = engine.registry.get("frida")
+        if not frida or not frida.is_available():
+            return _error("Frida is not installed.")
+        session_key = arguments["session_key"]
+        session = frida._sessions.get(session_key)
+        if not session:
+            return _error(f"No active session '{session_key}'.")
+        since = arguments.get("since", 0)
+        messages = session.messages[since:]
+        return _json({
+            "session_key": session_key,
+            "total": len(session.messages),
+            "since": since,
+            "new_count": len(messages),
+            "messages": messages[:100],
+        })
+
+    # ── frida_detach ────────────────────────────────────────────────────
+    elif name == "frida_detach":
+        frida = engine.registry.get("frida")
+        if not frida or not frida.is_available():
+            return _error("Frida is not installed.")
+        session_key = arguments["session_key"]
+        session = frida._sessions.pop(session_key, None)
+        if not session:
+            return _error(f"No active session '{session_key}'.")
+        await session.detach()
+        return _json({"status": "detached", "session_key": session_key})
+
+    # ── start_fuzz ──────────────────────────────────────────────────────
+    elif name == "start_fuzz":
+        afl = engine.registry.get("afl++")
+        if not afl or not afl.is_available():
+            return _error("AFL++ (afl-fuzz) is not installed.")
+        result = await afl.analyze(arguments["binary"], {
+            "input_dir": arguments["input_dir"],
+            "output_dir": arguments["output_dir"],
+            "duration": arguments.get("duration", 300),
+            "qemu": arguments.get("qemu", True),
+        })
+        return _json(result)
+
+    # ── fuzz_status ─────────────────────────────────────────────────────
+    elif name == "fuzz_status":
+        afl = engine.registry.get("afl++")
+        if not afl or not afl.is_available():
+            return _error("AFL++ not installed.")
+        result = await afl.get_campaign_status(arguments["campaign_id"])
+        return _json(result)
+
+    # ── get_config ──────────────────────────────────────────────────────
+    elif name == "get_config":
+        updates = arguments.get("set")
+        if updates:
+            config = engine.config
+            allowed = {"skip_dynamic", "skip_fuzzing", "ghidra_max_mem", "adb_device", "ios_udid", "ghidra_home"}
+            applied = {}
+            for k, v in updates.items():
+                if k in allowed and hasattr(config, k):
+                    setattr(config, k, v)
+                    applied[k] = v
+            return _json({"updated": applied})
+        # Read config
+        config = engine.config
+        return _json({
+            "project_dir": str(config.project_dir),
+            "cache_dir": str(config.cache_dir),
+            "ghidra_home": config.ghidra_home,
+            "ghidra_max_mem": config.ghidra_max_mem,
+            "skip_dynamic": config.skip_dynamic,
+            "skip_fuzzing": config.skip_fuzzing,
+            "adb_device": config.adb_device,
+            "ios_udid": config.ios_udid,
+        })
 
     return _error(f"Unknown tool: {name}")
 

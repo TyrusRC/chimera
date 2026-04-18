@@ -38,16 +38,11 @@ class ChimeraApp(App):
                 )
             with TabPane("Logcat", id="logcat"):
                 yield Log(id="logcat_log")
-            with TabPane("Findings", id="findings"):
-                yield DataTable(id="findings_table")
         yield Footer()
 
     async def on_mount(self) -> None:
         table = self.query_one("#device_table", DataTable)
         table.add_columns("Platform", "ID", "Model", "OS", "Root/JB")
-        findings_table = self.query_one("#findings_table", DataTable)
-        findings_table.add_columns("Severity", "Rule", "Title", "Location")
-
         # Load devices on mount
         await self._refresh_devices()
 
@@ -81,14 +76,6 @@ class ChimeraApp(App):
         if table.row_count == 0:
             log = self.query_one("#frida_log", Log)
             log.write_line("No devices found. Connect via USB and ensure ADB/libimobiledevice is installed.")
-
-    def load_findings(self, findings: list) -> None:
-        """Populate the findings table with Finding objects."""
-        table = self.query_one("#findings_table", DataTable)
-        table.clear()
-        for f in findings:
-            sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
-            table.add_row(sev, f.rule_id, f.title, f.location)
 
     def action_show_devices(self) -> None:
         self.query_one(TabbedContent).active = "devices"

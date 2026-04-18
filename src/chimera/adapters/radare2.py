@@ -48,7 +48,17 @@ class Radare2Adapter(BackendAdapter):
 
     def _triage(self, r2) -> dict:
         info = _cmd_json(r2, "ij")
-        return {"info": info.get("bin", {}), "core": info.get("core", {})}
+        strings = _cmd_json(r2, "izj")
+        imports = _cmd_json(r2, "iij")
+        # Quick function list without full analysis (uses symbol table)
+        funcs = _cmd_json(r2, "isj")
+        return {
+            "info": info.get("bin", {}),
+            "core": info.get("core", {}),
+            "strings": strings if isinstance(strings, list) else [],
+            "imports": imports if isinstance(imports, list) else [],
+            "functions": [f for f in (funcs if isinstance(funcs, list) else []) if f.get("type") == "FUNC"],
+        }
 
     def _strings(self, r2) -> dict:
         strings = _cmd_json(r2, "izj")

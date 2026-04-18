@@ -13,6 +13,7 @@ class BinaryFormat(Enum):
     APK = "apk"
     AAB = "aab"
     XAPK = "xapk"
+    APKM = "apkm"
     IPA = "ipa"
     DEX = "dex"
     ELF = "elf"
@@ -113,7 +114,8 @@ def _detect_format(path: Path) -> BinaryFormat:
     magic = path.read_bytes()[:4]
     format_map = {
         ".apk": BinaryFormat.APK, ".aab": BinaryFormat.AAB,
-        ".xapk": BinaryFormat.XAPK, ".ipa": BinaryFormat.IPA,
+        ".xapk": BinaryFormat.XAPK, ".apkm": BinaryFormat.APKM,
+        ".apks": BinaryFormat.XAPK, ".ipa": BinaryFormat.IPA,
         ".dex": BinaryFormat.DEX, ".so": BinaryFormat.ELF,
         ".dylib": BinaryFormat.DYLIB, ".dll": BinaryFormat.DLL,
         ".hbc": BinaryFormat.HBC,
@@ -134,7 +136,7 @@ def _detect_format(path: Path) -> BinaryFormat:
 
 
 def _guess_platform(fmt: BinaryFormat) -> Platform:
-    android = {BinaryFormat.APK, BinaryFormat.AAB, BinaryFormat.XAPK, BinaryFormat.DEX}
+    android = {BinaryFormat.APK, BinaryFormat.AAB, BinaryFormat.XAPK, BinaryFormat.APKM, BinaryFormat.DEX}
     ios = {BinaryFormat.IPA, BinaryFormat.MACHO, BinaryFormat.FAT, BinaryFormat.DYLIB}
     if fmt in android:
         return Platform.ANDROID

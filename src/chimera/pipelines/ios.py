@@ -1,4 +1,4 @@
-"""iOS IPA analysis pipeline — orchestrates unpack, metadata, binary analysis, vuln detection."""
+"""iOS IPA analysis pipeline — orchestrates unpack, metadata, binary analysis."""
 
 from __future__ import annotations
 
@@ -33,16 +33,16 @@ async def analyze_ipa(
     if cache.has(binary.sha256):
         cached = cache.get_json(binary.sha256, "triage")
         if cached:
-            logger.info("Cache hit for %s — skipping to vuln detection", binary.sha256[:12])
+            logger.info("Cache hit for %s", binary.sha256[:12])
 
     model = UnifiedProgramModel(binary)
 
     # Phase 1: Unpack IPA
-    logger.info("Phase 1: Unpacking IPA")
+    logger.info("Unpacking IPA")
     unpack_dir = config.project_dir / "unpacked" / binary.sha256[:12]
     unpack_result = unpack_ipa(ipa_path, unpack_dir)
 
-    # Phase 1.5: Framework detection
+    # Phase 2: Framework detection
     from chimera.frameworks.detector import FrameworkDetector
     from chimera.model.binary import Framework
     detected = FrameworkDetector.detect(
@@ -63,7 +63,13 @@ async def analyze_ipa(
     plist = unpack_result["plist"]
     logger.info("Bundle: %s (%s)", plist.get("CFBundleName", "?"), unpack_result["bundle_id"])
 
-    # Phase 2: r2 triage on main binary + frameworks
+    # Cache plist for MCP access
+    import json
+    cache.put(binary.sha256, "info_plist", json.dumps(
+        {k: str(v) for k, v in plist.items()}, indent=2
+    ).encode())
+
+    # Phase 3: r2 triage on main binary + frameworks
     all_binaries: list[Path] = []
     if unpack_result["main_binary"]:
         all_binaries.append(unpack_result["main_binary"])
@@ -72,11 +78,11 @@ async def analyze_ipa(
 
     r2 = registry.get("radare2")
     if r2 and r2.is_available() and all_binaries:
-        logger.info("Phase 2: r2 triage on %d binaries", len(all_binaries))
+        logger.info("r2 triage on %d binaries", len(all_binaries))
 
         async def _r2_triage(bin_path: Path) -> None:
             async with resource_mgr.light():
-                triage = await r2.analyze(str(bin_path), {"mode": "full"})
+                triage = await r2.analyze(str(bin_path), {"mode": "triage"})
                 for s in triage.get("strings", []):
                     if isinstance(s, dict) and "string" in s:
                         model.add_string(
@@ -85,10 +91,10 @@ async def analyze_ipa(
                             section=s.get("section", None),
                         )
                 for f in triage.get("functions", []):
-                    if isinstance(f, dict) and "offset" in f:
-                        offset = f["offset"]
+                    if isinstance(f, dict) and ("offset" in f or "vaddr" in f):
+                        offset = f.get("offset", f.get("vaddr", 0))
                         addr = hex(offset) if isinstance(offset, int) else str(offset)
-                        fname = f.get("name") or f"FUN_{addr}"
+                        fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
                         model.add_function(FunctionInfo(
                             address=addr,
                             name=fname,
@@ -102,10 +108,10 @@ async def analyze_ipa(
 
         await asyncio.gather(*[_r2_triage(bp) for bp in all_binaries])
 
-    # Phase 3: ObjC header extraction
+    # Phase 4: ObjC header extraction
     class_dump = registry.get("class-dump")
     if class_dump and class_dump.is_available() and unpack_result["main_binary"]:
-        logger.info("Phase 3: ObjC header extraction")
+        logger.info("ObjC header extraction")
         async with resource_mgr.light():
             headers_dir = config.project_dir / "headers" / binary.sha256[:12]
             cd_result = await class_dump.analyze(
@@ -119,10 +125,10 @@ async def analyze_ipa(
             logger.info("class-dump: %d headers extracted",
                         cd_result.get("header_count", 0))
 
-    # Phase 4: Ghidra deep analysis on main binary
+    # Phase 5: Ghidra deep analysis on main binary
     ghidra = registry.get("ghidra")
     if ghidra and ghidra.is_available() and unpack_result["main_binary"]:
-        logger.info("Phase 4: Ghidra deep analysis")
+        logger.info("Ghidra deep analysis")
         async with resource_mgr.heavy():
             ghidra_result = await ghidra.analyze(
                 str(unpack_result["main_binary"]),
@@ -130,39 +136,17 @@ async def analyze_ipa(
             )
             cache.put_json(binary.sha256, "ghidra_main", ghidra_result)
 
-    # Phase 5: Vulnerability detection
-    from chimera.vuln.engine import VulnEngine
-
-    logger.info("Phase 5: Vulnerability detection")
-    vuln_engine = VulnEngine()
-
-    entitlements = {}
-    headers_sources = config.project_dir / "headers" / binary.sha256[:12]
-
-    findings = await vuln_engine.scan(
-        platform="ios",
-        jadx_sources_dir=headers_sources if headers_sources.exists() else None,
-        native_libs=[b for b in all_binaries],
-        strings=[{"string": s.value, "address": s.address} for s in model.get_strings()],
-        unpack_dir=unpack_dir,
-        ios_plist=plist,
-        ios_entitlements=entitlements,
-    )
-
-    model.findings = findings
-    logger.info("Found %d vulnerabilities", len(findings))
-
     cache.put_json(binary.sha256, "triage", {
         "platform": "ios",
+        "framework": binary.framework.value,
         "bundle_id": unpack_result["bundle_id"],
         "binary_count": len(all_binaries),
         "framework_count": len(unpack_result["frameworks"]),
         "extension_count": len(unpack_result["extensions"]),
         "function_count": len(model.functions),
         "string_count": len(model.get_strings()),
-        "finding_count": len(findings),
     })
 
-    logger.info("Analysis complete: %d functions, %d strings, %d findings",
-                len(model.functions), len(model.get_strings()), len(findings))
+    logger.info("Analysis complete: %d functions, %d strings",
+                len(model.functions), len(model.get_strings()))
     return model

@@ -6,6 +6,7 @@ services:
     volumes:
       - ./projects:/projects
       - ./cache:/cache
+      - ./e2e/material:/data:ro
     ports:
       - "3000:3000"
       - "8080:8080"
@@ -18,7 +19,5 @@ services:
           memory: 14G
         reservations:
           memory: 4G
-    devices:
-      - /dev/bus/usb:/dev/bus/usb
     stdin_open: true
     tty: true

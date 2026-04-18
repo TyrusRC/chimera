@@ -60,18 +60,6 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
         click.echo(f"  Strings:   {len(model.get_strings())}")
         click.echo()
 
-        findings = getattr(model, "findings", [])
-        if findings:
-            from chimera.vuln.finding import Severity
-            crit = sum(1 for f in findings if f.severity == Severity.CRITICAL)
-            high = sum(1 for f in findings if f.severity == Severity.HIGH)
-            med = sum(1 for f in findings if f.severity == Severity.MEDIUM)
-            low = sum(1 for f in findings if f.severity == Severity.LOW)
-            click.echo(f"  Findings:  {len(findings)} total ({crit} critical, {high} high, {med} medium, {low} low)")
-        else:
-            click.echo("  Findings:  0")
-        click.echo()
-
         available = [a.name() for a in engine.registry.all_available()]
         unavailable = [a.name() for a in engine.registry.all_registered() if not a.is_available()]
         click.echo(f"  Backends used:        {', '.join(available) or 'none'}")
@@ -95,62 +83,6 @@ def info():
         adapter = adapter_cls()
         status = "available" if adapter.is_available() else "NOT FOUND"
         click.echo(f"  {adapter.name():12} {status}")
-
-
-@main.command()
-@click.argument("input_path", type=click.Path(exists=True))
-@click.option("--format", "fmt", type=click.Choice(["sarif", "json", "markdown"]), default="sarif",
-              help="Report format")
-@click.option("--output", "-o", type=click.Path(), default=None,
-              help="Output file (default: stdout)")
-@click.option("--project-dir", type=click.Path(), default=None)
-@click.option("--cache-dir", type=click.Path(), default=None)
-@click.option("--ghidra-home", type=str, default=None)
-def report(input_path: str, fmt: str, output: str | None,
-           project_dir: str | None, cache_dir: str | None, ghidra_home: str | None):
-    """Generate a security report from analyzing a mobile app binary."""
-    asyncio.run(_report(input_path, fmt, output, project_dir, cache_dir, ghidra_home))
-
-
-async def _report(input_path: str, fmt: str, output: str | None,
-                  project_dir: str | None, cache_dir: str | None, ghidra_home: str | None):
-    from chimera.core.config import ChimeraConfig
-    from chimera.core.engine import ChimeraEngine
-    from chimera.report.sarif import generate_sarif
-    from chimera.report.json_report import generate_json
-    from chimera.report.markdown import generate_markdown
-
-    config = ChimeraConfig(
-        project_dir=Path(project_dir) if project_dir else Path.cwd() / "chimera_project",
-        cache_dir=Path(cache_dir) if cache_dir else Path.cwd() / "chimera_cache",
-        ghidra_home=ghidra_home,
-    )
-    engine = ChimeraEngine(config)
-    try:
-        model = await engine.analyze(input_path)
-        findings = getattr(model, "findings", [])
-
-        binary_info = {
-            "name": Path(input_path).name,
-            "sha256": model.binary.sha256,
-            "platform": model.binary.platform.value,
-            "format": model.binary.format.value,
-        }
-
-        if fmt == "sarif":
-            content = generate_sarif(findings)
-        elif fmt == "json":
-            content = generate_json(findings, binary_info)
-        else:
-            content = generate_markdown(findings, binary_info)
-
-        if output:
-            Path(output).write_text(content)
-            click.echo(f"Report written to {output}")
-        else:
-            click.echo(content)
-    finally:
-        await engine.cleanup()
 
 
 @main.command()

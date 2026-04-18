@@ -33,7 +33,6 @@ class ProjectSummary(BaseModel):
     framework: str
     function_count: int
     string_count: int
-    finding_count: int
     status: str
 
 
@@ -45,7 +44,6 @@ async def list_projects() -> list[dict]:
             "name": p.get("name", "?"),
             "platform": p.get("platform", "?"),
             "status": p.get("status", "unknown"),
-            "finding_count": p.get("finding_count", 0),
         }
         for pid, p in _projects.items()
     ]
@@ -66,7 +64,6 @@ async def create_project(req: AnalyzeRequest, background_tasks: BackgroundTasks)
         "path": str(path),
         "platform": "detecting...",
         "status": "analyzing",
-        "finding_count": 0,
     }
 
     background_tasks.add_task(_run_analysis, project_id, req)
@@ -79,18 +76,14 @@ async def _run_analysis(project_id: str, req: AnalyzeRequest):
         engine = ChimeraEngine(config)
         model = await engine.analyze(req.path)
 
-        findings = getattr(model, "findings", [])
-
         _projects[project_id].update({
             "platform": model.binary.platform.value,
             "format": model.binary.format.value,
             "framework": model.binary.framework.value,
             "function_count": len(model.functions),
             "string_count": len(model.get_strings()),
-            "finding_count": len(findings),
             "status": "complete",
             "model": model,
-            "findings": findings,
         })
         logger.info("Analysis complete for %s", project_id)
     except Exception as e:

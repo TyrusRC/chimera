@@ -14,7 +14,6 @@ class UnifiedProgramModel:
         self._functions: dict[str, FunctionInfo] = {}
         self._call_edges: list[CallEdge] = []
         self._strings: list[StringEntry] = []
-        self.findings: list = []
 
     @property
     def functions(self) -> list[FunctionInfo]:

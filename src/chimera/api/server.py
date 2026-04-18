@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from chimera import __version__
-from chimera.api.routes import system, projects, functions, strings, findings, callgraph, devices, export
+from chimera.api.routes import system, projects, functions, strings, callgraph, devices
 from chimera.api.websocket import analysis as ws_analysis
 
 
@@ -33,9 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(functions.router)
     app.include_router(strings.router)
-    app.include_router(findings.router)
     app.include_router(callgraph.router)
-    app.include_router(export.router)
     app.include_router(devices.router)
     app.include_router(ws_analysis.router)
 

@@ -31,19 +31,20 @@ async def analyze_apk(
     if cache.has(binary.sha256):
         cached_triage = cache.get_json(binary.sha256, "triage")
         if cached_triage:
-            logger.info("Cache hit for %s — skipping to vuln detection", binary.sha256[:12])
+            logger.info("Cache hit for %s", binary.sha256[:12])
 
     model = UnifiedProgramModel(binary)
 
-    # Phase 2: Unpack
-    logger.info("Phase 2: Unpacking APK")
+    # Phase 1: Unpack
+    logger.info("Unpacking APK")
     unpack_dir = config.project_dir / "unpacked" / binary.sha256[:12]
     unpack_result = unpack_apk(apk_path, unpack_dir)
 
-    # Phase 2.5: Framework detection
+    # Phase 2: Framework detection
     from chimera.frameworks.detector import FrameworkDetector
     from chimera.model.binary import Framework
-    detected = FrameworkDetector.detect(unpack_dir)
+    detect_dir = unpack_result["output_dir"]
+    detected = FrameworkDetector.detect(detect_dir)
     try:
         binary.framework = Framework(detected.framework)
     except ValueError:
@@ -52,14 +53,28 @@ async def analyze_apk(
                 detected.framework,
                 f" ({detected.variant})" if detected.variant else "")
 
-    # Phase 3: Triage with r2
+    # Phase 3: Read manifest (useful for RE even without vuln scan)
+    manifest_xml = None
+    jadx_sources = None
+    jadx = registry.get("jadx")
+
+    # Try jadx-decoded manifest first (after jadx runs), fallback to raw
+    if unpack_result["manifest_path"].exists():
+        try:
+            raw = unpack_result["manifest_path"].read_text(errors="replace")
+            if raw.lstrip().startswith("<?xml") or raw.lstrip().startswith("<manifest"):
+                manifest_xml = raw
+        except OSError:
+            pass
+
+    # Phase 4: r2 triage on native libraries
     r2 = registry.get("radare2")
     if r2 and r2.is_available() and unpack_result["has_native"]:
-        logger.info("Phase 3: r2 triage on %d native libraries", len(unpack_result["native_libs"]))
+        logger.info("r2 triage on %d native libraries", len(unpack_result["native_libs"]))
 
         async def _r2_triage(lib_path: Path) -> None:
             async with resource_mgr.light():
-                triage = await r2.analyze(str(lib_path), {"mode": "full"})
+                triage = await r2.analyze(str(lib_path), {"mode": "triage"})
                 for s in triage.get("strings", []):
                     if isinstance(s, dict) and "string" in s:
                         model.add_string(
@@ -68,10 +83,10 @@ async def analyze_apk(
                             section=s.get("section", None),
                         )
                 for f in triage.get("functions", []):
-                    if isinstance(f, dict) and "offset" in f:
-                        offset = f["offset"]
+                    if isinstance(f, dict) and ("offset" in f or "vaddr" in f):
+                        offset = f.get("offset", f.get("vaddr", 0))
                         addr = hex(offset) if isinstance(offset, int) else str(offset)
-                        fname = f.get("name") or f"FUN_{addr}"
+                        fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
                         model.add_function(FunctionInfo(
                             address=addr,
                             name=fname,
@@ -83,23 +98,39 @@ async def analyze_apk(
 
         await asyncio.gather(*[_r2_triage(lib) for lib in unpack_result["native_libs"]])
 
-    # Phase 4: Decompile with jadx
-    jadx = registry.get("jadx")
+    # Phase 5: Decompile with jadx
     if jadx and jadx.is_available():
-        logger.info("Phase 4: jadx decompilation")
+        logger.info("jadx decompilation")
         jadx_output = config.project_dir / "jadx" / binary.sha256[:12]
+        jadx_input = unpack_result.get("base_apk_path", apk_path)
         async with resource_mgr.light():
-            jadx_result = await jadx.analyze(str(apk_path), {"output_dir": str(jadx_output)})
+            jadx_result = await jadx.analyze(str(jadx_input), {"output_dir": str(jadx_output)})
             cache.put_json(binary.sha256, "jadx", {
                 "decompiled_files": jadx_result.get("decompiled_files", 0),
                 "packages": jadx_result.get("packages", []),
             })
             logger.info("jadx: %d files decompiled", jadx_result.get("decompiled_files", 0))
 
-    # Phase 5: Deep analysis with Ghidra
+        # Update manifest from jadx-decoded version (more reliable than raw)
+        jadx_sources = jadx_output / "sources"
+        jadx_manifest = jadx_output / "resources" / "AndroidManifest.xml"
+        if jadx_manifest.exists():
+            try:
+                manifest_xml = jadx_manifest.read_text(errors="replace")
+            except OSError:
+                pass
+
+    if manifest_xml is None:
+        logger.warning("AndroidManifest.xml is binary-encoded. Install jadx for proper manifest analysis.")
+
+    # Store decoded manifest in cache for MCP access
+    if manifest_xml:
+        cache.put(binary.sha256, "manifest_xml", manifest_xml.encode())
+
+    # Phase 6: Ghidra deep analysis on native libraries
     ghidra = registry.get("ghidra")
     if ghidra and ghidra.is_available() and unpack_result["has_native"]:
-        logger.info("Phase 5: Ghidra deep analysis on native libraries")
+        logger.info("Ghidra deep analysis on native libraries")
 
         async def _ghidra_analyze(lib_path: Path) -> None:
             async with resource_mgr.heavy():
@@ -111,60 +142,18 @@ async def analyze_apk(
 
         await asyncio.gather(*[_ghidra_analyze(lib) for lib in unpack_result["native_libs"]])
 
-    # Phase 6: Vulnerability detection
-    from chimera.vuln.engine import VulnEngine
-
-    logger.info("Phase 6: Vulnerability detection")
-    vuln_engine = VulnEngine()
-
-    manifest_xml = None
-    # jadx produces a decoded text AndroidManifest.xml in its resources dir
-    jadx_sources = None
-    if jadx and jadx.is_available():
-        jadx_sources = config.project_dir / "jadx" / binary.sha256[:12] / "sources"
-        jadx_manifest = config.project_dir / "jadx" / binary.sha256[:12] / "resources" / "AndroidManifest.xml"
-        if jadx_manifest.exists():
-            try:
-                manifest_xml = jadx_manifest.read_text(errors="replace")
-            except OSError:
-                pass
-
-    # Fallback: try raw manifest (works if APK was not binary-encoded, e.g. debug builds)
-    if manifest_xml is None and unpack_result["manifest_path"].exists():
-        try:
-            raw = unpack_result["manifest_path"].read_text(errors="replace")
-            if raw.lstrip().startswith("<?xml") or raw.lstrip().startswith("<manifest"):
-                manifest_xml = raw
-            else:
-                logger.warning(
-                    "AndroidManifest.xml is binary-encoded. "
-                    "Install jadx for proper manifest analysis."
-                )
-        except OSError:
-            pass
-
-    findings = await vuln_engine.scan(
-        platform="android",
-        manifest_xml=manifest_xml,
-        jadx_sources_dir=jadx_sources,
-        native_libs=unpack_result["native_libs"],
-        strings=[{"string": s.value, "address": s.address} for s in model.get_strings()],
-        unpack_dir=unpack_dir,
-    )
-
-    model.findings = findings
-    logger.info("Found %d vulnerabilities", len(findings))
-
     cache.put_json(binary.sha256, "triage", {
         "platform": "android",
+        "format": binary.format.value,
+        "framework": binary.framework.value,
         "dex_count": unpack_result["dex_count"],
         "has_native": unpack_result["has_native"],
         "native_lib_count": len(unpack_result["native_libs"]),
         "function_count": len(model.functions),
         "string_count": len(model.get_strings()),
-        "finding_count": len(findings),
+        "bundle_format": unpack_result.get("bundle_format"),
     })
 
-    logger.info("Analysis complete: %d functions, %d strings, %d findings",
-                len(model.functions), len(model.get_strings()), len(findings))
+    logger.info("Analysis complete: %d functions, %d strings",
+                len(model.functions), len(model.get_strings()))
     return model

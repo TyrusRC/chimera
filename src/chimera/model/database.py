@@ -59,26 +59,6 @@ CREATE TABLE IF NOT EXISTS strings (
     decrypted_from TEXT
 );
 
-CREATE TABLE IF NOT EXISTS findings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    binary_sha256 TEXT NOT NULL REFERENCES binaries(sha256),
-    rule_id TEXT NOT NULL,
-    severity TEXT NOT NULL,
-    confidence TEXT NOT NULL DEFAULT 'unverified',
-    status TEXT NOT NULL DEFAULT 'open',
-    title TEXT NOT NULL,
-    description TEXT,
-    location TEXT,
-    evidence_static TEXT,
-    evidence_dynamic TEXT,
-    masvs_category TEXT,
-    mastg_test TEXT,
-    business_impact TEXT,
-    poc TEXT,
-    detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    confirmed_at TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS permissions (
     binary_sha256 TEXT NOT NULL REFERENCES binaries(sha256),
     permission TEXT NOT NULL,
