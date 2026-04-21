@@ -1,0 +1,13 @@
+{
+  "variant": "android-xor-string",
+  "sample_name": "sample.apk",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["javac", "d8", "zip"],
+  "expected": {
+    "jadx": {
+      "recovers_xor_decryptor_method": true,
+      "does_not_recover_plaintext": true,
+      "plaintext_that_must_not_appear": "hello"
+    }
+  }
+}

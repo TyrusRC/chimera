@@ -28,3 +28,26 @@ async def test_jadx_recovers_proguard_classes(jadx_adapter, tmp_path):
     all_classes = result["class_basenames"]
     assert_names_contain(all_classes, expected["class_names_contain"])
     assert_no_obfuscated_short_names(all_classes, expected["class_names_do_not_contain_regex"])
+
+
+@register_evidence("jadx", "android-xor-string")
+@pytest.mark.asyncio
+async def test_jadx_does_not_decrypt_xor_strings(jadx_adapter, tmp_path):
+    """Asserts the limit: jadx recovers the decrypt() method but not its output."""
+    from pathlib import Path
+
+    sample = build_sample("android-xor-string")
+    expected = load_expected("android-xor-string")["expected"]["jadx"]
+    result = await jadx_adapter.analyze(str(sample), {"output_dir": str(tmp_path)})
+
+    sources = Path(result["sources_dir"])
+    all_text = "\n".join(
+        p.read_text(errors="replace") for p in sources.rglob("*.java")
+    )
+
+    assert "decrypt" in all_text, "jadx should recover the decrypt() method name"
+    plaintext = expected["plaintext_that_must_not_appear"]
+    assert plaintext not in all_text, (
+        f"Plaintext {plaintext!r} appeared in jadx output — jadx is NOT expected "
+        f"to perform XOR decryption at this layer. Decryption is Sub-project 2's job."
+    )
