@@ -79,10 +79,11 @@ class Radare2Adapter(BackendAdapter):
         r2.cmd("e anal.hasnext=true")
         r2.cmd("e anal.pushret=true")
         r2.cmd("e anal.nonull=true")
-        # Deep analysis pass + prelude scan + call-xref pass.
+        # Deep analysis pass + prelude scan + call-xref pass + import table.
         r2.cmd("aaaa")
         r2.cmd("aap")
         r2.cmd("aac")
+        r2.cmd("aai")
         # Signature scan (soft-skip if no zignatures configured).
         try:
             r2.cmd("zfs")

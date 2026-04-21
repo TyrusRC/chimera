@@ -97,6 +97,8 @@ def build_sample(variant: str) -> Path:
         build_sh = fixture / "build.sh"
         if not build_sh.exists():
             raise FileNotFoundError(f"build.sh missing for {variant}")
+        if shutil.which("bash") is None:
+            pytest.skip(f"bash required to run build.sh for {variant}")
         env = os.environ.copy()
         cache_posix = _to_posix_path(cache)
         fixture_posix = _to_posix_path(fixture)
