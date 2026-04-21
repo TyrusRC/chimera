@@ -1,0 +1,13 @@
+{
+  "variant": "unity-il2cpp-encrypted",
+  "sample_name": "global-metadata.dat",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": [],
+  "expected": {
+    "unity": {
+      "encrypted_metadata_detected": true,
+      "dumped_is_false": true,
+      "guidance_mentions": "encrypted"
+    }
+  }
+}

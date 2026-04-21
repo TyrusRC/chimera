@@ -124,3 +124,26 @@ async def test_unity_metadata_recognized(tmp_path):
     # The stub sample cannot actually dump; assert clean failure contract.
     assert result["dumped"] is False
     assert result.get("guidance"), "guidance missing on failure"
+
+
+@register_evidence("unity", "unity-il2cpp-encrypted")
+@pytest.mark.asyncio
+async def test_unity_encrypted_metadata_bails_cleanly(tmp_path):
+    from chimera.frameworks.unity import UnityAnalyzer
+
+    sample = build_sample("unity-il2cpp-encrypted")
+    fixture_cache = sample.parent
+    expected = load_expected("unity-il2cpp-encrypted")["expected"]["unity"]
+
+    analyzer = UnityAnalyzer()
+    assert analyzer.detect_encrypted_metadata(sample) is expected["encrypted_metadata_detected"]
+
+    # find_metadata should reject the wrong-magic file.
+    assert analyzer.find_metadata(fixture_cache) is None
+
+    # Direct run with the raw path should produce the encrypted-metadata branch.
+    binary = fixture_cache / "libil2cpp.so"
+    result = await analyzer.run_il2cppdumper(binary, sample, tmp_path)
+    assert result["dumped"] is False
+    assert result["encrypted_metadata"] is True
+    assert expected["guidance_mentions"] in result["guidance"].lower()
