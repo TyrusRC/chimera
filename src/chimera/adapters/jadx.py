@@ -34,6 +34,10 @@ class JadxAdapter(BackendAdapter):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         threads = os.environ.get("CHIMERA_JADX_THREADS", "2")
+        # --deobf-min-length 2: rename only 1-char names (jadx default is 3,
+        # which would also rewrite 2-char names like 'a0'/'b1' that ProGuard
+        # actually produces — keep them visible so evidence tests and
+        # Sub-project 2's rules can detect the obfuscation pattern).
         cmd = [
             "jadx",
             "--deobf",

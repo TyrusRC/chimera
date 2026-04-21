@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a 5-class APK, obfuscate with ProGuard (-repackageclasses '').
-# Required tools: javac, d8, proguard, aapt2, zipalign, apksigner.
+# Required tools: javac, d8, proguard (optional), zip.
 set -euo pipefail
 
 CACHE_DIR="${CACHE_DIR:?CACHE_DIR env var required}"
@@ -50,10 +50,16 @@ cat > "$WORK/proguard.pro" <<EOF
 -allowaccessmodification
 -overloadaggressively
 EOF
-proguard @"$WORK/proguard.pro" || true  # some JDKs lack rt.jar; accept
+PROGUARD_APPLIED=1
+proguard @"$WORK/proguard.pro" || PROGUARD_APPLIED=0
 
-# If ProGuard skipped (no rt.jar), fall back: just use input jar.
-[ -s "$JAR_OUT" ] || cp "$JAR_IN" "$JAR_OUT"
+if [ ! -s "$JAR_OUT" ] || [ "$PROGUARD_APPLIED" = "0" ]; then
+  echo "WARN: ProGuard did not run (likely missing rt.jar on JDK 9+); sample is NOT obfuscated" >&2
+  touch "$CACHE_DIR/.proguard_skipped"
+  cp "$JAR_IN" "$JAR_OUT"
+else
+  rm -f "$CACHE_DIR/.proguard_skipped"
+fi
 
 # DEX
 d8 --output "$WORK" "$JAR_OUT"
