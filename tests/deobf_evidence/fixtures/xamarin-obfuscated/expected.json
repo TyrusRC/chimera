@@ -1,0 +1,12 @@
+{
+  "variant": "xamarin-obfuscated",
+  "sample_name": "Lib.dll",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["csc"],
+  "expected": {
+    "xamarin": {
+      "ilspy_decompile_file_count_min": 1,
+      "ilspy_must_contain_symbol": "Greeter"
+    }
+  }
+}

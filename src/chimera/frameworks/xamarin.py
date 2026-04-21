@@ -47,17 +47,46 @@ class XamarinAnalyzer:
             "error": stderr.decode(errors="replace")[:500] if proc.returncode != 0 else None,
         }
 
+    def find_assemblies_blob(self, unpack_dir: Path) -> Path | None:
+        """AOT builds ship compressed assemblies.blob instead of individual DLLs."""
+        blob = Path(unpack_dir) / "assemblies" / "assemblies.blob"
+        return blob if blob.exists() else None
+
+    def content_looks_obfuscated(self, decompile_output_dir: Path) -> bool:
+        """Scan recovered .cs files for _a1()-style method names (post-decompile)."""
+        import re as _re
+        token_re = _re.compile(r"\b_[a-z]\d+\b")
+        total = 0
+        hits = 0
+        for cs in Path(decompile_output_dir).rglob("*.cs"):
+            try:
+                text = cs.read_text(errors="replace")
+            except OSError:
+                continue
+            total += 1
+            if token_re.search(text):
+                hits += 1
+            if total >= 100:
+                break
+        return total > 0 and hits / total > 0.3
+
     async def deobfuscate(self, dll_path: Path, output_path: Path) -> dict:
-        """Run de4dot to remove .NET obfuscation."""
+        """Run de4dot; retry with --strtype hints on failure."""
         if not shutil.which("de4dot"):
             return {"error": "de4dot not installed", "deobfuscated": False}
 
-        proc = await asyncio.create_subprocess_exec(
-            "de4dot", str(dll_path), "-o", str(output_path),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        return {
-            "deobfuscated": proc.returncode == 0 and output_path.exists(),
-            "output": str(output_path),
-        }
+        attempts = [
+            ["de4dot", str(dll_path), "-o", str(output_path)],
+            ["de4dot", str(dll_path), "-o", str(output_path), "--strtype", "delegate"],
+            ["de4dot", str(dll_path), "-o", str(output_path), "--strtype", "emulate"],
+        ]
+        last_err = ""
+        for cmd in attempts:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0 and output_path.exists():
+                return {"deobfuscated": True, "output": str(output_path), "used_cmd": cmd}
+            last_err = stderr.decode(errors="replace")[:500]
+        return {"deobfuscated": False, "output": str(output_path), "error": last_err}

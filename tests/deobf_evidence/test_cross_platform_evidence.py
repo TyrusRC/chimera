@@ -72,3 +72,29 @@ def test_rn_jsc_bundle_module_ids_and_security_scan():
     assert expected["must_find_issue_title_substring"] in titles, (
         f"Expected bearer-token issue, saw titles: {titles!r}"
     )
+
+
+@register_evidence("xamarin", "xamarin-obfuscated")
+@pytest.mark.asyncio
+async def test_xamarin_ilspy_decompiles_lib(tmp_path):
+    import shutil
+
+    from chimera.frameworks.xamarin import XamarinAnalyzer
+
+    if shutil.which("ilspycmd") is None and shutil.which("ilspy") is None:
+        pytest.skip("ilspycmd not on PATH")
+
+    sample = build_sample("xamarin-obfuscated")
+    expected = load_expected("xamarin-obfuscated")["expected"]["xamarin"]
+
+    analyzer = XamarinAnalyzer()
+    result = await analyzer.decompile(sample, tmp_path)
+    assert_min_count(
+        result["file_count"],
+        expected["ilspy_decompile_file_count_min"],
+        "ilspy .cs files",
+    )
+    all_text = "\n".join(
+        p.read_text(errors="replace") for p in tmp_path.rglob("*.cs")
+    )
+    assert expected["ilspy_must_contain_symbol"] in all_text
