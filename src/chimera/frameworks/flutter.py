@@ -29,7 +29,7 @@ class FlutterAnalyzer:
                 result["arch"] = arch
                 return result
 
-        # iOS
+        # iOS — canonical path
         app_fw = unpack_dir / "Frameworks" / "App.framework" / "App"
         flutter_fw = unpack_dir / "Frameworks" / "Flutter.framework" / "Flutter"
         if app_fw.exists():
@@ -37,6 +37,21 @@ class FlutterAnalyzer:
             result["libflutter"] = flutter_fw if flutter_fw.exists() else None
             result["platform"] = "ios"
             return result
+
+        # iOS — Flutter 3.24+ variants; any App Mach-O in a *.framework dir
+        # containing the Dart VM snapshot symbol.
+        for fw in unpack_dir.rglob("*.framework"):
+            candidate = fw / fw.stem
+            if not candidate.exists():
+                continue
+            try:
+                head = candidate.read_bytes()[:4096 * 8]
+            except OSError:
+                continue
+            if b"_kDartVmSnapshotData" in head:
+                result["libapp"] = candidate
+                result["platform"] = "ios"
+                return result
 
         return result
 
@@ -84,12 +99,40 @@ class FlutterAnalyzer:
         return list(set(strings))[:1000]
 
     def detect_obfuscation(self, blutter_output: dict) -> bool:
-        """Check if --obfuscate flag was used (class names are @_a1, @_b2)."""
+        """Check for obfuscation — class-name AND method-signature heuristics."""
         classes = blutter_output.get("classes", [])
-        if not classes:
-            return False
-        obfuscated = sum(1 for c in classes if re.match(r"^@?_[a-z]\d+$", c))
-        return obfuscated / len(classes) > 0.5 if classes else False
+        asm_dir = blutter_output.get("output_dir")
+        if classes:
+            cls_obf = sum(1 for c in classes if re.match(r"^@?_[a-z]\d+$", c))
+            if cls_obf / len(classes) > 0.5:
+                return True
+
+        # Secondary signal: method-name pattern in .dart output
+        if asm_dir:
+            from pathlib import Path as _P
+            p = _P(asm_dir) / "asm"
+            if p.exists():
+                sample_lines: list[str] = []
+                for f in p.rglob("*.dart"):
+                    try:
+                        sample_lines.extend(f.read_text(errors="replace").splitlines()[:500])
+                    except OSError:
+                        continue
+                    if len(sample_lines) > 2000:
+                        break
+                method_tokens = re.findall(r"\b_[a-z]\d+\b", "\n".join(sample_lines))
+                if method_tokens and len(method_tokens) > 20:
+                    return True
+        return False
+
+    def frida_script_path(self) -> str:
+        """Path to the Dart-string runtime recovery stub."""
+        return str(
+            Path(__file__).resolve().parent.parent
+            / "frida_scripts"
+            / "android"
+            / "dart_strings.js"
+        )
 
 
 def _is_interesting_string(s: str) -> bool:

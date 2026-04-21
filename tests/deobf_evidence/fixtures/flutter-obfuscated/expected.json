@@ -1,0 +1,12 @@
+{
+  "variant": "flutter-obfuscated",
+  "sample_name": "libapp.so",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["flutter", "unzip"],
+  "expected": {
+    "flutter": {
+      "min_class_count": 3,
+      "obfuscation_detected": true
+    }
+  }
+}
