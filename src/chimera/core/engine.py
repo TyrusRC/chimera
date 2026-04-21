@@ -14,6 +14,7 @@ from chimera.adapters.jadx import JadxAdapter
 from chimera.adapters.radare2 import Radare2Adapter
 from chimera.adapters.registry import AdapterRegistry
 from chimera.adapters.semgrep import SemgrepAdapter
+from chimera.adapters.webcrack import WebcrackAdapter
 from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
 from chimera.core.resource_manager import ResourceManager
@@ -43,6 +44,7 @@ class ChimeraEngine:
         self.registry.register(FridaAdapter())
         self.registry.register(AFLAdapter())
         self.registry.register(SemgrepAdapter())
+        self.registry.register(WebcrackAdapter())
 
     async def analyze(self, path: str | Path) -> UnifiedProgramModel:
         path = Path(path)
