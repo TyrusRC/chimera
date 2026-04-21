@@ -98,3 +98,29 @@ async def test_xamarin_ilspy_decompiles_lib(tmp_path):
         p.read_text(errors="replace") for p in tmp_path.rglob("*.cs")
     )
     assert expected["ilspy_must_contain_symbol"] in all_text
+
+
+@register_evidence("unity", "unity-il2cpp-plain")
+@pytest.mark.asyncio
+async def test_unity_metadata_recognized(tmp_path):
+    from chimera.frameworks.unity import UnityAnalyzer
+
+    sample = build_sample("unity-il2cpp-plain")
+    fixture_dir = sample.parent
+    expected = load_expected("unity-il2cpp-plain")["expected"]["unity"]
+
+    analyzer = UnityAnalyzer()
+    assert (
+        analyzer.find_metadata(fixture_dir) is not None
+    ) is expected["metadata_magic_recognized"]
+    assert (
+        analyzer.find_il2cpp_binary(fixture_dir) is not None
+    ) is expected["il2cpp_binary_found"]
+
+    binary = analyzer.find_il2cpp_binary(fixture_dir)
+    metadata = analyzer.find_metadata(fixture_dir)
+    result = await analyzer.run_il2cppdumper(binary, metadata, tmp_path)
+
+    # The stub sample cannot actually dump; assert clean failure contract.
+    assert result["dumped"] is False
+    assert result.get("guidance"), "guidance missing on failure"

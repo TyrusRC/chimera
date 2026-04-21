@@ -1,0 +1,13 @@
+{
+  "variant": "unity-il2cpp-plain",
+  "sample_name": "global-metadata.dat",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": [],
+  "expected": {
+    "unity": {
+      "metadata_magic_recognized": true,
+      "il2cpp_binary_found": true,
+      "dumper_result_has_guidance_when_fail": true
+    }
+  }
+}
