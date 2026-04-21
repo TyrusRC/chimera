@@ -1,0 +1,16 @@
+{
+  "variant": "android-proguard-rename",
+  "sample_name": "sample.apk",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["javac", "d8", "proguard", "zip"],
+  "expected": {
+    "jadx": {
+      "min_decompiled_files": 5,
+      "class_names_contain": ["MainActivity"],
+      "class_names_do_not_contain_regex": "^[a-z]$"
+    },
+    "apktool": {
+      "manifest_extracted": true
+    }
+  }
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 from pathlib import Path
 
@@ -32,9 +33,18 @@ class JadxAdapter(BackendAdapter):
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        threads = os.environ.get("CHIMERA_JADX_THREADS", "2")
         cmd = [
-            "jadx", "--deobf", "--deobf-use-sourcename", "--show-bad-code",
-            "--threads-count", "2", "--output-dir", str(output_dir), binary_path,
+            "jadx",
+            "--deobf",
+            "--deobf-use-sourcename",
+            "--deobf-min-length", "2",
+            "--deobf-rewrite-cfg",
+            "--show-bad-code",
+            "--log-level", "error",
+            "--threads-count", threads,
+            "--output-dir", str(output_dir),
+            binary_path,
         ]
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -55,9 +65,11 @@ class JadxAdapter(BackendAdapter):
                 str(f.parent.relative_to(sources)).replace("/", ".").replace("\\", ".")
                 for f in java_files
             })
+            result["class_basenames"] = sorted({f.stem for f in java_files})
         else:
             result["decompiled_files"] = 0
             result["packages"] = []
+            result["class_basenames"] = []
         if proc.returncode != 0:
             result["error"] = stderr.decode(errors="replace")[-2000:]
         return result
