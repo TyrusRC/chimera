@@ -72,14 +72,26 @@ class GhidraAdapter(BackendAdapter):
         output_dir = Path(project_dir) / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        analysis_timeout = int(options.get("analysis_timeout", 300))
+        post_script = Path(__file__).resolve().parent.parent / "ghidra_scripts"
+
         cmd = [
             self._analyze_headless, project_dir, project_name,
             "-import", binary_path, "-overwrite",
             "-max-cpu", "2", f"-Xmx{self._max_mem}",
+            "-analysisTimeoutPerFile", str(analysis_timeout),
+            "-scriptPath", str(post_script),
+            "-postScript", "ExportFunctions.java",
         ]
+        processor = options.get("processor")
+        if processor:
+            cmd.extend(["-processor", processor])
+
+        env = os.environ.copy()
+        env["GHIDRA_JVM_ARGS"] = f"-Dchimera.out.dir={output_dir}"
 
         proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env,
         )
         stdout, stderr = await proc.communicate()
 

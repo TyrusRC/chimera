@@ -75,3 +75,20 @@ async def test_radare2_recovers_functions_on_stripped_arm64(radare2_adapter):
     assert any(expected["must_find_string"] in s for s in strings if s), (
         f"Expected string {expected['must_find_string']!r} not found"
     )
+
+
+@register_evidence("ghidra", "android-native-stripped")
+@pytest.mark.asyncio
+async def test_ghidra_recovers_functions_on_stripped_arm64(ghidra_adapter, tmp_path):
+    sample = build_sample("android-native-stripped")
+    expected = load_expected("android-native-stripped")["expected"]["ghidra"]
+
+    result = await ghidra_adapter.analyze(str(sample), {"project_dir": str(tmp_path)})
+    functions = result.get("functions", [])
+    strings = result.get("strings", [])
+
+    assert_min_count(len(functions), expected["min_functions"], "ghidra functions")
+    string_values = [s.get("value") for s in strings if isinstance(s, dict)]
+    assert any(expected["must_find_string"] in (v or "") for v in string_values), (
+        f"Expected string not in {len(string_values)} ghidra strings"
+    )
