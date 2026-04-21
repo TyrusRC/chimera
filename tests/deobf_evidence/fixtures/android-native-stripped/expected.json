@@ -1,0 +1,17 @@
+{
+  "variant": "android-native-stripped",
+  "sample_name": "libfoo.so",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["clang", "llvm-strip"],
+  "expected": {
+    "radare2": {
+      "min_functions": 3,
+      "min_functions_with_xrefs": 1,
+      "must_find_string": "chimera-test-banner-v1"
+    },
+    "ghidra": {
+      "min_functions": 3,
+      "must_find_string": "chimera-test-banner-v1"
+    }
+  }
+}

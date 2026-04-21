@@ -26,7 +26,8 @@ class Radare2Adapter(BackendAdapter):
 
     async def analyze(self, binary_path: str, options: dict) -> dict:
         mode = options.get("mode", "triage")
-        r2 = r2pipe.open(binary_path, flags=["-2"])
+        # Drop -2 (was silencing stderr); capture-and-surface is better.
+        r2 = r2pipe.open(binary_path, flags=[])
         try:
             if mode == "triage":
                 return self._triage(r2)
@@ -74,10 +75,22 @@ class Radare2Adapter(BackendAdapter):
         return {"imports": imports if isinstance(imports, list) else []}
 
     def _full(self, r2) -> dict:
+        # Tune analysis knobs before running deep analysis.
+        r2.cmd("e anal.hasnext=true")
+        r2.cmd("e anal.pushret=true")
+        r2.cmd("e anal.nonull=true")
+        # Deep analysis pass + prelude scan + call-xref pass.
+        r2.cmd("aaaa")
+        r2.cmd("aap")
+        r2.cmd("aac")
+        # Signature scan (soft-skip if no zignatures configured).
+        try:
+            r2.cmd("zfs")
+        except Exception:
+            pass
         result = self._triage(r2)
         result.update(self._strings(r2))
         result.update(self._imports(r2))
-        r2.cmd("aaa")
         funcs = _cmd_json(r2, "aflj")
         result["functions"] = funcs if isinstance(funcs, list) else []
         return result

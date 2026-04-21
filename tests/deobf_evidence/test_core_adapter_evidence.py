@@ -51,3 +51,27 @@ async def test_jadx_does_not_decrypt_xor_strings(jadx_adapter, tmp_path):
         f"Plaintext {plaintext!r} appeared in jadx output — jadx is NOT expected "
         f"to perform XOR decryption at this layer. Decryption is Sub-project 2's job."
     )
+
+
+@register_evidence("radare2", "android-native-stripped")
+@pytest.mark.asyncio
+async def test_radare2_recovers_functions_on_stripped_arm64(radare2_adapter):
+    sample = build_sample("android-native-stripped")
+    expected = load_expected("android-native-stripped")["expected"]["radare2"]
+
+    result = await radare2_adapter.analyze(str(sample), {"mode": "full"})
+
+    funcs = result.get("functions", [])
+    assert_min_count(len(funcs), expected["min_functions"], "radare2 functions")
+
+    with_xrefs = [f for f in funcs if f.get("nbbs", 0) >= 1 and f.get("size", 0) > 0]
+    assert_min_count(
+        len(with_xrefs),
+        expected["min_functions_with_xrefs"],
+        "r2 functions with body",
+    )
+
+    strings = [s.get("string") for s in result.get("strings", []) if isinstance(s, dict)]
+    assert any(expected["must_find_string"] in s for s in strings if s), (
+        f"Expected string {expected['must_find_string']!r} not found"
+    )
