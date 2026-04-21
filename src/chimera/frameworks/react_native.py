@@ -171,7 +171,9 @@ class ReactNativeAnalyzer:
             content = bundle_path.read_text(errors="replace")
         except OSError:
             return []
-        ids = re.findall(r"__d\s*\(\s*function[^)]*\)\s*,\s*(\d+)", content)
+        # Match pattern: __d(...){ ... }, N, ... where N is the module ID
+        # Uses }, digit, comma pattern which is more robust than matching function parens
+        ids = re.findall(r"}\s*,\s*(\d+)\s*,", content)
         return [int(n) for n in ids]
 
     def hermes_bytecode_version(self, stderr: str) -> int | None:

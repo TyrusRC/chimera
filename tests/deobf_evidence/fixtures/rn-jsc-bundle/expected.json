@@ -1,0 +1,17 @@
+{
+  "variant": "rn-jsc-bundle",
+  "sample_name": "index.android.bundle",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": [],
+  "expected": {
+    "react_native": {
+      "is_hermes": false,
+      "min_module_ids": 3,
+      "must_find_url_substring": "chimera-jsc-test.example.com",
+      "must_find_issue_title_substring": "bearer"
+    },
+    "webcrack": {
+      "min_output_files": 1
+    }
+  }
+}

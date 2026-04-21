@@ -49,3 +49,26 @@ def test_rn_hermes_bundle_is_recognized_and_strings_found():
 
     assert_min_count(len(strings), expected["min_strings_of_interest"], "rn hermes strings")
     assert_string_present(strings, expected["must_find_url_substring"])
+
+
+@register_evidence("react_native", "rn-jsc-bundle")
+def test_rn_jsc_bundle_module_ids_and_security_scan():
+    from chimera.frameworks.react_native import ReactNativeAnalyzer
+
+    sample = build_sample("rn-jsc-bundle")
+    expected = load_expected("rn-jsc-bundle")["expected"]["react_native"]
+
+    analyzer = ReactNativeAnalyzer()
+    assert analyzer.is_hermes(sample) is expected["is_hermes"]
+
+    module_ids = analyzer.extract_module_ids(sample)
+    assert_min_count(len(module_ids), expected["min_module_ids"], "module ids")
+
+    result = analyzer.analyze_bundle(sample, variant="jsc")
+    assert_string_present(result["strings_of_interest"], expected["must_find_url_substring"])
+
+    issues = result["security_issues"]
+    titles = " ".join(i["title"].lower() for i in issues)
+    assert expected["must_find_issue_title_substring"] in titles, (
+        f"Expected bearer-token issue, saw titles: {titles!r}"
+    )

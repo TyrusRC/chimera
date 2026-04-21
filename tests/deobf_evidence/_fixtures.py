@@ -37,6 +37,41 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+_POSIX_PATH_PREFIX = None  # Cache for whether to use /mnt/ or /c
+
+
+def _detect_bash_env() -> str:
+    """Detect if bash is WSL2 (returns '/mnt') or Git Bash (returns '')."""
+    global _POSIX_PATH_PREFIX
+    if _POSIX_PATH_PREFIX is not None:
+        return _POSIX_PATH_PREFIX
+
+    # Test by running a bash command to check /mnt/c
+    result = subprocess.run(
+        ["bash", "-c", "[ -d /mnt/c ] && echo wsl2 || echo gitbash"],
+        capture_output=True, text=True,
+    )
+    if "wsl2" in result.stdout:
+        _POSIX_PATH_PREFIX = "/mnt"
+    else:
+        _POSIX_PATH_PREFIX = ""
+    return _POSIX_PATH_PREFIX
+
+
+def _to_posix_path(p: Path | str) -> str:
+    """Convert Windows path to POSIX path for bash (Git Bash or WSL2)."""
+    s = str(p)
+    if os.name == "nt":  # Windows
+        prefix = _detect_bash_env()
+        if prefix == "/mnt":
+            # WSL2: use /mnt/c instead of /c
+            s = s.replace("\\", "/").replace("C:", "/mnt/c").replace("D:", "/mnt/d")
+        else:
+            # Git Bash: use /c
+            s = s.replace("\\", "/").replace("C:", "/c").replace("D:", "/d")
+    return s
+
+
 def build_sample(variant: str) -> Path:
     """Build or reuse the cached synthetic sample for a variant.
 
@@ -63,11 +98,21 @@ def build_sample(variant: str) -> Path:
         if not build_sh.exists():
             raise FileNotFoundError(f"build.sh missing for {variant}")
         env = os.environ.copy()
-        env["CACHE_DIR"] = str(cache)
-        env["FIXTURE_DIR"] = str(fixture)
-        result = subprocess.run(
-            ["bash", str(build_sh)], env=env, capture_output=True, text=True
-        )
+        cache_posix = _to_posix_path(cache)
+        fixture_posix = _to_posix_path(fixture)
+        build_sh_posix = _to_posix_path(build_sh)
+        # On Windows, use bash -c to ensure environment variables are properly set
+        if os.name == "nt":
+            cmd = f'CACHE_DIR="{cache_posix}" FIXTURE_DIR="{fixture_posix}" bash "{build_sh_posix}"'
+            result = subprocess.run(
+                ["bash", "-c", cmd], env=env, capture_output=True, text=True
+            )
+        else:
+            env["CACHE_DIR"] = str(cache)
+            env["FIXTURE_DIR"] = str(fixture)
+            result = subprocess.run(
+                ["bash", str(build_sh)], env=env, capture_output=True, text=True
+            )
         if result.returncode != 0:
             raise RuntimeError(
                 f"build.sh for {variant} failed: {result.stderr[-2000:]}"
