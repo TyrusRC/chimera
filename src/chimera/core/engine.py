@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from chimera.adapters.afl import AFLAdapter
+from chimera.adapters.apktool import ApktoolAdapter
 from chimera.adapters.class_dump import ClassDumpAdapter
 from chimera.adapters.frida_adapter import FridaAdapter
 from chimera.adapters.ghidra import GhidraAdapter
@@ -37,6 +38,7 @@ class ChimeraEngine:
             max_mem=self.config.ghidra_max_mem,
         ))
         self.registry.register(JadxAdapter())
+        self.registry.register(ApktoolAdapter())
         self.registry.register(ClassDumpAdapter())
         self.registry.register(FridaAdapter())
         self.registry.register(AFLAdapter())

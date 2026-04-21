@@ -21,3 +21,24 @@ def test_webcrack_rn_jsc_bundle_output_files():
     # TODO: implement webcrack integration when tool is available
     # For now, just assert the expected structure exists
     assert "min_output_files" in expected
+
+
+@register_evidence("apktool", "android-proguard-rename")
+@pytest.mark.asyncio
+async def test_apktool_decodes_apk(tmp_path):
+    import shutil
+
+    from chimera.adapters.apktool import ApktoolAdapter
+
+    if shutil.which("apktool") is None:
+        pytest.skip("apktool not on PATH")
+
+    sample = build_sample("android-proguard-rename")
+    expected = load_expected("android-proguard-rename")["expected"]["apktool"]
+
+    adapter = ApktoolAdapter()
+    result = await adapter.analyze(str(sample), {"output_dir": str(tmp_path)})
+
+    assert result["return_code"] == 0, result.get("error", "")
+    if expected["manifest_extracted"]:
+        assert result["manifest_path"] is not None
