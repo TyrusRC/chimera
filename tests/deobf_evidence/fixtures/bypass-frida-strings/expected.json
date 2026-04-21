@@ -1,0 +1,18 @@
+{
+  "variant": "bypass-frida-strings",
+  "sample_name": "strings.txt",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": [],
+  "expected": {
+    "bypass": {
+      "has_root_detection_android": true,
+      "has_jailbreak_detection_ios": true,
+      "has_anti_frida": true,
+      "has_anti_debug": true,
+      "has_ssl_pinning": true,
+      "has_integrity_check": true,
+      "has_packer": true,
+      "packer_name_contains": "jiagu"
+    }
+  }
+}

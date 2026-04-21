@@ -85,6 +85,21 @@ _INTEGRITY_PATTERNS = [
     r"csops", r"LC_CODE_SIGNATURE",
 ]
 
+_COMMERCIAL_PROTECTION_PATTERNS = [
+    ("DexGuard", [r"DexProtector", r"com\.guardsquare\.dexguard"]),
+    ("Bangcle", [r"libsecexe\.so", r"libsecmain\.so"]),
+    ("JiAGu", [r"libjiagu\.so", r"com\.qihoo\.util\.StubApp"]),
+    ("Promon", [r"com\.promon\.", r"Promon SHIELD"]),
+]
+
+_PACKER_PATTERNS = [
+    ("JiAGu", [r"libjiagu\.so", r"\.jiagu\b"]),
+    ("Bangcle", [r"libsecexe\.so"]),
+    ("SecNeo", [r"secneo"]),
+    ("Virbox", [r"virbox"]),
+    ("UPX", [r"UPX!"]),
+]
+
 
 class ProtectionDetector:
     def detect_from_strings(self, strings: list[str], platform: str) -> ProtectionProfile:
@@ -102,8 +117,18 @@ class ProtectionDetector:
         profile.has_ssl_pinning = _match_any(_SSL_PATTERNS, combined)
         profile.has_integrity_check = _match_any(_INTEGRITY_PATTERNS, combined)
 
-        # Collect details
-        for name, patterns in [
+        for name, patterns in _COMMERCIAL_PROTECTION_PATTERNS:
+            if _match_any(patterns, combined):
+                profile.commercial_protection = name
+                break
+
+        for name, patterns in _PACKER_PATTERNS:
+            if _match_any(patterns, combined):
+                profile.has_packer = True
+                profile.packer_name = name
+                break
+
+        for label, patterns in [
             ("root_detection", _ROOT_PATTERNS),
             ("jailbreak_detection", _JAILBREAK_PATTERNS),
             ("anti_frida", _FRIDA_PATTERNS),
@@ -113,9 +138,27 @@ class ProtectionDetector:
         ]:
             for p in patterns:
                 if re.search(p, combined, re.IGNORECASE):
-                    profile.details.append(f"{name}: matched '{p}'")
+                    profile.details.append(f"{label}: matched '{p}'")
 
         return profile
+
+    def detect_packer_from_dex_bytes(self, dex_bytes: bytes) -> tuple[bool, str | None]:
+        """High-entropy classes.dex suggests a packer has encrypted the bytecode."""
+        if not dex_bytes:
+            return False, None
+        import math as _math
+        freq = [0] * 256
+        for b in dex_bytes[:65536]:
+            freq[b] += 1
+        n = min(len(dex_bytes), 65536)
+        ent = 0.0
+        for f in freq:
+            if f:
+                p = f / n
+                ent -= p * _math.log2(p)
+        if ent > 7.5:
+            return True, "unknown-packer"
+        return False, None
 
 
 def _match_any(patterns: list[str], text: str) -> bool:
