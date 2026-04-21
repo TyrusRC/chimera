@@ -30,3 +30,22 @@ async def test_flutter_recovers_dart_classes(tmp_path):
     assert analyzer.detect_obfuscation(result) == expected["obfuscation_detected"]
     # Frida script path is surfaced for Sub-project 2's dynamic tier.
     assert Path(analyzer.frida_script_path()).exists()
+
+
+@register_evidence("react_native", "rn-hermes-bundle")
+def test_rn_hermes_bundle_is_recognized_and_strings_found():
+    from chimera.frameworks.react_native import ReactNativeAnalyzer
+
+    sample = build_sample("rn-hermes-bundle")
+    expected = load_expected("rn-hermes-bundle")["expected"]["react_native"]
+
+    analyzer = ReactNativeAnalyzer()
+    assert analyzer.is_hermes(sample) is expected["is_hermes"]
+
+    result = analyzer.analyze_bundle(sample)
+    strings = result["strings_of_interest"]
+    # Also try the UTF-16 pass; some hermes variants store strings that way.
+    strings += analyzer.extract_utf16_strings(sample)
+
+    assert_min_count(len(strings), expected["min_strings_of_interest"], "rn hermes strings")
+    assert_string_present(strings, expected["must_find_url_substring"])

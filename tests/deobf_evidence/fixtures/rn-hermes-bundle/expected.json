@@ -1,0 +1,13 @@
+{
+  "variant": "rn-hermes-bundle",
+  "sample_name": "index.android.bundle",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["hermesc"],
+  "expected": {
+    "react_native": {
+      "is_hermes": true,
+      "min_strings_of_interest": 1,
+      "must_find_url_substring": "chimera-test.example.com"
+    }
+  }
+}

@@ -88,7 +88,12 @@ class ReactNativeAnalyzer:
                 "output_file": str(output_file),
                 "size": output_file.stat().st_size,
             }
-        return {"decompiled": False, "error": stderr.decode(errors="replace")[:500]}
+        err_text = stderr.decode(errors="replace")
+        return {
+            "decompiled": False,
+            "error": err_text[:500],
+            "hermes_bytecode_version": self.hermes_bytecode_version(err_text),
+        }
 
     def scan_for_issues(self, bundle_path: Path) -> list[dict]:
         """Scan bundle for security-relevant patterns."""
@@ -130,3 +135,46 @@ class ReactNativeAnalyzer:
                             break
                 current = []
         return list(set(strings))[:500]
+
+    def find_source_maps(self, bundle_path: Path) -> list[Path]:
+        """Find sibling .map files."""
+        bundle_path = Path(bundle_path)
+        candidates = [
+            bundle_path.with_suffix(bundle_path.suffix + ".map"),
+            bundle_path.parent / (bundle_path.name + ".map"),
+        ]
+        return [c for c in candidates if c.exists()]
+
+    def extract_utf16_strings(self, bundle_path: Path) -> list[str]:
+        """Scan for UTF-16LE printable strings (hermes sometimes stores them)."""
+        data = bundle_path.read_bytes()
+        out: list[str] = []
+        i = 0
+        while i < len(data) - 1:
+            cur: list[str] = []
+            while (
+                i < len(data) - 1
+                and 0x20 <= data[i] < 0x7F
+                and data[i + 1] == 0x00
+            ):
+                cur.append(chr(data[i]))
+                i += 2
+            if len(cur) >= 8:
+                out.append("".join(cur))
+            else:
+                i += 2
+        return out
+
+    def extract_module_ids(self, bundle_path: Path) -> list[int]:
+        """Extract Metro __d(function(...),N) module IDs from a JSC bundle."""
+        try:
+            content = bundle_path.read_text(errors="replace")
+        except OSError:
+            return []
+        ids = re.findall(r"__d\s*\(\s*function[^)]*\)\s*,\s*(\d+)", content)
+        return [int(n) for n in ids]
+
+    def hermes_bytecode_version(self, stderr: str) -> int | None:
+        """Parse 'Unsupported bytecode version: N' from hermes-dec stderr."""
+        m = re.search(r"bytecode version[:\s]+(\d+)", stderr, re.IGNORECASE)
+        return int(m.group(1)) if m else None
