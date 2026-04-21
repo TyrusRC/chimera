@@ -19,3 +19,6 @@ web/dist/
 .claude/
 e2e/material/
 .worktrees/
+
+# Deobf evidence harness sample cache (regenerated locally)
+tests/deobf_evidence/fixtures/**/.cache/
