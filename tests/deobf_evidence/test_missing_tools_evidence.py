@@ -47,3 +47,25 @@ async def test_apktool_decodes_apk(tmp_path):
     assert result["return_code"] == 0, result.get("error", "")
     if expected["manifest_extracted"]:
         assert result["manifest_path"] is not None
+
+
+def test_frida_dexdump_adapter_is_registered_and_stub_enforces_stub_contract():
+    """v1 ships the adapter as availability-only; analyze() must refuse to run."""
+    import asyncio
+
+    from chimera.adapters.frida_dexdump import FridaDexdumpAdapter
+
+    adapter = FridaDexdumpAdapter()
+    assert adapter.name() == "frida-dexdump"
+    # is_available reflects PATH only; may be True or False.
+    assert isinstance(adapter.is_available(), bool)
+
+    async def _call():
+        await adapter.analyze("/tmp/nope.apk", {})
+
+    try:
+        asyncio.run(_call())
+    except NotImplementedError as e:
+        assert "Sub-project 2" in str(e)
+    else:
+        raise AssertionError("stub must raise NotImplementedError")

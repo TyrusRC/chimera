@@ -9,6 +9,7 @@ from chimera.adapters.afl import AFLAdapter
 from chimera.adapters.apktool import ApktoolAdapter
 from chimera.adapters.class_dump import ClassDumpAdapter
 from chimera.adapters.frida_adapter import FridaAdapter
+from chimera.adapters.frida_dexdump import FridaDexdumpAdapter
 from chimera.adapters.ghidra import GhidraAdapter
 from chimera.adapters.jadx import JadxAdapter
 from chimera.adapters.radare2 import Radare2Adapter
@@ -42,6 +43,7 @@ class ChimeraEngine:
         self.registry.register(ApktoolAdapter())
         self.registry.register(ClassDumpAdapter())
         self.registry.register(FridaAdapter())
+        self.registry.register(FridaDexdumpAdapter())
         self.registry.register(AFLAdapter())
         self.registry.register(SemgrepAdapter())
         self.registry.register(WebcrackAdapter())
