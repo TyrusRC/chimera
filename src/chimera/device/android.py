@@ -69,7 +69,7 @@ class AndroidDeviceManager(DeviceManager):
         return [line.replace("package:", "").strip()
                 for line in output.splitlines() if line.startswith("package:")]
 
-    async def pull_app(self, device_id: str, package: str, output_dir: str) -> str | None:
+    async def pull_app(self, device_id: str, package: str, output_dir: str) -> list[str] | None:
         output = await self._adb_device(device_id, f"shell pm path {package}")
         paths = [line.replace("package:", "").strip()
                  for line in output.splitlines() if line.startswith("package:")]
@@ -78,12 +78,12 @@ class AndroidDeviceManager(DeviceManager):
 
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-        pulled = []
+        pulled: list[str] = []
         for apk_path in paths:
             local = out / Path(apk_path).name
             await self._adb_device(device_id, f"pull {apk_path} {local}")
             pulled.append(str(local))
-        return pulled[0] if pulled else None
+        return pulled or None
 
     async def start_frida_server(self, device_id: str) -> bool:
         try:

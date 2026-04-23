@@ -537,12 +537,25 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             mgr = ManagerCls()
             if mgr.is_available:
                 try:
-                    pulled_path = await mgr.pull_app(device_id, package, output_dir)
-                    if pulled_path:
+                    pulled_paths = await mgr.pull_app(device_id, package, output_dir)
+                    if pulled_paths:
                         await mgr.cleanup()
-                        return _json({"status": "ok", "path": pulled_path, "package": package,
-                                       "device_id": device_id,
-                                       "hint": f"Call analyze(path=\"{pulled_path}\") to start analysis."})
+                        primary = pulled_paths[0]
+                        extra = pulled_paths[1:]
+                        response = {
+                            "status": "ok",
+                            "path": primary,
+                            "split_paths": pulled_paths,
+                            "package": package,
+                            "device_id": device_id,
+                            "hint": f"Call analyze(path=\"{primary}\") to start analysis.",
+                        }
+                        if extra:
+                            response["note"] = (
+                                f"{len(extra)} additional split APK(s) pulled alongside base; "
+                                "pass the base to analyze()."
+                            )
+                        return _json(response)
                 except (OSError, RuntimeError):
                     pass
                 await mgr.cleanup()

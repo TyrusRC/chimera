@@ -50,3 +50,29 @@ async def test_adb_nonzero_exit_raises_with_stderr(monkeypatch):
     import pytest
     with pytest.raises(AdbError, match="device offline"):
         await mgr._adb("devices")
+
+
+async def test_pull_app_returns_all_split_apks(tmp_path, monkeypatch):
+    from chimera.device.android import AndroidDeviceManager
+
+    mgr = AndroidDeviceManager()
+
+    async def fake_adb(device_id, args):
+        if args.startswith("shell pm path"):
+            return (
+                "package:/data/app/base.apk\n"
+                "package:/data/app/split_config.arm64_v8a.apk\n"
+            )
+        if args.startswith("pull "):
+            _, src, dst = args.split()
+            from pathlib import Path
+            Path(dst).write_bytes(b"x")
+        return ""
+
+    monkeypatch.setattr(mgr, "_adb_device", fake_adb)
+
+    paths = await mgr.pull_app("D", "com.x", str(tmp_path))
+    assert isinstance(paths, list), f"expected list, got {type(paths)}"
+    assert len(paths) == 2
+    assert any("base.apk" in p for p in paths)
+    assert any("split_config" in p for p in paths)

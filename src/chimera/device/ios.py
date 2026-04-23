@@ -64,7 +64,7 @@ class IOSDeviceManager(DeviceManager):
                     packages.append(pkg)
         return packages
 
-    async def pull_app(self, device_id: str, package: str, output_dir: str) -> str | None:
+    async def pull_app(self, device_id: str, package: str, output_dir: str) -> list[str] | None:
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         ipa_path = out / f"{package}.ipa"
@@ -75,7 +75,7 @@ class IOSDeviceManager(DeviceManager):
                 "-a", package,
             )
             if ipa_path.exists():
-                return str(ipa_path)
+                return [str(ipa_path)]
         except Exception as e:
             logger.warning("Failed to pull %s: %s", package, e)
         return None
