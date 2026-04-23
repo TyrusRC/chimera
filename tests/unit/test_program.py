@@ -93,3 +93,49 @@ def test_add_function_collision_merges_sources():
     got = m.get_function("0x100")
     assert got is not None
     assert set(got.sources) >= {"radare2", "ghidra"}, got.sources
+
+
+def test_dangling_call_edges_are_dropped_at_query_time():
+    from chimera.model.binary import (
+        Architecture, BinaryFormat, BinaryInfo, Framework, Platform,
+    )
+    from chimera.model.function import FunctionInfo
+    from chimera.model.program import UnifiedProgramModel
+    from pathlib import Path
+
+    b = BinaryInfo(sha256="e"*64, path=Path("/x"), format=BinaryFormat.APK,
+                   platform=Platform.ANDROID, arch=Architecture.DEX,
+                   framework=Framework.NATIVE, size_bytes=1)
+    m = UnifiedProgramModel(b)
+    m.add_function(FunctionInfo(address="0x1", name="a", original_name="a",
+                                language="c", classification="unknown",
+                                layer="native", source_backend="r2"))
+    m.add_call_edge("0x1", "0xDEAD")  # callee does not exist
+    m.add_call_edge("0xBEEF", "0x1")  # caller does not exist
+
+    assert m.get_callees("0x1") == []   # callee 0xDEAD missing
+    assert m.get_callers("0x1") == []   # caller 0xBEEF missing
+
+
+def test_add_call_edge_allows_forward_reference():
+    """Edges may be added before both endpoints exist; query-time filtering handles it."""
+    from chimera.model.binary import (
+        Architecture, BinaryFormat, BinaryInfo, Framework, Platform,
+    )
+    from chimera.model.function import FunctionInfo
+    from chimera.model.program import UnifiedProgramModel
+    from pathlib import Path
+
+    b = BinaryInfo(sha256="d"*64, path=Path("/x"), format=BinaryFormat.APK,
+                   platform=Platform.ANDROID, arch=Architecture.DEX,
+                   framework=Framework.NATIVE, size_bytes=1)
+    m = UnifiedProgramModel(b)
+    m.add_call_edge("0xAAA", "0xBBB")  # neither side exists yet
+    m.add_function(FunctionInfo(address="0xAAA", name="a", original_name="a",
+                                language="c", classification="unknown",
+                                layer="native", source_backend="r2"))
+    m.add_function(FunctionInfo(address="0xBBB", name="b", original_name="b",
+                                language="c", classification="unknown",
+                                layer="native", source_backend="r2"))
+    assert [f.name for f in m.get_callees("0xAAA")] == ["b"]
+    assert [f.name for f in m.get_callers("0xBBB")] == ["a"]

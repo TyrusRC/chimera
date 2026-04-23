@@ -41,6 +41,8 @@ class UnifiedProgramModel:
         return [f for f in self._functions.values() if f.layer == layer]
 
     def add_call_edge(self, caller_addr: str, callee_addr: str, call_type: str = "direct") -> None:
+        """Record a call edge. Addresses need not exist yet - unresolved edges are
+        silently dropped by `get_callees`/`get_callers` at query time."""
         self._call_edges.append(CallEdge(caller_addr, callee_addr, call_type))
 
     def get_callees(self, address: str) -> list[FunctionInfo]:
