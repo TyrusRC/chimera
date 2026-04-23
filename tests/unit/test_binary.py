@@ -107,6 +107,10 @@ def test_detect_format_does_not_read_entire_file(tmp_path, monkeypatch):
     assert all(n is not None and n <= 16 for n in calls), (
         f"magic detection must read <=16 bytes, saw reads: {calls}"
     )
+    total = sum(n for n in calls if isinstance(n, int) and n > 0)
+    assert total <= 64, (
+        f"magic detection must read <=64 bytes total, saw {total} across {len(calls)} reads"
+    )
 
 
 def _make_fake_ipa(path: Path) -> None:
