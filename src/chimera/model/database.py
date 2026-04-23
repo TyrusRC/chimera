@@ -53,7 +53,9 @@ class ChimeraDatabase:
                     size_bytes = EXCLUDED.size_bytes,
                     package_name = EXCLUDED.package_name,
                     version = EXCLUDED.version,
-                    min_sdk = EXCLUDED.min_sdk
+                    min_sdk = EXCLUDED.min_sdk,
+                    analyzed_at = NOW(),
+                    analysis_version = binaries.analysis_version + 1
                 """,
                 binary.sha256,
                 str(binary.path),

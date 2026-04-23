@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS binaries (
     package_name TEXT,
     version TEXT,
     min_sdk INTEGER,
-    analyzed_at TIMESTAMPTZ DEFAULT NOW()
+    analyzed_at TIMESTAMPTZ DEFAULT NOW(),
+    analysis_version INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS functions (

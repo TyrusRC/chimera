@@ -103,3 +103,20 @@ class TestDatabasePg:
         assert loaded is not None
         assert loaded.size_bytes == 9999, \
             "upsert must overwrite existing columns, not DO NOTHING"
+
+    async def test_save_binary_increments_analysis_version(self, db):
+        """Re-saving the same sha256 bumps analysis_version rather than overwriting silently."""
+        b1 = BinaryInfo(sha256="c"*64, path=Path("/a"), format=BinaryFormat.APK,
+                        platform=Platform.ANDROID, arch=Architecture.DEX,
+                        framework=Framework.NATIVE, size_bytes=1)
+        await db.save_binary(b1)
+        b2 = BinaryInfo(sha256="c"*64, path=Path("/a-v2"), format=BinaryFormat.APK,
+                        platform=Platform.ANDROID, arch=Architecture.DEX,
+                        framework=Framework.UNKNOWN, size_bytes=2)
+        await db.save_binary(b2)
+
+        async with db._pool.acquire() as conn:
+            v = await conn.fetchval(
+                "SELECT analysis_version FROM binaries WHERE sha256 = $1", "c"*64,
+            )
+        assert v >= 2
