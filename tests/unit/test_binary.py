@@ -1,6 +1,8 @@
+import io
+import zipfile
 import pytest
 from pathlib import Path
-from chimera.model.binary import BinaryInfo, BinaryFormat, Architecture, Platform, Framework
+from chimera.model.binary import BinaryInfo, BinaryFormat, Architecture, Platform, Framework, _detect_format
 
 
 class TestBinaryFormat:
@@ -78,3 +80,60 @@ class TestBinaryInfo:
         info = BinaryInfo.from_path(apk)
         assert len(info.sha256) == 64
         assert info.path == apk
+
+
+def test_detect_format_does_not_read_entire_file(tmp_path, monkeypatch):
+    p = tmp_path / "huge.so"
+    p.write_bytes(b"\x7fELF" + b"\x00" * (10 * 1024 * 1024))  # 10 MB ELF
+
+    calls: list[int] = []
+
+    real_open = open
+
+    def spy_open(path, mode="r", *a, **kw):
+        f = real_open(path, mode, *a, **kw)
+        if "b" in mode:
+            orig_read = f.read
+
+            def tracked_read(n=-1):
+                calls.append(n)
+                return orig_read(n)
+
+            f.read = tracked_read  # type: ignore[method-assign]
+        return f
+
+    monkeypatch.setattr("builtins.open", spy_open)
+    _detect_format(p)
+    assert all(n is not None and n <= 16 for n in calls), (
+        f"magic detection must read <=16 bytes, saw reads: {calls}"
+    )
+
+
+def _make_fake_ipa(path: Path) -> None:
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("Payload/App.app/Info.plist", b"<plist/>")
+
+
+def _make_fake_apk(path: Path) -> None:
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"<?xml?>")
+        zf.writestr("classes.dex", b"dex\n035\x00")
+
+
+def test_detect_format_disambiguates_zip_by_content_apk(tmp_path):
+    p = tmp_path / "mystery.zip"  # wrong suffix on purpose
+    _make_fake_apk(p)
+    assert _detect_format(p) is BinaryFormat.APK
+
+
+def test_detect_format_disambiguates_zip_by_content_ipa(tmp_path):
+    p = tmp_path / "mystery.zip"
+    _make_fake_ipa(p)
+    assert _detect_format(p) is BinaryFormat.IPA
+
+
+def test_detect_format_suffix_still_wins_for_empty_zip(tmp_path):
+    ipa = tmp_path / "empty.ipa"
+    with zipfile.ZipFile(ipa, "w") as _:
+        pass
+    assert _detect_format(ipa) is BinaryFormat.IPA

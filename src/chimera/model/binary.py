@@ -111,7 +111,6 @@ def _compute_sha256(path: Path) -> str:
 
 def _detect_format(path: Path) -> BinaryFormat:
     suffix = path.suffix.lower()
-    magic = path.read_bytes()[:4]
     format_map = {
         ".apk": BinaryFormat.APK, ".aab": BinaryFormat.AAB,
         ".xapk": BinaryFormat.XAPK, ".apkm": BinaryFormat.APKM,
@@ -121,18 +120,51 @@ def _detect_format(path: Path) -> BinaryFormat:
         ".hbc": BinaryFormat.HBC,
     }
     if suffix in format_map:
-        return format_map[suffix]
+        # Even with a "known" suffix, an IPA may be mislabeled .zip; disambiguate ZIPs below
+        if suffix not in (".apk", ".aab", ".xapk", ".apkm", ".apks", ".ipa"):
+            return format_map[suffix]
+
+    with open(path, "rb") as fh:
+        magic = fh.read(8)
+
     if magic[:4] == b"\x7fELF":
         return BinaryFormat.ELF
     if magic[:4] in (b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe"):
         return BinaryFormat.MACHO
     if magic[:4] in (b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbe"):
         return BinaryFormat.FAT
-    if magic[:4] == b"PK\x03\x04":
-        return BinaryFormat.IPA if suffix == ".ipa" else BinaryFormat.APK
     if magic[:4] == b"dex\n":
         return BinaryFormat.DEX
+    if magic[:4] == b"PK\x03\x04":
+        return _classify_zip(path, suffix)
+
+    if suffix in format_map:
+        return format_map[suffix]
     return BinaryFormat.ELF
+
+
+def _classify_zip(path: Path, suffix: str) -> BinaryFormat:
+    """Inspect the ZIP central directory to decide APK vs IPA vs AAB."""
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            names = zf.namelist()
+    except zipfile.BadZipFile:
+        return BinaryFormat.APK if suffix != ".ipa" else BinaryFormat.IPA
+
+    if any(n.startswith("Payload/") and n.endswith(".app/Info.plist") for n in names):
+        return BinaryFormat.IPA
+    if "AndroidManifest.xml" in names:
+        return BinaryFormat.APK
+    if "base/manifest/AndroidManifest.xml" in names:
+        return BinaryFormat.AAB
+    if any(n.endswith(".apk") for n in names):
+        if suffix == ".apkm":
+            return BinaryFormat.APKM
+        return BinaryFormat.XAPK
+    # Empty or unknown ZIP: fall back to suffix
+    return BinaryFormat.IPA if suffix == ".ipa" else BinaryFormat.APK
 
 
 def _guess_platform(fmt: BinaryFormat) -> Platform:
