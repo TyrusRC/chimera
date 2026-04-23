@@ -116,3 +116,27 @@ async def test_android_r2_malformed_output_does_not_crash(tmp_path):
     fn_names = [f.name for f in model.functions]
     assert "ok" in fn_names
     assert "garbage" not in fn_names
+
+
+async def test_android_skipped_phases_recorded_in_triage(tmp_path):
+    """When r2/jadx/ghidra are missing, triage entry must list them as skipped."""
+    from chimera.pipelines.android import analyze_apk
+    apk = tmp_path / "a.apk"
+    _minimal_apk(apk)
+    # Add a native lib so r2/ghidra phases are reachable
+    import zipfile
+    with zipfile.ZipFile(apk, "a") as zf:
+        zf.writestr("lib/arm64-v8a/libnative.so", b"\x7fELF" + b"\x00" * 100)
+
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    rm = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()  # empty
+
+    await analyze_apk(apk, cfg, registry, rm, cache)
+    from chimera.model.binary import BinaryInfo
+    triage = cache.get_json(BinaryInfo.from_path(apk).sha256, "triage")
+    assert "skipped_phases" in triage
+    assert "radare2" in triage["skipped_phases"]
+    assert "jadx" in triage["skipped_phases"]
+    assert "ghidra" in triage["skipped_phases"]

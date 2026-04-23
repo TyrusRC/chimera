@@ -67,6 +67,12 @@ async def analyze_ipa(
 
     if not unpack_result["app_bundle"]:
         logger.error("No .app bundle found in IPA")
+        cache.put_json(binary.sha256, "triage", {
+            "platform": "ios",
+            "status": "skipped",
+            "reason": "no_app_bundle",
+            "framework": binary.framework.value,
+        })
         return model
 
     plist = unpack_result["plist"]

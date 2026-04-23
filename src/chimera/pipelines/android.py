@@ -53,6 +53,7 @@ async def analyze_apk(
             return model
 
     model = UnifiedProgramModel(binary)
+    skipped_phases: list[str] = []
 
     # Phase 1: Unpack
     logger.info("Unpacking APK")
@@ -88,7 +89,11 @@ async def analyze_apk(
 
     # Phase 4: r2 triage on native libraries
     r2 = registry.get("radare2")
-    if r2 and r2.is_available() and unpack_result["has_native"]:
+    if not (r2 and r2.is_available() and unpack_result["has_native"]):
+        if unpack_result["has_native"]:
+            skipped_phases.append("radare2")
+            logger.warning("radare2 unavailable — skipping native triage")
+    else:
         logger.info("r2 triage on %d native libraries", len(unpack_result["native_libs"]))
 
         async def _r2_triage(lib_path: Path) -> None:
@@ -120,7 +125,10 @@ async def analyze_apk(
         await asyncio.gather(*[_r2_triage(lib) for lib in unpack_result["native_libs"]])
 
     # Phase 5: Decompile with jadx
-    if jadx and jadx.is_available():
+    if not (jadx and jadx.is_available()):
+        skipped_phases.append("jadx")
+        logger.warning("jadx unavailable — skipping decompile")
+    else:
         logger.info("jadx decompilation")
         jadx_output = config.project_dir / "jadx" / binary.sha256[:12]
         jadx_input = unpack_result.get("base_apk_path", apk_path)
@@ -150,7 +158,11 @@ async def analyze_apk(
 
     # Phase 6: Ghidra deep analysis on native libraries
     ghidra = registry.get("ghidra")
-    if ghidra and ghidra.is_available() and unpack_result["has_native"]:
+    if not (ghidra and ghidra.is_available() and unpack_result["has_native"]):
+        if unpack_result["has_native"]:
+            skipped_phases.append("ghidra")
+            logger.warning("ghidra unavailable — skipping deep analysis")
+    else:
         logger.info("Ghidra deep analysis on native libraries")
 
         async def _ghidra_analyze(lib_path: Path) -> None:
@@ -173,6 +185,7 @@ async def analyze_apk(
         "function_count": len(model.functions),
         "string_count": len(model.get_strings()),
         "bundle_format": unpack_result.get("bundle_format"),
+        "skipped_phases": skipped_phases,
     })
 
     logger.info("Analysis complete: %d functions, %d strings",

@@ -59,3 +59,23 @@ async def test_ios_cache_hit_rehydrates_functions_and_strings(tmp_path):
     model = await analyze_ipa(ipa, cfg, registry, rm, cache)
     assert [s.value for s in model.get_strings()] == ["hello"]
     assert [f.name for f in model.functions] == ["foo"]
+
+
+async def test_ios_no_app_bundle_writes_explicit_status(tmp_path):
+    from chimera.pipelines.ios import analyze_ipa
+    import zipfile
+    ipa = tmp_path / "empty.ipa"
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("README.txt", b"no bundle")
+
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    rm = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+
+    await analyze_ipa(ipa, cfg, registry, rm, cache)
+    from chimera.model.binary import BinaryInfo
+    triage = cache.get_json(BinaryInfo.from_path(ipa).sha256, "triage")
+    assert triage is not None
+    assert triage.get("status") == "skipped"
+    assert triage.get("reason") == "no_app_bundle"
