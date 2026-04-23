@@ -13,18 +13,23 @@ logger = logging.getLogger(__name__)
 
 def detect_binary_format(path: Path) -> str:
     path = Path(path)
-    magic = b""
-    if path.exists() and path.stat().st_size >= 4:
-        magic = path.read_bytes()[:4]
-    if magic == b"\x7fELF":
+    if not path.exists():
+        raise FileNotFoundError(f"binary not found: {path}")
+    if path.stat().st_size < 4:
+        raise ValueError(f"binary too short to identify ({path.stat().st_size} bytes): {path}")
+
+    with open(path, "rb") as fh:
+        magic = fh.read(8)
+
+    if magic[:4] == b"\x7fELF":
         return "elf"
-    if magic in (b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe"):
+    if magic[:4] in (b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe"):
         return "macho"
-    if magic in (b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbe"):
+    if magic[:4] in (b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbe"):
         return "fat"
     if magic[:3] == b"dex":
         return "dex"
-    if magic == b"PK\x03\x04" or path.suffix.lower() in (".apk", ".ipa", ".aab", ".xapk", ".apkm", ".apks"):
+    if magic[:4] == b"PK\x03\x04" or path.suffix.lower() in (".apk", ".ipa", ".aab", ".xapk", ".apkm", ".apks"):
         return _detect_zip_format(path)
     ext_map = {".so": "elf", ".dylib": "dylib", ".dll": "dll", ".hbc": "hbc"}
     return ext_map.get(path.suffix.lower(), "unknown")

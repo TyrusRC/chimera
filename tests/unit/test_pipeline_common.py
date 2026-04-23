@@ -76,3 +76,17 @@ class TestDetectBinaryFormat:
         dex = tmp_path / "classes.dex"
         dex.write_bytes(b"dex\n035\x00" + b"\x00" * 60)
         assert detect_binary_format(dex) == "dex"
+
+
+def test_detect_binary_format_rejects_zero_byte_file(tmp_path):
+    from chimera.pipelines.common import detect_binary_format
+    empty = tmp_path / "empty.apk"
+    empty.write_bytes(b"")
+    with pytest.raises(ValueError, match="too short"):
+        detect_binary_format(empty)
+
+
+def test_detect_binary_format_rejects_missing_file(tmp_path):
+    from chimera.pipelines.common import detect_binary_format
+    with pytest.raises(FileNotFoundError):
+        detect_binary_format(tmp_path / "nope.apk")
