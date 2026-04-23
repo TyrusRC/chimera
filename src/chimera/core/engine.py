@@ -69,4 +69,7 @@ class ChimeraEngine:
 
     async def cleanup(self) -> None:
         for adapter in self.registry.all_registered():
-            await adapter.cleanup()
+            try:
+                await adapter.cleanup()
+            except Exception as exc:
+                logger.warning("adapter %s cleanup failed: %s", adapter.name(), exc)

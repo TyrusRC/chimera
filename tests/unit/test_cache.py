@@ -45,3 +45,20 @@ class TestAnalysisCache:
     def test_cache_path_for(self, cache):
         path = cache.path_for("abc123", "decompiled")
         assert "abc123" in str(path)
+
+
+def test_get_json_logs_and_returns_none_on_corrupted_entry(tmp_path, caplog):
+    from chimera.core.cache import AnalysisCache
+
+    cache = AnalysisCache(tmp_path)
+    sha = "a" * 64
+    path = cache.path_for(sha, "triage")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"not-json{{")
+
+    with caplog.at_level("WARNING"):
+        result = cache.get_json(sha, "triage")
+
+    assert result is None
+    assert any("corrupted" in r.message.lower() or "decode" in r.message.lower()
+               for r in caplog.records)

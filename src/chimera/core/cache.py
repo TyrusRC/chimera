@@ -41,4 +41,11 @@ class AnalysisCache:
         raw = self.get(sha256, category)
         if raw is None:
             return None
-        return json.loads(raw)
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "cache entry corrupted, dropping: %s/%s (%s)", sha256[:12], category, exc
+            )
+            return None
