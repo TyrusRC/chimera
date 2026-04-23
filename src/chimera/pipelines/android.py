@@ -13,7 +13,7 @@ from chimera.core.resource_manager import ResourceManager
 from chimera.model.binary import BinaryInfo
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
-from chimera.pipelines.common import unpack_apk
+from chimera.pipelines.common import _rehydrate_from_cache, unpack_apk
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ async def analyze_apk(
                 binary.framework = Framework(cached_triage.get("framework", "native"))
             except ValueError:
                 binary.framework = Framework.NATIVE
+            _rehydrate_from_cache(model, cache, binary.sha256, language="c", layer="native")
             return model
 
     model = UnifiedProgramModel(binary)

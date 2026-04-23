@@ -37,3 +37,25 @@ async def test_ios_cache_hit_short_circuits(tmp_path):
     unpacked = cfg.project_dir / "unpacked"
     assert not unpacked.exists(), "cache hit must short-circuit before unpack"
     assert model.binary.sha256 == binary.sha256
+
+
+async def test_ios_cache_hit_rehydrates_functions_and_strings(tmp_path):
+    from chimera.pipelines.ios import analyze_ipa
+    ipa = tmp_path / "r.ipa"
+    _minimal_ipa(ipa)
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    registry = AdapterRegistry()
+    rm = ResourceManager(total_ram_mb=4096)
+
+    from chimera.model.binary import BinaryInfo
+    binary = BinaryInfo.from_path(ipa)
+    cache.put_json(binary.sha256, "triage", {"platform": "ios", "framework": "native"})
+    cache.put_json(binary.sha256, "r2_main", {
+        "strings": [{"string": "hello", "vaddr": 0x1000}],
+        "functions": [{"name": "foo", "offset": 0x2000}],
+    })
+
+    model = await analyze_ipa(ipa, cfg, registry, rm, cache)
+    assert [s.value for s in model.get_strings()] == ["hello"]
+    assert [f.name for f in model.functions] == ["foo"]

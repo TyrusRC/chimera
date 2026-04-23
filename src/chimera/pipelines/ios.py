@@ -13,7 +13,7 @@ from chimera.core.resource_manager import ResourceManager
 from chimera.model.binary import BinaryInfo
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
-from chimera.pipelines.common import unpack_ipa
+from chimera.pipelines.common import _rehydrate_from_cache, unpack_ipa
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ async def analyze_ipa(
                 binary.framework = Framework(cached.get("framework", "native"))
             except ValueError:
                 binary.framework = Framework.NATIVE
+            _rehydrate_from_cache(model, cache, binary.sha256, language="objc", layer="native")
             return model
 
     model = UnifiedProgramModel(binary)

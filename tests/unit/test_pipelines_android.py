@@ -45,3 +45,25 @@ async def test_android_cache_hit_short_circuits(tmp_path, caplog):
         if unpacked.exists() else ""
     )
     assert model.binary.sha256 == binary.sha256
+
+
+async def test_android_cache_hit_rehydrates_functions_and_strings(tmp_path):
+    from chimera.pipelines.android import analyze_apk
+    apk = tmp_path / "r.apk"
+    _minimal_apk(apk)
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    registry = AdapterRegistry()
+    rm = ResourceManager(total_ram_mb=4096)
+
+    from chimera.model.binary import BinaryInfo
+    binary = BinaryInfo.from_path(apk)
+    cache.put_json(binary.sha256, "triage", {"platform": "android", "framework": "native"})
+    cache.put_json(binary.sha256, "r2_libfoo.so", {
+        "strings": [{"string": "hello", "vaddr": 0x1000}],
+        "functions": [{"name": "foo", "offset": 0x2000}],
+    })
+
+    model = await analyze_apk(apk, cfg, registry, rm, cache)
+    assert [s.value for s in model.get_strings()] == ["hello"]
+    assert [f.name for f in model.functions] == ["foo"]

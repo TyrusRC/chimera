@@ -316,3 +316,49 @@ def unpack_ipa(ipa_path: Path, output_dir: Path) -> dict:
         "extensions": extensions,
         "has_provision": has_provision,
     }
+
+
+def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: str) -> None:
+    """Replay r2_* cache entries into the model's functions + strings on a cache hit.
+
+    Cold-path populates the model only from r2 output; jadx/ghidra go to cache-only.
+    So rehydration reads each r2_<lib> entry and replays the same add_* calls.
+    """
+    from chimera.model.function import FunctionInfo
+
+    # cache._entry_dir is the internal helper in core/cache.py that returns
+    # cache_dir / sha256[:2] / sha256 — used because there's no public iterator.
+    entry_dir = cache._entry_dir(sha256)
+    if not entry_dir.exists():
+        return
+    for category_file in entry_dir.iterdir():
+        name = category_file.name
+        if not name.startswith("r2_"):
+            continue
+        triage = cache.get_json(sha256, name)
+        if not isinstance(triage, dict):
+            continue
+        for s in triage.get("strings", []):
+            if isinstance(s, dict) and isinstance(s.get("string"), str) and s.get("string"):
+                model.add_string(
+                    address=str(s.get("vaddr", "0x0")),
+                    value=s["string"],
+                    section=s.get("section", None),
+                )
+        for f in triage.get("functions", []):
+            if not isinstance(f, dict):
+                continue
+            off = f.get("offset", f.get("vaddr"))
+            if not isinstance(off, (int, str)):
+                continue
+            addr = hex(off) if isinstance(off, int) else str(off)
+            fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
+            model.add_function(FunctionInfo(
+                address=addr,
+                name=fname,
+                original_name=fname,
+                language=language,
+                classification="unknown",
+                layer=layer,
+                source_backend="radare2",
+            ))
