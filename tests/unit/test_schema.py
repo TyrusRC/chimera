@@ -23,3 +23,9 @@ def test_schema_uses_trigram_index_on_name():
     assert "strings_value_trgm_idx" in PROJECT_SCHEMA
     assert PROJECT_SCHEMA.count("gin_trgm_ops") == 2, \
         "expected one trigram index per searchable text column (functions.name, strings.value)"
+
+
+def test_schema_has_call_graph_callee_index():
+    from chimera.model.schema import PROJECT_SCHEMA
+    assert "idx_callgraph_callee" in PROJECT_SCHEMA
+    assert "callee_addr" in PROJECT_SCHEMA.split("idx_callgraph_callee")[1][:200]

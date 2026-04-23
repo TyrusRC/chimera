@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS call_graph (
     PRIMARY KEY (caller_binary, caller_addr, callee_addr)
 );
 
+CREATE INDEX IF NOT EXISTS idx_callgraph_callee
+    ON call_graph(caller_binary, callee_addr);
+
 CREATE TABLE IF NOT EXISTS strings (
     id BIGSERIAL PRIMARY KEY,
     binary_sha256 TEXT NOT NULL REFERENCES binaries(sha256) ON DELETE CASCADE,
