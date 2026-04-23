@@ -20,6 +20,7 @@ class FunctionInfo:
     disassembly: Optional[list[dict]] = None
     ai_renamed: bool = False
     ai_comments: Optional[str] = None
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass

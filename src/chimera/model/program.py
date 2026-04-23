@@ -20,7 +20,16 @@ class UnifiedProgramModel:
         return list(self._functions.values())
 
     def add_function(self, func: FunctionInfo) -> None:
-        self._functions[func.address] = func
+        existing = self._functions.get(func.address)
+        if existing is None:
+            # Seed sources from the first backend
+            if not func.sources:
+                func.sources = [func.source_backend]
+            self._functions[func.address] = func
+            return
+        # Merge: keep first-seen function, record additional backend
+        if func.source_backend and func.source_backend not in existing.sources:
+            existing.sources.append(func.source_backend)
 
     def get_function(self, address: str) -> FunctionInfo | None:
         return self._functions.get(address)

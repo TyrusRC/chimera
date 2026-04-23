@@ -69,3 +69,27 @@ class TestUnifiedProgramModel:
                            language="c", classification="crypto", layer="native", source_backend="ghidra"))
         crypto_funcs = model.get_functions_by_classification("crypto")
         assert len(crypto_funcs) == 2
+
+
+def test_add_function_collision_merges_sources():
+    from chimera.model.binary import (
+        Architecture, BinaryFormat, BinaryInfo, Framework, Platform,
+    )
+    from chimera.model.function import FunctionInfo
+    from chimera.model.program import UnifiedProgramModel
+    from pathlib import Path
+
+    b = BinaryInfo(sha256="f"*64, path=Path("/x"), format=BinaryFormat.APK,
+                   platform=Platform.ANDROID, arch=Architecture.DEX,
+                   framework=Framework.NATIVE, size_bytes=1)
+    m = UnifiedProgramModel(b)
+
+    m.add_function(FunctionInfo(address="0x100", name="a", original_name="a",
+                                language="c", classification="unknown",
+                                layer="native", source_backend="radare2"))
+    m.add_function(FunctionInfo(address="0x100", name="a", original_name="a",
+                                language="c", classification="unknown",
+                                layer="native", source_backend="ghidra"))
+    got = m.get_function("0x100")
+    assert got is not None
+    assert set(got.sources) >= {"radare2", "ghidra"}, got.sources
