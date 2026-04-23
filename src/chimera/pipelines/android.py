@@ -18,6 +18,17 @@ from chimera.pipelines.common import _rehydrate_from_cache, unpack_apk
 logger = logging.getLogger(__name__)
 
 
+def _valid_r2_string(s: object) -> bool:
+    return isinstance(s, dict) and isinstance(s.get("string"), str) and bool(s.get("string"))
+
+
+def _valid_r2_function(f: object) -> bool:
+    if not isinstance(f, dict):
+        return False
+    off = f.get("offset", f.get("vaddr"))
+    return isinstance(off, (int, str))
+
+
 async def analyze_apk(
     apk_path: Path,
     config: ChimeraConfig,
@@ -84,24 +95,26 @@ async def analyze_apk(
             async with resource_mgr.light():
                 triage = await r2.analyze(str(lib_path), {"mode": "triage"})
                 for s in triage.get("strings", []):
-                    if isinstance(s, dict) and "string" in s:
-                        model.add_string(
-                            address=str(s.get("vaddr", "0x0")),
-                            value=s["string"],
-                            section=s.get("section", None),
-                        )
+                    if not _valid_r2_string(s):
+                        continue
+                    model.add_string(
+                        address=str(s.get("vaddr", "0x0")),
+                        value=s["string"],
+                        section=s.get("section", None),
+                    )
                 for f in triage.get("functions", []):
-                    if isinstance(f, dict) and ("offset" in f or "vaddr" in f):
-                        offset = f.get("offset", f.get("vaddr", 0))
-                        addr = hex(offset) if isinstance(offset, int) else str(offset)
-                        fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
-                        model.add_function(FunctionInfo(
-                            address=addr,
-                            name=fname,
-                            original_name=fname,
-                            language="c", classification="unknown",
-                            layer="native", source_backend="radare2",
-                        ))
+                    if not _valid_r2_function(f):
+                        continue
+                    offset = f.get("offset", f.get("vaddr", 0))
+                    addr = hex(offset) if isinstance(offset, int) else str(offset)
+                    fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
+                    model.add_function(FunctionInfo(
+                        address=addr,
+                        name=fname,
+                        original_name=fname,
+                        language="c", classification="unknown",
+                        layer="native", source_backend="radare2",
+                    ))
                 cache.put_json(binary.sha256, f"r2_{lib_path.name}", triage)
 
         await asyncio.gather(*[_r2_triage(lib) for lib in unpack_result["native_libs"]])

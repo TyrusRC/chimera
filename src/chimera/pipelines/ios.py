@@ -13,6 +13,7 @@ from chimera.core.resource_manager import ResourceManager
 from chimera.model.binary import BinaryInfo
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
+from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
 from chimera.pipelines.common import _rehydrate_from_cache, unpack_ipa
 
 logger = logging.getLogger(__name__)
@@ -92,26 +93,28 @@ async def analyze_ipa(
             async with resource_mgr.light():
                 triage = await r2.analyze(str(bin_path), {"mode": "triage"})
                 for s in triage.get("strings", []):
-                    if isinstance(s, dict) and "string" in s:
-                        model.add_string(
-                            address=str(s.get("vaddr", "0x0")),
-                            value=s["string"],
-                            section=s.get("section", None),
-                        )
+                    if not _valid_r2_string(s):
+                        continue
+                    model.add_string(
+                        address=str(s.get("vaddr", "0x0")),
+                        value=s["string"],
+                        section=s.get("section", None),
+                    )
                 for f in triage.get("functions", []):
-                    if isinstance(f, dict) and ("offset" in f or "vaddr" in f):
-                        offset = f.get("offset", f.get("vaddr", 0))
-                        addr = hex(offset) if isinstance(offset, int) else str(offset)
-                        fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
-                        model.add_function(FunctionInfo(
-                            address=addr,
-                            name=fname,
-                            original_name=fname,
-                            language="objc",
-                            classification="unknown",
-                            layer="native",
-                            source_backend="radare2",
-                        ))
+                    if not _valid_r2_function(f):
+                        continue
+                    offset = f.get("offset", f.get("vaddr", 0))
+                    addr = hex(offset) if isinstance(offset, int) else str(offset)
+                    fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
+                    model.add_function(FunctionInfo(
+                        address=addr,
+                        name=fname,
+                        original_name=fname,
+                        language="objc",
+                        classification="unknown",
+                        layer="native",
+                        source_backend="radare2",
+                    ))
                 cache.put_json(binary.sha256, f"r2_{bin_path.name}", triage)
 
         await asyncio.gather(*[_r2_triage(bp) for bp in all_binaries])

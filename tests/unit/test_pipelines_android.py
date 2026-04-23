@@ -67,3 +67,52 @@ async def test_android_cache_hit_rehydrates_functions_and_strings(tmp_path):
     model = await analyze_apk(apk, cfg, registry, rm, cache)
     assert [s.value for s in model.get_strings()] == ["hello"]
     assert [f.name for f in model.functions] == ["foo"]
+
+
+async def test_android_r2_malformed_output_does_not_crash(tmp_path):
+    """r2 returning garbage in 'strings' or 'functions' lists must be filtered, not crash."""
+    from chimera.pipelines.android import analyze_apk
+
+    apk = tmp_path / "m.apk"
+    _minimal_apk(apk)
+    # Add a native library so r2 phase runs
+    import zipfile
+    with zipfile.ZipFile(apk, "a") as zf:
+        zf.writestr("lib/arm64-v8a/libnative.so", b"\x7fELF" + b"\x00" * 100)
+
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    rm = ResourceManager(total_ram_mb=4096)
+
+    class FakeR2:
+        def name(self): return "radare2"
+        def is_available(self): return True
+        def supported_formats(self): return ["elf"]
+        async def analyze(self, path, opts):
+            return {
+                "strings": [
+                    {"string": "good", "vaddr": 0x1000},
+                    "not-a-dict",
+                    {"no_string_key": True},
+                    {"string": 12345, "vaddr": "bad"},  # string value is int
+                ],
+                "functions": [
+                    {"name": "ok", "offset": 0x2000},
+                    {"no_address_at_all": True},
+                    "garbage",
+                ],
+                "imports": [],
+                "info": {}, "core": {},
+            }
+        async def cleanup(self): pass
+
+    registry = AdapterRegistry()
+    registry.register(FakeR2())
+
+    model = await analyze_apk(apk, cfg, registry, rm, cache)
+    string_values = [s.value for s in model.get_strings()]
+    assert "good" in string_values
+    assert all(isinstance(v, str) for v in string_values)
+    fn_names = [f.name for f in model.functions]
+    assert "ok" in fn_names
+    assert "garbage" not in fn_names
