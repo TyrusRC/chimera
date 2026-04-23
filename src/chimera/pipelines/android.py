@@ -42,6 +42,18 @@ async def analyze_apk(
     if cache.has(binary.sha256):
         cached_triage = cache.get_json(binary.sha256, "triage")
         if cached_triage:
+            if cached_triage.get("status") == "skipped":
+                logger.warning(
+                    "Cached analysis for %s was skipped: %s",
+                    binary.sha256[:12], cached_triage.get("reason", "unknown"),
+                )
+                model = UnifiedProgramModel(binary)
+                from chimera.model.binary import Framework
+                try:
+                    binary.framework = Framework(cached_triage.get("framework", "native"))
+                except ValueError:
+                    binary.framework = Framework.NATIVE
+                return model
             logger.info("Cache hit for %s - reusing triage", binary.sha256[:12])
             model = UnifiedProgramModel(binary)
             from chimera.model.binary import Framework

@@ -34,6 +34,18 @@ async def analyze_ipa(
     if cache.has(binary.sha256):
         cached = cache.get_json(binary.sha256, "triage")
         if cached:
+            if cached.get("status") == "skipped":
+                logger.warning(
+                    "Cached analysis for %s was skipped: %s",
+                    binary.sha256[:12], cached.get("reason", "unknown"),
+                )
+                model = UnifiedProgramModel(binary)
+                from chimera.model.binary import Framework
+                try:
+                    binary.framework = Framework(cached.get("framework", "native"))
+                except ValueError:
+                    binary.framework = Framework.NATIVE
+                return model
             logger.info("Cache hit for %s - reusing triage", binary.sha256[:12])
             model = UnifiedProgramModel(binary)
             from chimera.model.binary import Framework

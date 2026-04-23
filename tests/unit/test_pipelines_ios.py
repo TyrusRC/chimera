@@ -79,3 +79,33 @@ async def test_ios_no_app_bundle_writes_explicit_status(tmp_path):
     assert triage is not None
     assert triage.get("status") == "skipped"
     assert triage.get("reason") == "no_app_bundle"
+
+
+async def test_ios_cache_hit_with_skipped_status_warns_and_returns(tmp_path, caplog):
+    from chimera.pipelines.ios import analyze_ipa
+    import shutil
+    import zipfile
+    ipa = tmp_path / "empty.ipa"
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("README.txt", b"no bundle")
+
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    rm = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+
+    # First run writes skipped status
+    await analyze_ipa(ipa, cfg, registry, rm, cache)
+
+    # Remove first-run unpack artifacts so we can prove the second run didn't re-unpack
+    unpack_root = cfg.project_dir / "unpacked"
+    if unpack_root.exists():
+        shutil.rmtree(unpack_root)
+
+    # Second run should hit cache AND warn about skipped
+    with caplog.at_level("WARNING"):
+        model = await analyze_ipa(ipa, cfg, registry, rm, cache)
+    assert any("skipped" in r.message.lower() and "no_app_bundle" in r.message
+               for r in caplog.records)
+    # Unpack must still be short-circuited (Task 3 guarantee)
+    assert not unpack_root.exists()
