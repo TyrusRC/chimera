@@ -13,6 +13,14 @@ from chimera.device.base import DeviceManager, DeviceInfo, DevicePlatform
 logger = logging.getLogger(__name__)
 
 
+class AdbError(RuntimeError):
+    def __init__(self, cmd: str, returncode: int, stderr: str) -> None:
+        super().__init__(f"adb {cmd} failed (rc={returncode}): {stderr[-2000:]}")
+        self.cmd = cmd
+        self.returncode = returncode
+        self.stderr = stderr
+
+
 class AndroidDeviceManager(DeviceManager):
     @property
     def name(self) -> str:
@@ -147,6 +155,8 @@ class AndroidDeviceManager(DeviceManager):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise AdbError(args, proc.returncode or -1, stderr.decode(errors="replace"))
         return stdout.decode(errors="replace")
 
     async def _adb_device(self, device_id: str, args: str) -> str:
@@ -156,4 +166,9 @@ class AndroidDeviceManager(DeviceManager):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise AdbError(
+                f"-s {device_id} {args}", proc.returncode or -1,
+                stderr.decode(errors="replace"),
+            )
         return stdout.decode(errors="replace")

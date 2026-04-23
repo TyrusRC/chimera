@@ -31,3 +31,22 @@ class TestAndroidDeviceManager:
     async def test_cleanup(self):
         mgr = AndroidDeviceManager()
         await mgr.cleanup()
+
+
+async def test_adb_nonzero_exit_raises_with_stderr(monkeypatch):
+    from chimera.device.android import AndroidDeviceManager, AdbError
+
+    async def fake_exec(*args, **kw):
+        class FakeProc:
+            returncode = 1
+            async def communicate(self):
+                return b"", b"adb: device offline"
+        return FakeProc()
+
+    import asyncio
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    mgr = AndroidDeviceManager()
+    import pytest
+    with pytest.raises(AdbError, match="device offline"):
+        await mgr._adb("devices")
