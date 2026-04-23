@@ -78,50 +78,62 @@ def _find_base_apk_in_bundle(bundle_path: Path, output_dir: Path) -> Path:
     bundle_dir = output_dir / "_bundle"
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
-    with zipfile.ZipFile(bundle_path, "r") as zf:
-        zf.extractall(bundle_dir)
+    extraction_succeeded = False
+    try:
+        with zipfile.ZipFile(bundle_path, "r") as zf:
+            zf.extractall(bundle_dir)
 
-    # Try to find the base APK
-    # APKM: has info.json, base APK is literally named "base.apk"
-    base_apk = bundle_dir / "base.apk"
-    if base_apk.exists():
-        logger.info("Found base.apk in bundle")
-        return base_apk
+        base_apk = bundle_dir / "base.apk"
+        if base_apk.exists():
+            logger.info("Found base.apk in bundle")
+            extraction_succeeded = True
+            return base_apk
 
-    # XAPK: manifest.json tells us which is the base
-    manifest_json = bundle_dir / "manifest.json"
-    if manifest_json.exists():
-        try:
-            manifest = json.loads(manifest_json.read_text())
-            # The base APK is usually the one matching the package name
-            package_name = manifest.get("package_name", "")
-            split_apks = manifest.get("split_apks", [])
-            for split in split_apks:
-                file_name = split.get("file", "")
-                apk_id = split.get("id", "")
-                if apk_id == "base" or file_name == f"{package_name}.apk":
-                    candidate = bundle_dir / file_name
-                    if candidate.exists():
-                        logger.info("Found base APK from manifest.json: %s", file_name)
-                        return candidate
-            # Fallback: first split APK that isn't a config split
-            for split in split_apks:
-                file_name = split.get("file", "")
-                if not file_name.startswith("config.") and not file_name.startswith("split_config."):
-                    candidate = bundle_dir / file_name
-                    if candidate.exists():
-                        logger.info("Using non-config APK as base: %s", file_name)
-                        return candidate
-        except (json.JSONDecodeError, OSError):
-            pass
+        manifest_json = bundle_dir / "manifest.json"
+        if manifest_json.exists():
+            try:
+                manifest = json.loads(manifest_json.read_text())
+                package_name = manifest.get("package_name", "")
+                split_apks = manifest.get("split_apks", [])
+                for split in split_apks:
+                    file_name = split.get("file", "")
+                    apk_id = split.get("id", "")
+                    if apk_id == "base" or file_name == f"{package_name}.apk":
+                        candidate = bundle_dir / file_name
+                        if candidate.exists():
+                            logger.info("Found base APK from manifest.json: %s", file_name)
+                            extraction_succeeded = True
+                            return candidate
+                for split in split_apks:
+                    file_name = split.get("file", "")
+                    if not file_name.startswith("config.") and not file_name.startswith("split_config."):
+                        candidate = bundle_dir / file_name
+                        if candidate.exists():
+                            logger.info("Using non-config APK as base: %s", file_name)
+                            extraction_succeeded = True
+                            return candidate
+            except (json.JSONDecodeError, OSError):
+                pass
 
-    # Generic fallback: find the largest APK (usually the base)
-    all_apks = sorted(bundle_dir.glob("*.apk"), key=lambda p: p.stat().st_size, reverse=True)
-    if all_apks:
-        logger.info("Fallback: using largest APK as base: %s", all_apks[0].name)
-        return all_apks[0]
+        all_apks = sorted(bundle_dir.glob("*.apk"), key=lambda p: p.stat().st_size, reverse=True)
+        if all_apks:
+            max_size = all_apks[0].stat().st_size
+            close_ties = [p for p in all_apks[1:] if p.stat().st_size >= 0.9 * max_size]
+            if close_ties:
+                names = [all_apks[0].name] + [p.name for p in close_ties]
+                raise ValueError(
+                    f"ambiguous base APK in bundle — multiple large APKs: {names}"
+                )
+            logger.info("Fallback: using largest APK as base: %s (%d bytes)",
+                        all_apks[0].name, max_size)
+            extraction_succeeded = True
+            return all_apks[0]
 
-    raise FileNotFoundError(f"No base APK found in bundle: {bundle_path}")
+        raise FileNotFoundError(f"No base APK found in bundle: {bundle_path}")
+    finally:
+        if not extraction_succeeded:
+            import shutil as _sh
+            _sh.rmtree(bundle_dir, ignore_errors=True)
 
 
 def _collect_split_native_libs(bundle_dir: Path) -> list[Path]:

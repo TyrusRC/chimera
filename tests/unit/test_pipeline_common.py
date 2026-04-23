@@ -90,3 +90,32 @@ def test_detect_binary_format_rejects_missing_file(tmp_path):
     from chimera.pipelines.common import detect_binary_format
     with pytest.raises(FileNotFoundError):
         detect_binary_format(tmp_path / "nope.apk")
+
+
+def test_bundle_extraction_cleans_up_on_error(tmp_path):
+    """If base-apk lookup fails mid-extract, _bundle/ must not be left behind."""
+    import zipfile
+    from chimera.pipelines.common import _find_base_apk_in_bundle
+
+    bundle = tmp_path / "bad.xapk"
+    with zipfile.ZipFile(bundle, "w") as zf:
+        zf.writestr("README.txt", b"no apk")
+
+    output_dir = tmp_path / "out"
+    with pytest.raises(FileNotFoundError):
+        _find_base_apk_in_bundle(bundle, output_dir)
+    assert not (output_dir / "_bundle").exists(), "_bundle/ must be cleaned up on failure"
+
+
+def test_ambiguous_largest_apk_raises(tmp_path):
+    """If >1 APK is within 10% of the max size, fail loudly."""
+    import zipfile
+    from chimera.pipelines.common import _find_base_apk_in_bundle
+
+    bundle = tmp_path / "ambiguous.xapk"
+    with zipfile.ZipFile(bundle, "w") as zf:
+        zf.writestr("a.apk", b"x" * 1000)
+        zf.writestr("b.apk", b"y" * 995)  # within 10%
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="ambiguous"):
+        _find_base_apk_in_bundle(bundle, out)
