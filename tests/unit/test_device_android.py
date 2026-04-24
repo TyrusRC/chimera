@@ -57,22 +57,50 @@ async def test_pull_app_returns_all_split_apks(tmp_path, monkeypatch):
 
     mgr = AndroidDeviceManager()
 
-    async def fake_adb(device_id, args):
+    async def fake_adb_argv(device_id, argv):
+        args = " ".join(argv)
         if args.startswith("shell pm path"):
             return (
                 "package:/data/app/base.apk\n"
                 "package:/data/app/split_config.arm64_v8a.apk\n"
             )
-        if args.startswith("pull "):
-            _, src, dst = args.split()
+        if argv and argv[0] == "pull":
+            src, dst = argv[1], argv[2]
             from pathlib import Path
             Path(dst).write_bytes(b"x")
         return ""
 
-    monkeypatch.setattr(mgr, "_adb_device", fake_adb)
+    monkeypatch.setattr(mgr, "_adb_device_argv", fake_adb_argv)
 
     paths = await mgr.pull_app("D", "com.x", str(tmp_path))
     assert isinstance(paths, list), f"expected list, got {type(paths)}"
     assert len(paths) == 2
     assert any("base.apk" in p for p in paths)
     assert any("split_config" in p for p in paths)
+
+
+async def test_adb_device_accepts_args_with_spaces(monkeypatch):
+    """Paths with spaces must not be corrupted by internal splitting."""
+    from chimera.device.android import AndroidDeviceManager
+
+    seen_args: list[tuple[str, ...]] = []
+
+    class FakeProc:
+        returncode = 0
+        async def communicate(self):
+            return b"ok", b""
+
+    async def fake_exec(*argv, **kw):
+        seen_args.append(tuple(argv))
+        return FakeProc()
+
+    import asyncio
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    mgr = AndroidDeviceManager()
+    # New argv-list variant — must preserve path-with-spaces intact
+    await mgr._adb_device_argv("D", ["pull", "/data/App Name/base.apk", "/tmp/out"])
+    argv = seen_args[-1]
+    assert "/data/App Name/base.apk" in argv
+    i = argv.index("/data/App Name/base.apk")
+    assert argv[i + 1] == "/tmp/out"
