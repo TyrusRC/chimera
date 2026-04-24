@@ -130,6 +130,10 @@ class FridaAdapter(BackendAdapter):
         await session.load_script(source)
         return True
 
+    def active_sessions(self) -> list[str]:
+        """Return list of package names for currently active Frida sessions."""
+        return list(self._sessions.keys())
+
     async def cleanup(self) -> None:
         for session in self._sessions.values():
             await session.detach()

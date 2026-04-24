@@ -37,6 +37,28 @@ def _require_model() -> bool:
     return _current_model is not None
 
 
+_ALLOWED_CACHE_CATEGORIES = frozenset({
+    "triage",
+    "jadx",
+    "manifest_xml",
+    "info_plist",
+    "class_dump",
+})
+_ALLOWED_CACHE_PREFIXES = ("r2_", "ghidra_")
+
+
+def _is_allowed_category(category: str) -> bool:
+    """Whitelist-check a cache category. Rejects path traversal and unknown keys."""
+    if not isinstance(category, str) or not category:
+        return False
+    # Rejection rule: any path-like characters
+    if any(c in category for c in ("/", "\\", "..")):
+        return False
+    if category in _ALLOWED_CACHE_CATEGORIES:
+        return True
+    return any(category.startswith(prefix) for prefix in _ALLOWED_CACHE_PREFIXES)
+
+
 # ---------------------------------------------------------------------------
 # Tool definitions
 # ---------------------------------------------------------------------------
@@ -279,8 +301,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             })
             # Active Frida sessions
             frida = engine.registry.get("frida")
-            if frida and hasattr(frida, "_sessions"):
-                result["frida_sessions"] = list(frida._sessions.keys())
+            if frida and hasattr(frida, "active_sessions"):
+                result["frida_sessions"] = frida.active_sessions()
             # Active fuzzing campaigns
             afl = engine.registry.get("afl++")
             if afl and hasattr(afl, "_campaigns"):
@@ -664,6 +686,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         if not _require_model():
             return _error("No analysis loaded.")
         category = arguments["category"]
+        if not _is_allowed_category(category):
+            return _error(
+                f"Category '{category}' is not in the allow-list. "
+                f"Allowed: {sorted(_ALLOWED_CACHE_CATEGORIES)} + prefixes {list(_ALLOWED_CACHE_PREFIXES)}"
+            )
         data = engine.cache.get_json(_current_model.binary.sha256, category)
         if data is None:
             return _error(f"No cached data for category '{category}'. Use list_artifacts to see available keys.")
