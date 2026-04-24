@@ -108,13 +108,18 @@ class DynamicCodeCapture:
         return ""
 
     def process_message(self, message: dict) -> None:
-        if message.get("type") == "send":
-            payload = message.get("payload", {})
-            if isinstance(payload, dict) and payload.get("type") == "code_capture":
-                self.captured_files.append(payload)
-                logger.info("Captured dynamic code: %s via %s",
-                           payload.get("path", payload.get("library", "?")),
-                           payload.get("loader", "?"))
+        if message.get("type") != "send":
+            return
+        payload = message.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "code_capture":
+            return
+        loader = payload.get("loader")
+        target = payload.get("path") or payload.get("library")
+        if not isinstance(loader, str) or not isinstance(target, str):
+            logger.warning("dropping malformed code_capture payload: %r", payload)
+            return
+        self.captured_files.append(payload)
+        logger.info("Captured dynamic code: %s via %s", target, loader)
 
     def get_captured(self) -> list[dict]:
         return list(self.captured_files)
