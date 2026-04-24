@@ -14,6 +14,7 @@ class UnifiedProgramModel:
         self._functions: dict[str, FunctionInfo] = {}
         self._call_edges: list[CallEdge] = []
         self._strings: list[StringEntry] = []
+        self._regex_cache: dict[str, _re.Pattern[str]] = {}
 
     @property
     def functions(self) -> list[FunctionInfo]:
@@ -61,5 +62,8 @@ class UnifiedProgramModel:
     def get_strings(self, pattern: str | None = None) -> list[StringEntry]:
         if pattern is None:
             return list(self._strings)
-        regex = _re.compile(pattern, _re.IGNORECASE)
+        regex = self._regex_cache.get(pattern)
+        if regex is None:
+            regex = _re.compile(pattern, _re.IGNORECASE)
+            self._regex_cache[pattern] = regex
         return [s for s in self._strings if regex.search(s.value)]

@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 import asyncpg
+
+
+class PoolInitError(RuntimeError):
+    """Raised when `ConnectionPool.connect()` cannot establish a pool in time."""
 
 
 class ConnectionPool:
@@ -18,6 +23,7 @@ class ConnectionPool:
         min_size: int = 2,
         max_size: int = 10,
         command_timeout: float = 60.0,
+        timeout: float = 10.0,
     ) -> None:
         if not dsn:
             raise ValueError("dsn is required")
@@ -25,19 +31,28 @@ class ConnectionPool:
         self.min_size = min_size
         self.max_size = max_size
         self.command_timeout = command_timeout
+        self.timeout = timeout
         self._pool: Optional[asyncpg.Pool] = None
 
     async def connect(self) -> None:
         if self._pool is not None:
             return
-        pool = await asyncpg.create_pool(
-            dsn=self.dsn,
-            min_size=self.min_size,
-            max_size=self.max_size,
-            command_timeout=self.command_timeout,
-        )
+        try:
+            pool = await asyncio.wait_for(
+                asyncpg.create_pool(
+                    dsn=self.dsn,
+                    min_size=self.min_size,
+                    max_size=self.max_size,
+                    command_timeout=self.command_timeout,
+                ),
+                timeout=self.timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            raise PoolInitError(
+                f"pool connect timed out after {self.timeout}s"
+            ) from exc
         if pool is None:
-            raise RuntimeError(
+            raise PoolInitError(
                 "asyncpg.create_pool returned None; check DSN and server availability"
             )
         self._pool = pool

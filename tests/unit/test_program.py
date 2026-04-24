@@ -139,3 +139,35 @@ def test_add_call_edge_allows_forward_reference():
                                 layer="native", source_backend="r2"))
     assert [f.name for f in m.get_callees("0xAAA")] == ["b"]
     assert [f.name for f in m.get_callers("0xBBB")] == ["a"]
+
+
+def test_get_strings_caches_compiled_regex():
+    import re as _re
+    from chimera.model.binary import (
+        Architecture, BinaryFormat, BinaryInfo, Framework, Platform,
+    )
+    from chimera.model.program import UnifiedProgramModel
+    from pathlib import Path
+
+    b = BinaryInfo(sha256="a"*64, path=Path("/x"), format=BinaryFormat.APK,
+                   platform=Platform.ANDROID, arch=Architecture.DEX,
+                   framework=Framework.NATIVE, size_bytes=1)
+    m = UnifiedProgramModel(b)
+    m.add_string("0x1", "hello")
+
+    calls = []
+    orig_compile = _re.compile
+
+    def spy(p, *a, **k):
+        calls.append(p)
+        return orig_compile(p, *a, **k)
+
+    import chimera.model.program as prog
+    prog._re.compile = spy  # type: ignore
+    try:
+        m.get_strings("hel")
+        m.get_strings("hel")
+        m.get_strings("hel")
+    finally:
+        prog._re.compile = orig_compile  # type: ignore
+    assert calls.count("hel") == 1
