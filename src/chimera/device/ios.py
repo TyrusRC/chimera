@@ -116,9 +116,21 @@ class IOSDeviceManager(DeviceManager):
             if proc.returncode is None:  # still running = good
                 self._iproxy_proc = proc
                 return True
+            logger.warning("iproxy exited immediately (rc=%s)", proc.returncode)
             return False
-        except Exception:
+        except Exception as exc:
+            logger.warning("iproxy launch failed: %s", exc)
             return False
+
+    def iproxy_alive(self) -> bool:
+        """Return True iff the stashed iproxy subprocess is still running.
+
+        Callers (e.g. Frida session setup) should poll this to detect silent
+        iproxy crashes mid-analysis instead of waiting for opaque connection
+        failures downstream.
+        """
+        proc = getattr(self, "_iproxy_proc", None)
+        return proc is not None and proc.returncode is None
 
     async def syslog(self, device_id: str, lines: int = 100) -> str:
         return await self._run("idevicesyslog", "-u", device_id, "-n", str(lines))
@@ -141,8 +153,13 @@ class IOSDeviceManager(DeviceManager):
         return stdout.decode(errors="replace")
 
     async def cleanup(self) -> None:
-        if hasattr(self, "_iproxy_proc") and self._iproxy_proc.returncode is None:
-            self._iproxy_proc.terminate()
+        proc = getattr(self, "_iproxy_proc", None)
+        if proc is not None and proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                proc.kill()
 
     async def _run(self, *args: str) -> str:
         proc = await asyncio.create_subprocess_exec(
