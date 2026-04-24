@@ -92,3 +92,42 @@ async def test_ghidra_recovers_functions_on_stripped_arm64(ghidra_adapter, tmp_p
     assert any(expected["must_find_string"] in (v or "") for v in string_values), (
         f"Expected string not in {len(string_values)} ghidra strings"
     )
+
+
+@register_evidence("jadx", "android-proguard-with-mapping")
+@pytest.mark.asyncio
+async def test_jadx_restores_original_names_via_mapping_file(tmp_path, jadx_adapter):
+    """With a ProGuard mapping.txt available as sibling, jadx must restore
+    original class names (com/example/MainActivity) in the decompiled output."""
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.model.binary import BinaryInfo
+    from chimera.pipelines.android import analyze_apk
+
+    sample = build_sample("android-proguard-with-mapping")
+    expected = load_expected("android-proguard-with-mapping")["expected"]["jadx"]
+
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    rm = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+    registry.register(jadx_adapter)
+
+    await analyze_apk(sample, cfg, registry, rm, cache)
+
+    sha = BinaryInfo.from_path(sample).sha256
+    triage = cache.get_json(sha, "triage")
+    assert triage["jadx_context"]["mapping_used"] is expected["mapping_used"]
+
+    # Inspect jadx output for restored original class names
+    jadx_out = cfg.project_dir / "jadx" / sha[:12] / "sources"
+    assert jadx_out.exists(), "jadx output directory missing"
+    java_files = list(jadx_out.rglob("*.java"))
+    assert len(java_files) >= expected["min_decompiled_files"]
+    basenames = {f.stem for f in java_files}
+    for original in expected["class_basenames_contain_original"]:
+        assert original in basenames, (
+            f"original class {original!r} not restored; got {sorted(basenames)}"
+        )

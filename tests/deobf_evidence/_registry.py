@@ -11,6 +11,7 @@ REGISTERED: set[tuple[str, str]] = set()
 
 EXPECTED_MATRIX: set[tuple[str, str]] = {
     ("jadx", "android-proguard-rename"),
+    ("jadx", "android-proguard-with-mapping"),
     ("jadx", "android-xor-string"),
     ("radare2", "android-native-stripped"),
     ("ghidra", "android-native-stripped"),

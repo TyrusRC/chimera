@@ -1,0 +1,13 @@
+{
+  "variant": "android-proguard-with-mapping",
+  "sample_name": "sample.apk",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["javac", "d8", "proguard", "zip"],
+  "expected": {
+    "jadx": {
+      "min_decompiled_files": 1,
+      "class_basenames_contain_original": ["MainActivity"],
+      "mapping_used": true
+    }
+  }
+}
