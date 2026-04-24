@@ -1,0 +1,14 @@
+{
+  "variant": "android-kotlin-metadata",
+  "sample_name": "sample.apk",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["kotlinc", "d8", "zip"],
+  "expected": {
+    "jadx": {
+      "min_decompiled_files": 1,
+      "kotlin_detected": true,
+      "class_basenames_contain": ["Greeter"],
+      "decompiled_signals_any_of": ["data class", "component1", "copy("]
+    }
+  }
+}

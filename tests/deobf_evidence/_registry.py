@@ -24,6 +24,7 @@ EXPECTED_MATRIX: set[tuple[str, str]] = {
     ("bypass", "bypass-frida-strings"),
     ("apktool", "android-proguard-rename"),
     ("webcrack", "rn-jsc-bundle"),
+    ("jadx", "android-kotlin-metadata"),
 }
 
 

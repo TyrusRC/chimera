@@ -131,3 +131,47 @@ async def test_jadx_restores_original_names_via_mapping_file(tmp_path, jadx_adap
         assert original in basenames, (
             f"original class {original!r} not restored; got {sorted(basenames)}"
         )
+
+
+@register_evidence("jadx", "android-kotlin-metadata")
+@pytest.mark.asyncio
+async def test_jadx_preserves_kotlin_structure_via_metadata(tmp_path, jadx_adapter):
+    """With @kotlin.Metadata present, jadx's Kotlin-aware flags must preserve
+    data-class shape — either the `data class` keyword or the auto-generated
+    copy()/componentN() methods appear unrenamed in the decompiled source."""
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.model.binary import BinaryInfo
+    from chimera.pipelines.android import analyze_apk
+
+    sample = build_sample("android-kotlin-metadata")
+    expected = load_expected("android-kotlin-metadata")["expected"]["jadx"]
+
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    rm = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+    registry.register(jadx_adapter)
+
+    await analyze_apk(sample, cfg, registry, rm, cache)
+
+    sha = BinaryInfo.from_path(sample).sha256
+    triage = cache.get_json(sha, "triage")
+    assert triage["jadx_context"]["kotlin_detected"] is expected["kotlin_detected"]
+
+    jadx_out = cfg.project_dir / "jadx" / sha[:12] / "sources"
+    assert jadx_out.exists(), "jadx output directory missing"
+    java_files = list(jadx_out.rglob("*.java"))
+    assert len(java_files) >= expected["min_decompiled_files"]
+
+    basenames = {f.stem for f in java_files}
+    for name in expected["class_basenames_contain"]:
+        assert name in basenames, f"expected class {name!r} not in {sorted(basenames)}"
+
+    combined = "\n".join(f.read_text(errors="replace") for f in java_files)
+    assert any(signal in combined for signal in expected["decompiled_signals_any_of"]), (
+        f"no Kotlin-structure signal found in jadx output. Looked for any of: "
+        f"{expected['decompiled_signals_any_of']}"
+    )
