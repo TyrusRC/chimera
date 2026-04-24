@@ -57,3 +57,34 @@ class TestFirebaseAnalyzer:
         analyzer = FirebaseAnalyzer()
         result = analyzer.extract_config(tmp_path, platform="android")
         assert result["project_id"] is None
+
+
+def test_endpoint_extraction_rejects_junk_trailing_chars():
+    from chimera.protocol.analyzer import ProtocolAnalyzer
+    analyzer = ProtocolAnalyzer()
+    endpoints = analyzer.extract_endpoints([
+        "Contact us at https://example.com/api.",
+        "See https://evil.com/path,https://evil2.com/",
+    ])
+    urls = [e["url"] for e in endpoints]
+    # Trailing period must not be part of any URL
+    assert not any(u.endswith(".") for u in urls), urls
+    # Comma-concatenated URLs must NOT be stored as a single URL
+    assert not any("," in u for u in urls), urls
+    # But a valid URL from the first string should still be captured
+    assert any(u.startswith("https://example.com") for u in urls), urls
+
+
+def test_grpc_requires_evidence_not_just_string_match():
+    from chimera.protocol.analyzer import ProtocolAnalyzer
+    analyzer = ProtocolAnalyzer()
+    # Weak match: "grpc" appears in log messages only
+    weak = analyzer.detect_protocols(["# grpc is cool", "log: grpc not used"])
+    assert weak["has_grpc"] is False, weak
+
+    # Strong match: MIME type or package path
+    strong = analyzer.detect_protocols([
+        "application/grpc",
+        "io.grpc.stub.ClientCalls",
+    ])
+    assert strong["has_grpc"] is True, strong
