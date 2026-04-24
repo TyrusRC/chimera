@@ -47,9 +47,25 @@ class JadxAdapter(BackendAdapter):
             "--show-bad-code",
             "--log-level", "error",
             "--threads-count", threads,
-            "--output-dir", str(output_dir),
-            binary_path,
         ]
+
+        mapping_file = options.get("mapping_file")
+        if mapping_file and Path(mapping_file).exists():
+            cmd += ["--mapping-file", str(mapping_file)]
+
+        if options.get("kotlin_aware"):
+            cmd += [
+                "--use-kotlin-methods-for-var-names", "apply",
+                "--rename-flags", "valid,printable",
+            ]
+
+        deobf_cache_dir = options.get("deobf_cache_dir")
+        if deobf_cache_dir:
+            Path(deobf_cache_dir).mkdir(parents=True, exist_ok=True)
+            cmd += ["--deobf-cache", str(deobf_cache_dir)]
+
+        cmd += ["--output-dir", str(output_dir), binary_path]
+
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
@@ -60,6 +76,8 @@ class JadxAdapter(BackendAdapter):
             "output_dir": str(output_dir),
             "sources_dir": str(output_dir / "sources"),
             "resources_dir": str(output_dir / "resources"),
+            "mapping_file": str(mapping_file) if mapping_file else None,
+            "kotlin_aware": bool(options.get("kotlin_aware")),
         }
         sources = output_dir / "sources"
         if sources.exists():
