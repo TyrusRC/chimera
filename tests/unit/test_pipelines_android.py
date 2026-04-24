@@ -140,3 +140,51 @@ async def test_android_skipped_phases_recorded_in_triage(tmp_path):
     assert "radare2" in triage["skipped_phases"]
     assert "jadx" in triage["skipped_phases"]
     assert "ghidra" in triage["skipped_phases"]
+
+
+async def test_android_records_jadx_context_in_triage(tmp_path):
+    """Pipeline must invoke discovery + detection and record outcome in triage."""
+    from chimera.pipelines.android import analyze_apk
+
+    apk = tmp_path / "k.apk"
+    # Minimal APK with AndroidManifest.xml + Kotlin-containing DEX
+    import zipfile
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", b"<manifest/>")
+        zf.writestr("classes.dex", b"dex\n035\x00" + b"\x00" * 32 + b"Lkotlin/Metadata;")
+
+    # Explicit mapping file as sibling of apk
+    mapping = tmp_path / "k.apk.mapping.txt"
+    mapping.write_text("com.example.Thing -> a.a.A:\n")
+
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    cache = AnalysisCache(cfg.cache_dir)
+    rm = ResourceManager(total_ram_mb=4096)
+
+    captured_options: list[dict] = []
+
+    class FakeJadx:
+        def name(self): return "jadx"
+        def is_available(self): return True
+        def supported_formats(self): return ["apk"]
+        async def analyze(self, path, opts):
+            captured_options.append(opts)
+            return {"decompiled_files": 0, "packages": []}
+        async def cleanup(self): pass
+
+    registry = AdapterRegistry()
+    registry.register(FakeJadx())
+
+    await analyze_apk(apk, cfg, registry, rm, cache)
+    from chimera.model.binary import BinaryInfo
+    triage = cache.get_json(BinaryInfo.from_path(apk).sha256, "triage")
+    assert "jadx_context" in triage
+    ctx = triage["jadx_context"]
+    assert ctx["kotlin_detected"] is True
+    assert ctx["mapping_used"] is True
+    assert ctx["mapping_source"] is not None
+    # Adapter received the discovered mapping + kotlin flag
+    assert captured_options, "jadx adapter was not called"
+    opts = captured_options[0]
+    assert opts["kotlin_aware"] is True
+    assert opts["mapping_file"] is not None

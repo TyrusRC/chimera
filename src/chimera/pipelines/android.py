@@ -13,7 +13,12 @@ from chimera.core.resource_manager import ResourceManager
 from chimera.model.binary import BinaryInfo
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
-from chimera.pipelines.common import _rehydrate_from_cache, unpack_apk
+from chimera.pipelines.common import (
+    _rehydrate_from_cache,
+    detect_kotlin,
+    find_mapping_file,
+    unpack_apk,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +71,8 @@ async def analyze_apk(
 
     model = UnifiedProgramModel(binary)
     skipped_phases: list[str] = []
+    kotlin_detected = False
+    mapping_path: Path | None = None
 
     # Phase 1: Unpack
     logger.info("Unpacking APK")
@@ -141,11 +148,28 @@ async def analyze_apk(
         skipped_phases.append("jadx")
         logger.warning("jadx unavailable — skipping decompile")
     else:
+        mapping_path = find_mapping_file(unpack_result["output_dir"], apk_path=apk_path)
+        # Explicit override from config beats auto-discovery
+        if getattr(config, "mapping_file", None):
+            cfg_override = Path(config.mapping_file)
+            if cfg_override.exists():
+                mapping_path = cfg_override
+        kotlin_detected = detect_kotlin(unpack_result["output_dir"])
+        if mapping_path:
+            logger.info("mapping file discovered: %s", mapping_path)
+        if kotlin_detected:
+            logger.info("kotlin metadata detected — enabling kotlin-aware flags")
+
         logger.info("jadx decompilation")
         jadx_output = config.project_dir / "jadx" / binary.sha256[:12]
         jadx_input = unpack_result.get("base_apk_path", apk_path)
         async with resource_mgr.light():
-            jadx_result = await jadx.analyze(str(jadx_input), {"output_dir": str(jadx_output)})
+            jadx_result = await jadx.analyze(str(jadx_input), {
+                "output_dir": str(jadx_output),
+                "mapping_file": str(mapping_path) if mapping_path else None,
+                "kotlin_aware": kotlin_detected,
+                "deobf_cache_dir": str(config.cache_dir / "jadx_deobf" / binary.sha256[:12]),
+            })
             cache.put_json(binary.sha256, "jadx", {
                 "decompiled_files": jadx_result.get("decompiled_files", 0),
                 "packages": jadx_result.get("packages", []),
@@ -198,6 +222,11 @@ async def analyze_apk(
         "string_count": len(model.get_strings()),
         "bundle_format": unpack_result.get("bundle_format"),
         "skipped_phases": skipped_phases,
+        "jadx_context": {
+            "kotlin_detected": kotlin_detected,
+            "mapping_used": mapping_path is not None,
+            "mapping_source": str(mapping_path) if mapping_path else None,
+        },
     })
 
     logger.info("Analysis complete: %d functions, %d strings",
