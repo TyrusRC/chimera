@@ -174,3 +174,33 @@ def test_find_mapping_file_sibling_wins_over_bundled(tmp_path):
     meta_dir.mkdir(parents=True)
     (meta_dir / "proguard.map").write_text("b -> a:\n")
     assert find_mapping_file(unpack_dir, apk_path=apk) == sibling
+
+
+def test_detect_kotlin_finds_metadata_reference(tmp_path):
+    """A DEX containing the bytes 'Lkotlin/Metadata;' must be detected as Kotlin."""
+    from chimera.pipelines.common import detect_kotlin
+    dex = tmp_path / "classes.dex"
+    # Fake DEX: valid-ish header + embedded Kotlin metadata string
+    dex.write_bytes(b"dex\n035\x00" + b"\x00" * 32 + b"Lkotlin/Metadata;" + b"\x00" * 32)
+    assert detect_kotlin(tmp_path) is True
+
+
+def test_detect_kotlin_false_on_plain_java_dex(tmp_path):
+    """A DEX without the Kotlin metadata reference returns False."""
+    from chimera.pipelines.common import detect_kotlin
+    dex = tmp_path / "classes.dex"
+    dex.write_bytes(b"dex\n035\x00" + b"\x00" * 32 + b"Ljava/lang/String;" + b"\x00" * 32)
+    assert detect_kotlin(tmp_path) is False
+
+
+def test_detect_kotlin_scans_multiple_dex(tmp_path):
+    """classes.dex, classes2.dex, ... are all scanned until match found."""
+    from chimera.pipelines.common import detect_kotlin
+    (tmp_path / "classes.dex").write_bytes(b"dex\n035\x00plain")
+    (tmp_path / "classes2.dex").write_bytes(b"dex\n035\x00Lkotlin/Metadata;")
+    assert detect_kotlin(tmp_path) is True
+
+
+def test_detect_kotlin_false_when_no_dex(tmp_path):
+    from chimera.pipelines.common import detect_kotlin
+    assert detect_kotlin(tmp_path) is False

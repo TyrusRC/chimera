@@ -407,3 +407,23 @@ def find_mapping_file(unpack_dir: Path, apk_path: Path | None = None) -> Path | 
             return candidate
 
     return None
+
+
+_KOTLIN_METADATA_MARKER = b"Lkotlin/Metadata;"
+
+
+def detect_kotlin(unpack_dir: Path) -> bool:
+    """Return True if any classes*.dex in unpack_dir references kotlin.Metadata.
+
+    Byte-scan only — no full DEX parse. Short-circuits on first match.
+    Kotlin apps carry `@kotlin.Metadata` annotations whose class descriptor
+    `Lkotlin/Metadata;` appears in the DEX string table.
+    """
+    for dex in sorted(unpack_dir.glob("classes*.dex")):
+        try:
+            with open(dex, "rb") as fh:
+                if _KOTLIN_METADATA_MARKER in fh.read():
+                    return True
+        except OSError:
+            continue
+    return False
