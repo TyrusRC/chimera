@@ -8,21 +8,30 @@ from chimera.sdk.signatures import SDK_SIGNATURES
 class SDKAnalyzer:
     def __init__(self):
         self._signatures = SDK_SIGNATURES
+        # Prefix index: exact signature-package string -> list of matching signatures.
+        # Multiple signatures can share a prefix key (none do today, but be safe).
+        self._prefix_index: dict[str, list[dict]] = {}
+        for sig in self._signatures:
+            self._prefix_index.setdefault(sig["package"], []).append(sig)
 
     def detect_from_packages(self, packages: list[str]) -> list[dict]:
         detected = []
-        seen = set()
+        seen: set[str] = set()
         for pkg in packages:
-            for sig in self._signatures:
-                if pkg.startswith(sig["package"]) and sig["name"] not in seen:
-                    seen.add(sig["name"])
-                    detected.append({
-                        "name": sig["name"],
-                        "package": sig["package"],
-                        "category": sig["category"],
-                        "risk": sig["risk"],
-                        "matched_package": pkg,
-                    })
+            parts = pkg.split(".")
+            # Walk prefixes from longest to shortest so more-specific SDKs come first.
+            for i in range(len(parts), 0, -1):
+                probe = ".".join(parts[:i])
+                for sig in self._prefix_index.get(probe, ()):
+                    if sig["name"] not in seen:
+                        seen.add(sig["name"])
+                        detected.append({
+                            "name": sig["name"],
+                            "package": sig["package"],
+                            "category": sig["category"],
+                            "risk": sig["risk"],
+                            "matched_package": pkg,
+                        })
         return detected
 
     def detect_from_classes(self, class_names: list[str]) -> list[dict]:
