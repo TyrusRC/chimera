@@ -101,9 +101,18 @@ class ChimeraDatabase:
             )
         return result is not None
 
+    # TODO(sub-project-followup): persist FunctionInfo.sources column.
+    # Currently merge-history is dropped on save/load round-trip.
     async def save_function(
         self, binary_sha256: str, func: FunctionInfo
     ) -> None:
+        if func.sources:
+            import logging
+            logging.getLogger(__name__).warning(
+                "save_function: FunctionInfo.sources=%r will be dropped - "
+                "column not yet persisted (follow-up sub-project)",
+                func.sources,
+            )
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -138,6 +147,8 @@ class ChimeraDatabase:
                 func.ai_comments,
             )
 
+    # TODO(sub-project-followup): persist FunctionInfo.sources column.
+    # Currently merge-history is dropped on save/load round-trip.
     async def load_functions(
         self, binary_sha256: str
     ) -> list[FunctionInfo]:

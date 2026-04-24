@@ -21,15 +21,21 @@ def create_app() -> FastAPI:
     )
 
     import os
-    cors_env = os.environ.get("CHIMERA_CORS_ORIGINS", "http://localhost:*")
-    allow_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allow_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    cors_env = os.environ.get("CHIMERA_CORS_ORIGINS")
+    cors_kwargs: dict = {
+        "allow_credentials": True,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+    }
+    if cors_env:
+        # Explicit env: comma-separated literal origins
+        cors_kwargs["allow_origins"] = [
+            o.strip() for o in cors_env.split(",") if o.strip()
+        ]
+    else:
+        # Default: any localhost port (dev workflow); production must set the env
+        cors_kwargs["allow_origin_regex"] = r"^http://localhost(:\d+)?$"
+    app.add_middleware(CORSMiddleware, **cors_kwargs)
 
     # Register API routes
     app.include_router(system.router)
