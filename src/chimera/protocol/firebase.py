@@ -18,6 +18,7 @@ class FirebaseAnalyzer:
             "database_url": None,
             "storage_bucket": None,
             "app_id": None,
+            "errors": [],
         }
 
         if platform == "android":
@@ -40,7 +41,9 @@ class FirebaseAnalyzer:
                         if api_keys:
                             result["api_key"] = api_keys[0].get("current_key")
                 except (json.JSONDecodeError, KeyError) as e:
-                    logger.warning("Failed to parse google-services.json: %s", e)
+                    msg = f"Failed to parse google-services.json: {e}"
+                    logger.warning(msg)
+                    result["errors"].append(msg)
 
         elif platform == "ios":
             for plist_path in unpack_dir.rglob("GoogleService-Info.plist"):
@@ -53,19 +56,27 @@ class FirebaseAnalyzer:
                     result["storage_bucket"] = config.get("STORAGE_BUCKET")
                     result["app_id"] = config.get("GOOGLE_APP_ID")
                 except (ValueError, KeyError, OSError) as e:
-                    logger.warning("Failed to parse GoogleService-Info.plist: %s", e)
+                    msg = f"Failed to parse GoogleService-Info.plist: {e}"
+                    logger.warning(msg)
+                    result["errors"].append(msg)
                 break
 
         return result
 
-    def check_misconfigurations(self, config: dict) -> list[dict]:
-        findings = []
+    def check_misconfigurations(
+        self, config: dict, rules_text: str | None = None,
+    ) -> list[dict]:
+        """Flag Firebase findings. Severity defaults to "info" on mere presence;
+        upgrades to "high" when rules_text contains evidence of public access."""
+        findings: list[dict] = []
+        severity = self._severity_from_rules(rules_text)
+
         db_url = config.get("database_url")
         if db_url:
             findings.append({
                 "rule_id": "DATA-001",
                 "title": "Firebase Realtime Database URL exposed",
-                "severity": "medium",
+                "severity": severity,
                 "description": f"Firebase database URL found: {db_url}. Check if rules allow public read/write.",
                 "location": "google-services.json / GoogleService-Info.plist",
             })
@@ -75,9 +86,20 @@ class FirebaseAnalyzer:
             findings.append({
                 "rule_id": "DATA-001",
                 "title": "Firebase Storage bucket exposed",
-                "severity": "medium",
+                "severity": severity,
                 "description": f"Storage bucket: {bucket}. Check if bucket rules allow public access.",
                 "location": "google-services.json / GoogleService-Info.plist",
             })
 
         return findings
+
+    @staticmethod
+    def _severity_from_rules(rules_text: str | None) -> str:
+        """Return 'high' if rules_text shows evidence of public access, else 'info'."""
+        if rules_text is None:
+            return "info"
+        # Case-insensitive substring match on the key rules-gone-wrong indicators.
+        lower = rules_text.lower()
+        if '".read": true' in lower or '".write": true' in lower:
+            return "high"
+        return "info"
