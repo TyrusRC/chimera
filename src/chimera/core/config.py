@@ -35,5 +35,7 @@ class ChimeraConfig:
     def __post_init__(self):
         self.project_dir = Path(self.project_dir)
         self.cache_dir = Path(self.cache_dir)
-        self.project_dir.mkdir(parents=True, exist_ok=True)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        for name, path in (("project_dir", self.project_dir), ("cache_dir", self.cache_dir)):
+            if path.exists() and not path.is_dir():
+                raise ValueError(f"{name} is not a directory: {path}")
+            path.mkdir(parents=True, exist_ok=True)

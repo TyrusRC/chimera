@@ -3,18 +3,34 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
+
+logger = logging.getLogger(__name__)
 
 
 class ResourceManager:
     MIN_RAM_MB = 4096  # Minimum 4GB for basic static analysis
+    DEFAULT_FALLBACK_MB = 16384  # Used when detection fails AND no CHIMERA_MEM_MB
 
     def __init__(self, total_ram_mb: int | None = None):
-        import logging
-        logger = logging.getLogger(__name__)
         if total_ram_mb is None:
-            total_ram_mb = _detect_ram_mb()
+            detected = _detect_ram_mb()
+            if detected is None:
+                env_override = os.environ.get("CHIMERA_MEM_MB")
+                if env_override is not None:
+                    total_ram_mb = int(env_override)
+                else:
+                    logger.warning(
+                        "could not detect RAM; falling back to %d MB — "
+                        "set CHIMERA_MEM_MB to override",
+                        self.DEFAULT_FALLBACK_MB,
+                    )
+                    total_ram_mb = self.DEFAULT_FALLBACK_MB
+            else:
+                total_ram_mb = detected
         if total_ram_mb < self.MIN_RAM_MB:
             raise SystemError(
                 f"Chimera requires minimum 4GB RAM. Detected: {total_ram_mb}MB"
@@ -47,18 +63,18 @@ class ResourceManager:
             yield
 
 
-def _detect_ram_mb() -> int:
+def _detect_ram_mb() -> int | None:
+    """Return detected total RAM in MB, or None if all detection methods fail."""
     try:
         import psutil
         return psutil.virtual_memory().total // (1024 * 1024)
     except ImportError:
         pass
     try:
-        import os
         if hasattr(os, "sysconf"):
             pages = os.sysconf("SC_PHYS_PAGES")
             page_size = os.sysconf("SC_PAGE_SIZE")
             return (pages * page_size) // (1024 * 1024)
     except (ValueError, OSError):
         pass
-    return 16384
+    return None

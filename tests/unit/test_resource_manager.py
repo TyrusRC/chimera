@@ -50,3 +50,32 @@ class TestResourceManager:
         rm_32 = ResourceManager(total_ram_mb=32768)
         assert rm_16.heavy_max_mem == "4g"
         assert rm_32.heavy_max_mem == "6g"
+
+
+def test_resource_manager_logs_warning_when_falling_back(monkeypatch, caplog):
+    from chimera.core import resource_manager
+    # Force RAM detection to report failure
+    monkeypatch.setattr(resource_manager, "_detect_ram_mb", lambda: None)
+    # Also ensure env override is not present (test isolation)
+    monkeypatch.delenv("CHIMERA_MEM_MB", raising=False)
+
+    with caplog.at_level("WARNING"):
+        from chimera.core.resource_manager import ResourceManager
+        rm = ResourceManager()
+
+    assert any(
+        "could not detect" in r.message.lower()
+        or "fallback" in r.message.lower()
+        for r in caplog.records
+    ), [r.message for r in caplog.records]
+    assert rm.total_ram_mb == 16384
+
+
+def test_resource_manager_honors_chimera_mem_mb_env(monkeypatch):
+    from chimera.core import resource_manager
+    monkeypatch.setattr(resource_manager, "_detect_ram_mb", lambda: None)
+    monkeypatch.setenv("CHIMERA_MEM_MB", "8192")
+
+    from chimera.core.resource_manager import ResourceManager
+    rm = ResourceManager()
+    assert rm.total_ram_mb == 8192
