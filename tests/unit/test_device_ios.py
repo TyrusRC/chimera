@@ -46,3 +46,23 @@ async def test_iproxy_health_check_detects_dead_proc(monkeypatch):
     assert mgr.iproxy_alive() is True
     # second health check: dead
     assert mgr.iproxy_alive() is False
+
+
+async def test_ios_is_alive_false_when_ideviceid_missing(monkeypatch):
+    from chimera.device.ios import IOSDeviceManager
+    mgr = IOSDeviceManager()
+
+    async def fail(self_arg, *a, **kw):
+        raise RuntimeError("no idevice_id")
+    monkeypatch.setattr(IOSDeviceManager, "_run", fail)
+    assert (await mgr.is_alive("D")) is False
+
+
+async def test_ios_is_alive_true_when_udid_listed(monkeypatch):
+    from chimera.device.ios import IOSDeviceManager
+    mgr = IOSDeviceManager()
+
+    async def ok(self_arg, *a, **kw):
+        return "D\nOTHER-UDID\n"
+    monkeypatch.setattr(IOSDeviceManager, "_run", ok)
+    assert (await mgr.is_alive("D")) is True

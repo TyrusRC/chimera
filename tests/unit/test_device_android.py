@@ -104,3 +104,25 @@ async def test_adb_device_accepts_args_with_spaces(monkeypatch):
     assert "/data/App Name/base.apk" in argv
     i = argv.index("/data/App Name/base.apk")
     assert argv[i + 1] == "/tmp/out"
+
+
+async def test_android_is_alive_false_when_adb_fails(monkeypatch):
+    from chimera.device.android import AndroidDeviceManager, AdbError
+    mgr = AndroidDeviceManager()
+
+    async def fail(self_arg, device_id, argv):
+        raise AdbError("x", 1, "offline")
+    monkeypatch.setattr(AndroidDeviceManager, "_adb_device_argv", fail)
+    alive = await mgr.is_alive("D")
+    assert alive is False
+
+
+async def test_android_is_alive_true_on_successful_echo(monkeypatch):
+    from chimera.device.android import AndroidDeviceManager
+    mgr = AndroidDeviceManager()
+
+    async def ok(self_arg, device_id, argv):
+        return "1\n"
+    monkeypatch.setattr(AndroidDeviceManager, "_adb_device_argv", ok)
+    alive = await mgr.is_alive("D")
+    assert alive is True

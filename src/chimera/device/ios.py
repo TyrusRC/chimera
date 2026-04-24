@@ -54,6 +54,13 @@ class IOSDeviceManager(DeviceManager):
             logger.warning("Failed to get iOS device info for %s: %s", device_id, e)
             return DeviceInfo(id=device_id, platform=DevicePlatform.IOS)
 
+    async def is_alive(self, device_id: str) -> bool:
+        try:
+            out = await self._run("idevice_id", "-l")
+            return device_id in out
+        except Exception:
+            return False
+
     async def list_packages(self, device_id: str) -> list[str]:
         output = await self._run("ideviceinstaller", "-u", device_id, "-l")
         packages = []

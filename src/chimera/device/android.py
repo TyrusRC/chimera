@@ -144,6 +144,13 @@ class AndroidDeviceManager(DeviceManager):
     async def run_command(self, device_id: str, command: str) -> str:
         return await self._adb_device_argv(device_id, ["shell", command])
 
+    async def is_alive(self, device_id: str) -> bool:
+        try:
+            await self._adb_device_argv(device_id, ["shell", "echo", "1"])
+            return True
+        except Exception:
+            return False
+
     async def cleanup(self) -> None:
         pass
 

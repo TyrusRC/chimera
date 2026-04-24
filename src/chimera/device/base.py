@@ -47,6 +47,9 @@ class DeviceManager(ABC):
     async def pull_app(self, device_id: str, package: str, output_dir: str) -> list[str] | None: ...
 
     @abstractmethod
+    async def is_alive(self, device_id: str) -> bool: ...
+
+    @abstractmethod
     async def start_frida_server(self, device_id: str) -> bool: ...
 
     @abstractmethod
