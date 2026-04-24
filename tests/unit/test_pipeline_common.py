@@ -119,3 +119,58 @@ def test_ambiguous_largest_apk_raises(tmp_path):
     out = tmp_path / "out"
     with pytest.raises(ValueError, match="ambiguous"):
         _find_base_apk_in_bundle(bundle, out)
+
+
+def test_find_mapping_file_sibling_of_apk(tmp_path):
+    """Priority 1: <apk>.mapping or <apk>.mapping.txt alongside the APK."""
+    from chimera.pipelines.common import find_mapping_file
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(b"PK")
+    mapping = tmp_path / "app.apk.mapping.txt"
+    mapping.write_text("original.class -> a:\n")
+    unpack_dir = tmp_path / "unpacked"
+    unpack_dir.mkdir()
+    assert find_mapping_file(unpack_dir, apk_path=apk) == mapping
+
+
+def test_find_mapping_file_aab_bundle_metadata(tmp_path):
+    """Priority 2: BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map inside unpack."""
+    from chimera.pipelines.common import find_mapping_file
+    unpack_dir = tmp_path / "unpacked"
+    meta_dir = unpack_dir / "BUNDLE-METADATA" / "com.android.tools.build.obfuscation"
+    meta_dir.mkdir(parents=True)
+    mapping = meta_dir / "proguard.map"
+    mapping.write_text("original.class -> a:\n")
+    assert find_mapping_file(unpack_dir, apk_path=None) == mapping
+
+
+def test_find_mapping_file_bundled_in_assets(tmp_path):
+    """Priority 3: assets/mapping.txt or mapping.txt in unpack dir."""
+    from chimera.pipelines.common import find_mapping_file
+    unpack_dir = tmp_path / "unpacked"
+    assets = unpack_dir / "assets"
+    assets.mkdir(parents=True)
+    mapping = assets / "mapping.txt"
+    mapping.write_text("x -> a:\n")
+    assert find_mapping_file(unpack_dir, apk_path=None) == mapping
+
+
+def test_find_mapping_file_none_when_absent(tmp_path):
+    from chimera.pipelines.common import find_mapping_file
+    unpack_dir = tmp_path / "unpacked"
+    unpack_dir.mkdir()
+    assert find_mapping_file(unpack_dir, apk_path=None) is None
+
+
+def test_find_mapping_file_sibling_wins_over_bundled(tmp_path):
+    """Sibling (priority 1) must beat BUNDLE-METADATA (priority 2)."""
+    from chimera.pipelines.common import find_mapping_file
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(b"PK")
+    sibling = tmp_path / "app.apk.mapping"
+    sibling.write_text("s -> a:\n")
+    unpack_dir = tmp_path / "unpacked"
+    meta_dir = unpack_dir / "BUNDLE-METADATA" / "com.android.tools.build.obfuscation"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "proguard.map").write_text("b -> a:\n")
+    assert find_mapping_file(unpack_dir, apk_path=apk) == sibling

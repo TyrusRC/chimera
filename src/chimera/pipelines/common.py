@@ -375,3 +375,35 @@ def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: st
                 language=language, classification="unknown",
                 layer=layer, source_backend="radare2",
             ))
+
+
+def find_mapping_file(unpack_dir: Path, apk_path: Path | None = None) -> Path | None:
+    """Locate a ProGuard/R8 mapping file to restore original identifiers.
+
+    Search order:
+      1. Sibling of the APK on disk: <apk>.mapping, <apk>.mapping.txt
+      2. Inside AAB bundle:          <unpack>/BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map
+      3. Bundled in APK:             <unpack>/assets/mapping.txt, <unpack>/mapping.txt
+
+    Returns the first existing hit. Never raises — missing sources fall through.
+    """
+    if apk_path is not None:
+        for candidate in (
+            apk_path.with_suffix(apk_path.suffix + ".mapping"),
+            apk_path.with_suffix(apk_path.suffix + ".mapping.txt"),
+        ):
+            if candidate.exists():
+                return candidate
+
+    aab_path = unpack_dir / "BUNDLE-METADATA" / "com.android.tools.build.obfuscation" / "proguard.map"
+    if aab_path.exists():
+        return aab_path
+
+    for candidate in (
+        unpack_dir / "assets" / "mapping.txt",
+        unpack_dir / "mapping.txt",
+    ):
+        if candidate.exists():
+            return candidate
+
+    return None
