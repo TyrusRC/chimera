@@ -34,14 +34,18 @@ main.add_command(db_cli)
 @click.option("--cache-dir", type=click.Path(), default=None, help="Cache directory")
 @click.option("--device", type=str, default=None, help="ADB device or iOS UDID")
 @click.option("--ghidra-home", type=str, default=None, help="Ghidra install path")
+@click.option("--mapping-file", type=click.Path(exists=True), default=None,
+              help="ProGuard/R8 mapping.txt to restore original identifiers")
 def analyze(path: str, project_dir: str | None, cache_dir: str | None,
-            device: str | None, ghidra_home: str | None):
+            device: str | None, ghidra_home: str | None,
+            mapping_file: str | None):
     """Analyze a mobile app binary (APK, IPA, DEX, Mach-O, ELF .so)."""
-    asyncio.run(_analyze(path, project_dir, cache_dir, device, ghidra_home))
+    asyncio.run(_analyze(path, project_dir, cache_dir, device, ghidra_home, mapping_file))
 
 
 async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
-                   device: str | None, ghidra_home: str | None):
+                   device: str | None, ghidra_home: str | None,
+                   mapping_file: str | None):
     from chimera.core.config import ChimeraConfig
     from chimera.core.engine import ChimeraEngine
 
@@ -50,6 +54,7 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
         cache_dir=Path(cache_dir) if cache_dir else Path.cwd() / "chimera_cache",
         ghidra_home=ghidra_home,
         adb_device=device,
+        mapping_file=Path(mapping_file) if mapping_file else None,
     )
     engine = ChimeraEngine(config)
     try:

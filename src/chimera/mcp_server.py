@@ -74,6 +74,10 @@ async def list_tools() -> list[Tool]:
              description="Run full static analysis on a mobile binary (APK/IPA). This is the entry point — must be called before query tools.",
              inputSchema={"type": "object", "properties": {
                  "path": {"type": "string", "description": "Absolute path to APK or IPA file"},
+                 "mapping_file": {
+                     "type": "string",
+                     "description": "Optional ProGuard/R8 mapping.txt path to restore original identifiers",
+                 },
              }, "required": ["path"]}),
 
         # --- Query: Code ---
@@ -317,6 +321,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     # ── analyze ─────────────────────────────────────────────────────────
     elif name == "analyze":
         path = arguments["path"]
+        mapping_file = arguments.get("mapping_file")
+        engine.config.mapping_file = Path(mapping_file) if mapping_file else None
         model = await engine.analyze(path)
         _current_model = model
         _analysis_config = {

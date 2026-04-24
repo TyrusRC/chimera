@@ -19,6 +19,7 @@ class ChimeraConfig:
     skip_fuzzing: bool = True
     adb_device: Optional[str] = None
     ios_udid: Optional[str] = None
+    mapping_file: Optional[Path] = None
     db_url: str = field(
         default_factory=lambda: os.getenv(
             "CHIMERA_DB_URL",

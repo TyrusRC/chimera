@@ -18,3 +18,21 @@ def test_config_creates_missing_dirs(tmp_path):
     cdir = tmp_path / "new_cache"
     ChimeraConfig(project_dir=pdir, cache_dir=cdir)
     assert pdir.is_dir() and cdir.is_dir()
+
+
+def test_config_mapping_file_field_default_none(tmp_path):
+    from chimera.core.config import ChimeraConfig
+    cfg = ChimeraConfig(project_dir=tmp_path / "p", cache_dir=tmp_path / "c")
+    assert cfg.mapping_file is None
+
+
+def test_config_mapping_file_field_accepts_path(tmp_path):
+    from chimera.core.config import ChimeraConfig
+    m = tmp_path / "mapping.txt"
+    m.write_text("x -> a:\n")
+    cfg = ChimeraConfig(
+        project_dir=tmp_path / "p",
+        cache_dir=tmp_path / "c",
+        mapping_file=m,
+    )
+    assert str(cfg.mapping_file).endswith("mapping.txt")
