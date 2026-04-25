@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shutil
 from pathlib import Path
@@ -51,14 +52,40 @@ class SwiftDemangleAdapter(BackendAdapter):
     async def demangle_batch(self, names: list[str]) -> dict[str, str]:
         if not names:
             return {}
-        # Dedupe preserving first-seen order.
         seen: dict[str, None] = {}
         for n in names:
             if n not in seen:
                 seen[n] = None
         deduped = list(seen)
-        # Subprocess wiring is added in Task 2.
-        return {name: name for name in deduped}
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "swift-demangle",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError:
+            return {}
+
+        try:
+            payload = ("\n".join(deduped) + "\n").encode("utf-8", errors="replace")
+            stdout, _stderr = await proc.communicate(input=payload)
+        except (OSError, ValueError):
+            return {}
+
+        if proc.returncode != 0:
+            return {}
+
+        out_lines = stdout.decode(errors="replace").splitlines()
+        result: dict[str, str] = {}
+        for i, mangled in enumerate(deduped):
+            if i < len(out_lines):
+                demangled = out_lines[i]
+                result[mangled] = demangled if demangled else mangled
+            else:
+                result[mangled] = mangled
+        return result
 
     async def cleanup(self) -> None:
         pass

@@ -16,6 +16,7 @@ from chimera.adapters.radare2 import Radare2Adapter
 from chimera.adapters.registry import AdapterRegistry
 from chimera.adapters.semgrep import SemgrepAdapter
 from chimera.adapters.hermes_dec import HermesDecAdapter
+from chimera.adapters.swift_demangle import SwiftDemangleAdapter
 from chimera.adapters.webcrack import WebcrackAdapter
 from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
@@ -49,6 +50,7 @@ class ChimeraEngine:
         self.registry.register(SemgrepAdapter())
         self.registry.register(WebcrackAdapter())
         self.registry.register(HermesDecAdapter())
+        self.registry.register(SwiftDemangleAdapter())
 
     async def analyze(self, path: str | Path) -> UnifiedProgramModel:
         path = Path(path)
