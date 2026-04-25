@@ -401,3 +401,29 @@ async def test_orchestrator_writes_bulk_artifacts_to_cache(tmp_path: Path):
     assert "react_native_modules" in cache.json_writes
     assert ctx["security_issue_count"] == len(cache.json_writes["react_native_issues"])
     assert ctx["module_id_count"] == len(cache.json_writes["react_native_modules"])
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_marks_decompile_failed_when_adapter_raises(tmp_path: Path):
+    bundle = tmp_path / "index.android.bundle"
+    bundle.write_bytes(b"// JSC bundle")
+    cache = _FakeCache()
+    model = UnifiedProgramModel(_fake_binary(tmp_path))
+
+    class _RaisingAdapter(_FakeAdapter):
+        async def analyze(self, binary_path: str, options: dict) -> dict:
+            raise RuntimeError("simulated decompile crash")
+
+    registry = _FakeRegistry({"webcrack": _RaisingAdapter("webcrack", available=True)})
+    ctx = await analyze_react_native_bundle(
+        bundle_path=bundle,
+        platform="android",
+        model=model,
+        registry=registry,
+        cache=cache,
+        sha="abc",
+        output_root=tmp_path / "rn_out",
+    )
+
+    assert ctx["decompile"]["ran"] is False
+    assert ctx["decompile"]["skipped_reason"] == "decompile_failed"

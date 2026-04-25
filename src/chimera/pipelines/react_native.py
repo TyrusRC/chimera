@@ -8,13 +8,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from chimera.frameworks.react_native import INTERESTING_PATTERNS
+from chimera.frameworks.react_native import _HERMES_MAGIC, INTERESTING_PATTERNS
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
 
 logger = logging.getLogger(__name__)
-
-_HERMES_MAGIC = b"\xc6\x1f\xbc\x03"
 
 
 def find_rn_bundle(unpack_dir: Path, platform: str) -> Path | None:
@@ -132,6 +130,11 @@ def populate_model_from_sourcemap(
 
 
 def _detect_variant(bundle_path: Path) -> str:
+    """Return ``"hermes"`` if the bundle starts with the Hermes magic bytes, else ``"jsc"``.
+
+    Never raises; OSError defaults to ``"jsc"`` so a missing/unreadable bundle
+    flows into the no-bundle branch downstream rather than aborting the pipeline.
+    """
     try:
         with open(bundle_path, "rb") as fh:
             magic = fh.read(4)
@@ -209,23 +212,26 @@ async def analyze_react_native_bundle(
     if variant == "jsc":
         try:
             security_issues = analyzer.scan_for_issues(bundle_path)
-        except OSError as exc:
+        except Exception as exc:
             logger.warning("RN security scan failed: %s", exc)
         try:
             module_ids = analyzer.extract_module_ids(bundle_path)
-        except OSError as exc:
+        except Exception as exc:
             logger.warning("RN module-id extraction failed: %s", exc)
         try:
             content = bundle_path.read_text(errors="replace")
             bundle_strings = analyzer._extract_strings(content)
-        except OSError:
-            pass
+        except Exception as exc:
+            logger.warning("RN string extraction failed: %s", exc)
     else:
         try:
             bundle_strings = list(analyzer._extract_hermes_strings(bundle_path))
-            bundle_strings.extend(analyzer.extract_utf16_strings(bundle_path))
-        except OSError as exc:
+        except Exception as exc:
             logger.warning("RN hermes string extraction failed: %s", exc)
+        try:
+            bundle_strings.extend(analyzer.extract_utf16_strings(bundle_path))
+        except Exception as exc:
+            logger.warning("RN hermes UTF-16 string extraction failed: %s", exc)
 
     for i, s in enumerate(bundle_strings):
         model.add_string(address=f"rn_bundle_{i}", value=s, section="bundle")
