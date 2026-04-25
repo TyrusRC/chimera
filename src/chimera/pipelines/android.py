@@ -10,10 +10,9 @@ from chimera.adapters.registry import AdapterRegistry
 from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
 from chimera.core.resource_manager import ResourceManager
-from chimera.model.binary import BinaryInfo
+from chimera.model.binary import BinaryInfo, Framework
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
-from chimera.model.binary import Framework
 from chimera.pipelines.common import (
     _rehydrate_from_cache,
     detect_kotlin,

@@ -5,8 +5,6 @@ import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
 from chimera.core.resource_manager import ResourceManager
@@ -190,7 +188,6 @@ async def test_android_records_jadx_context_in_triage(tmp_path):
     assert opts["mapping_file"] is not None
 
 
-@pytest.mark.asyncio
 async def test_android_pipeline_runs_react_native_subpipeline(tmp_path, monkeypatch):
     """When framework=react-native, RN sub-pipeline runs and writes react_native_context."""
     import zipfile
@@ -245,3 +242,99 @@ async def test_android_pipeline_runs_react_native_subpipeline(tmp_path, monkeypa
     sha = hashlib.sha256(apk.read_bytes()).hexdigest()
     triage = cache.get_json(sha, "triage")
     assert triage["react_native_context"]["variant"] == "jsc"
+
+
+async def test_android_pipeline_skips_rn_subpipeline_for_non_rn_apk(tmp_path, monkeypatch):
+    """When framework is not react-native, RN sub-pipeline is not invoked and triage carries None."""
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.android import analyze_apk
+
+    apk = tmp_path / "plain.apk"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", "<manifest/>")
+        # No assets/index.android.bundle — framework detector will return "native".
+
+    config = ChimeraConfig(
+        project_dir=tmp_path / "project",
+        cache_dir=tmp_path / "cache",
+    )
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+
+    invoked: list = []
+
+    async def fake_orchestrator(**kwargs):
+        invoked.append(kwargs)
+        return {}
+
+    monkeypatch.setattr(
+        "chimera.pipelines.android.analyze_react_native_bundle",
+        fake_orchestrator,
+    )
+
+    await analyze_apk(apk, config, registry, resource_mgr, cache)
+
+    assert invoked == [], "RN orchestrator should not have been invoked for non-RN APK"
+
+    import hashlib
+    sha = hashlib.sha256(apk.read_bytes()).hexdigest()
+    triage = cache.get_json(sha, "triage")
+    assert triage["react_native_context"] is None
+
+
+async def test_android_pipeline_rn_framework_but_no_bundle_records_skip_marker(tmp_path, monkeypatch):
+    """When framework is RN but find_rn_bundle returns None, triage carries the skip-marker dict."""
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.android import analyze_apk
+
+    apk = tmp_path / "rn.apk"
+    bundle_bytes = b"// JS bundle\n"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", "<manifest/>")
+        zf.writestr("assets/index.android.bundle", bundle_bytes)
+
+    config = ChimeraConfig(
+        project_dir=tmp_path / "project",
+        cache_dir=tmp_path / "cache",
+    )
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+
+    # Force find_rn_bundle to None so the no-bundle branch fires even though framework is RN.
+    monkeypatch.setattr(
+        "chimera.pipelines.android.find_rn_bundle",
+        lambda unpack_dir, platform: None,
+    )
+
+    invoked: list = []
+
+    async def fake_orchestrator(**kwargs):
+        invoked.append(kwargs)
+        return {}
+
+    monkeypatch.setattr(
+        "chimera.pipelines.android.analyze_react_native_bundle",
+        fake_orchestrator,
+    )
+
+    await analyze_apk(apk, config, registry, resource_mgr, cache)
+
+    assert invoked == [], "Orchestrator should not be invoked when no bundle is found"
+
+    import hashlib
+    sha = hashlib.sha256(apk.read_bytes()).hexdigest()
+    triage = cache.get_json(sha, "triage")
+    assert triage["react_native_context"] == {
+        "bundle_path": None,
+        "skipped_reason": "no_bundle_found",
+    }
