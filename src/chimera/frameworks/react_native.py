@@ -29,11 +29,14 @@ _SECURITY_PATTERNS = [
 ]
 
 # Strings worth extracting from bundles
-_INTERESTING_PATTERNS = [
+INTERESTING_PATTERNS = [
     r"https?://[^\s'\"]+",             # URLs
     r"['\"](?:api|API)[_-]?(?:key|KEY|secret|SECRET|token|TOKEN)['\"]",  # API key references
     r"firebase[a-zA-Z]*\.google(?:apis)?\.com",  # Firebase endpoints
 ]
+
+# Backwards-compat alias for any external code still importing the private name.
+_INTERESTING_PATTERNS = INTERESTING_PATTERNS
 
 
 class ReactNativeAnalyzer:
