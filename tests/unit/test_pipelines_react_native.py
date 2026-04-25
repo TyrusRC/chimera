@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+from chimera.model.binary import BinaryInfo
+from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.react_native import (
     find_rn_bundle,
     find_source_map,
+    parse_source_map,
+    populate_model_from_sourcemap,
 )
+
+
+def _fake_binary(tmp_path: Path) -> BinaryInfo:
+    apk = tmp_path / "fake.apk"
+    apk.write_bytes(b"PK\x03\x04")
+    return BinaryInfo.from_path(apk)
 
 
 class TestFindRnBundle:
@@ -89,22 +100,6 @@ class TestFindSourceMap:
         bundle.write_bytes(b"x")
         (tmp_path / "main.jsbundle.map").mkdir()
         assert find_source_map(bundle) is None
-
-
-import json
-
-from chimera.model.binary import BinaryInfo
-from chimera.model.program import UnifiedProgramModel
-from chimera.pipelines.react_native import (
-    parse_source_map,
-    populate_model_from_sourcemap,
-)
-
-
-def _fake_binary(tmp_path: Path) -> BinaryInfo:
-    apk = tmp_path / "fake.apk"
-    apk.write_bytes(b"PK\x03\x04")
-    return BinaryInfo.from_path(apk)
 
 
 class TestParseSourceMap:
@@ -191,3 +186,18 @@ class TestPopulateModelFromSourcemap:
         # Must not raise.
         count = populate_model_from_sourcemap(model, sm)
         assert count == 2
+
+    def test_non_string_source_entry_is_skipped(self, tmp_path: Path):
+        model = UnifiedProgramModel(_fake_binary(tmp_path))
+        sm = {
+            "version": 3,
+            "sources": [1, None, "src/A.js"],
+            "sourcesContent": ["", "", "// a"],
+            "mappings": "",
+            "names": [],
+        }
+        count = populate_model_from_sourcemap(model, sm)
+        assert count == 1
+        funcs = list(model.functions)
+        assert len(funcs) == 1
+        assert funcs[0].original_name == "src/A.js"

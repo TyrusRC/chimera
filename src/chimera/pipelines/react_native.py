@@ -101,6 +101,8 @@ def populate_model_from_sourcemap(
     added = 0
 
     for i, source in enumerate(sources):
+        if not isinstance(source, str):
+            continue
         model.add_function(FunctionInfo(
             address=f"rn_module_{i}",
             name=Path(source).stem or source,
