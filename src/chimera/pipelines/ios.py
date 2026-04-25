@@ -15,6 +15,7 @@ from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
 from chimera.pipelines.common import _rehydrate_from_cache, unpack_ipa
+from chimera.adapters.swift_demangle import _MANGLED_RE
 from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,30 @@ async def analyze_ipa(
             )
             cache.put_json(binary.sha256, "ghidra_main", ghidra_result)
 
+    # Phase 5.5: Swift demangle (post-r2 + post-Ghidra).
+    # Convention swap: mangled name moves to original_name; demangled becomes name.
+    swift_demangle_context = {
+        "available": False,
+        "names_demangled": 0,
+        "strings_demangled": 0,
+        "decompiled_tokens_demangled": 0,
+        "skipped_reason": "tool_unavailable",
+    }
+    demangler = registry.get("swift_demangle")
+    if demangler is not None and demangler.is_available():
+        swift_demangle_context["available"] = True
+        swift_demangle_context["skipped_reason"] = None
+
+        fn_inputs = [f.name for f in model.functions if _MANGLED_RE.match(f.name)]
+        if fn_inputs:
+            fn_map = await demangler.demangle_batch(fn_inputs)
+            for f in model.functions:
+                demangled = fn_map.get(f.name)
+                if demangled and demangled != f.name:
+                    f.original_name = f.name
+                    f.name = demangled
+                    swift_demangle_context["names_demangled"] += 1
+
     cache.put_json(binary.sha256, "triage", {
         "platform": "ios",
         "framework": binary.framework.value,
@@ -191,6 +216,7 @@ async def analyze_ipa(
         "function_count": len(model.functions),
         "string_count": len(model.get_strings()),
         "react_native_context": react_native_context,
+        "swift_demangle_context": swift_demangle_context,
     })
 
     logger.info("Analysis complete: %d functions, %d strings",
