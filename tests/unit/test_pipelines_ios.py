@@ -109,3 +109,167 @@ async def test_ios_cache_hit_with_skipped_status_warns_and_returns(tmp_path, cap
                for r in caplog.records)
     # Unpack must still be short-circuited (Task 3 guarantee)
     assert not unpack_root.exists()
+
+
+async def test_ios_pipeline_runs_react_native_subpipeline(tmp_path, monkeypatch):
+    """When framework=react-native, iOS pipeline calls RN sub-pipeline against app bundle."""
+    import plistlib
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.ios import analyze_ipa
+
+    ipa = tmp_path / "rn.ipa"
+    plist = plistlib.dumps({
+        "CFBundleExecutable": "App",
+        "CFBundleIdentifier": "com.example.rn",
+    })
+    main_bin = b"\xcf\xfa\xed\xfe" + b"\x00" * 60  # fake Mach-O magic
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("Payload/App.app/Info.plist", plist)
+        zf.writestr("Payload/App.app/App", main_bin)
+        zf.writestr("Payload/App.app/main.jsbundle", b"// JS bundle\n")
+
+    config = ChimeraConfig(
+        project_dir=tmp_path / "project",
+        cache_dir=tmp_path / "cache",
+    )
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+
+    captured: dict = {}
+
+    async def fake_orchestrator(**kwargs):
+        captured.update(kwargs)
+        return {
+            "bundle_path": str(kwargs["bundle_path"]),
+            "variant": "jsc",
+            "bundle_size": 16,
+            "decompile": {"tool": "webcrack", "ran": False, "output_dir": "x",
+                          "file_count": 0, "skipped_reason": "tool_unavailable",
+                          "hermes_bytecode_version": None},
+            "source_map": {"discovered": False, "path": None, "source_count": 0,
+                           "names_populated": 0},
+            "security_issue_count": 0,
+            "module_id_count": 0,
+        }
+
+    monkeypatch.setattr(
+        "chimera.pipelines.ios.analyze_react_native_bundle",
+        fake_orchestrator,
+    )
+
+    await analyze_ipa(ipa, config, registry, resource_mgr, cache)
+
+    assert captured, "RN sub-pipeline was not invoked from iOS pipeline"
+    assert captured["platform"] == "ios"
+
+    import hashlib
+    sha = hashlib.sha256(ipa.read_bytes()).hexdigest()
+    triage = cache.get_json(sha, "triage")
+    assert triage["react_native_context"]["variant"] == "jsc"
+
+
+async def test_ios_pipeline_skips_rn_subpipeline_for_non_rn_ipa(tmp_path, monkeypatch):
+    """When framework is not react-native, RN sub-pipeline is not invoked and triage carries None."""
+    import plistlib
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.ios import analyze_ipa
+
+    ipa = tmp_path / "plain.ipa"
+    plist = plistlib.dumps({"CFBundleExecutable": "App", "CFBundleIdentifier": "com.example.plain"})
+    main_bin = b"\xcf\xfa\xed\xfe" + b"\x00" * 60
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("Payload/App.app/Info.plist", plist)
+        zf.writestr("Payload/App.app/App", main_bin)
+        # No *.jsbundle — framework detector returns "native".
+
+    config = ChimeraConfig(
+        project_dir=tmp_path / "project",
+        cache_dir=tmp_path / "cache",
+    )
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+
+    invoked: list = []
+
+    async def fake_orchestrator(**kwargs):
+        invoked.append(kwargs)
+        return {}
+
+    monkeypatch.setattr(
+        "chimera.pipelines.ios.analyze_react_native_bundle",
+        fake_orchestrator,
+    )
+
+    await analyze_ipa(ipa, config, registry, resource_mgr, cache)
+
+    assert invoked == []
+
+    import hashlib
+    sha = hashlib.sha256(ipa.read_bytes()).hexdigest()
+    triage = cache.get_json(sha, "triage")
+    assert triage["react_native_context"] is None
+
+
+async def test_ios_pipeline_rn_framework_but_no_bundle_records_skip_marker(tmp_path, monkeypatch):
+    """When framework is RN but find_rn_bundle returns None, triage carries the skip-marker dict."""
+    import plistlib
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.ios import analyze_ipa
+
+    ipa = tmp_path / "rn.ipa"
+    plist = plistlib.dumps({"CFBundleExecutable": "App", "CFBundleIdentifier": "com.example.rn"})
+    main_bin = b"\xcf\xfa\xed\xfe" + b"\x00" * 60
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("Payload/App.app/Info.plist", plist)
+        zf.writestr("Payload/App.app/App", main_bin)
+        zf.writestr("Payload/App.app/main.jsbundle", b"// JS bundle\n")
+
+    config = ChimeraConfig(
+        project_dir=tmp_path / "project",
+        cache_dir=tmp_path / "cache",
+    )
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+
+    monkeypatch.setattr(
+        "chimera.pipelines.ios.find_rn_bundle",
+        lambda app_bundle, platform: None,
+    )
+
+    invoked: list = []
+
+    async def fake_orchestrator(**kwargs):
+        invoked.append(kwargs)
+        return {}
+
+    monkeypatch.setattr(
+        "chimera.pipelines.ios.analyze_react_native_bundle",
+        fake_orchestrator,
+    )
+
+    await analyze_ipa(ipa, config, registry, resource_mgr, cache)
+
+    assert invoked == []
+
+    import hashlib
+    sha = hashlib.sha256(ipa.read_bytes()).hexdigest()
+    triage = cache.get_json(sha, "triage")
+    assert triage["react_native_context"] == {
+        "bundle_path": None,
+        "skipped_reason": "no_bundle_found",
+    }

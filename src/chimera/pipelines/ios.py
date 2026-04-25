@@ -10,11 +10,12 @@ from chimera.adapters.registry import AdapterRegistry
 from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
 from chimera.core.resource_manager import ResourceManager
-from chimera.model.binary import BinaryInfo
+from chimera.model.binary import BinaryInfo, Framework
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
 from chimera.pipelines.common import _rehydrate_from_cache, unpack_ipa
+from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,6 @@ async def analyze_ipa(
                     binary.sha256[:12], cached.get("reason", "unknown"),
                 )
                 model = UnifiedProgramModel(binary)
-                from chimera.model.binary import Framework
                 try:
                     binary.framework = Framework(cached.get("framework", "native"))
                 except ValueError:
@@ -48,7 +48,6 @@ async def analyze_ipa(
                 return model
             logger.info("Cache hit for %s - reusing triage", binary.sha256[:12])
             model = UnifiedProgramModel(binary)
-            from chimera.model.binary import Framework
             try:
                 binary.framework = Framework(cached.get("framework", "native"))
             except ValueError:
@@ -65,7 +64,6 @@ async def analyze_ipa(
 
     # Phase 2: Framework detection
     from chimera.frameworks.detector import FrameworkDetector
-    from chimera.model.binary import Framework
     detected = FrameworkDetector.detect(
         unpack_result["app_bundle"] if unpack_result["app_bundle"] else unpack_dir
     )
@@ -76,6 +74,24 @@ async def analyze_ipa(
     logger.info("Framework detected: %s%s",
                 detected.framework,
                 f" ({detected.variant})" if detected.variant else "")
+
+    # Phase 2.5: React Native sub-pipeline
+    react_native_context: dict | None = None
+    if binary.framework == Framework.REACT_NATIVE and unpack_result.get("app_bundle"):
+        rn_bundle_path = find_rn_bundle(unpack_result["app_bundle"], "ios")
+        if rn_bundle_path is not None:
+            logger.info("RN sub-pipeline on bundle: %s", rn_bundle_path)
+            react_native_context = await analyze_react_native_bundle(
+                bundle_path=rn_bundle_path,
+                platform="ios",
+                model=model,
+                registry=registry,
+                cache=cache,
+                sha=binary.sha256,
+                output_root=config.project_dir / "rn_decompile",
+            )
+        else:
+            react_native_context = {"bundle_path": None, "skipped_reason": "no_bundle_found"}
 
     if not unpack_result["app_bundle"]:
         logger.error("No .app bundle found in IPA")
@@ -174,6 +190,7 @@ async def analyze_ipa(
         "extension_count": len(unpack_result["extensions"]),
         "function_count": len(model.functions),
         "string_count": len(model.get_strings()),
+        "react_native_context": react_native_context,
     })
 
     logger.info("Analysis complete: %d functions, %d strings",
