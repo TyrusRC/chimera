@@ -17,15 +17,15 @@ def find_rn_bundle(unpack_dir: Path, platform: str) -> Path | None:
     if platform == "android":
         for rel in ("assets/index.android.bundle", "assets/index.bundle"):
             candidate = unpack_dir / rel
-            if candidate.exists():
+            if candidate.is_file():
                 return candidate
         return None
     if platform == "ios":
         main = unpack_dir / "main.jsbundle"
-        if main.exists():
+        if main.is_file():
             return main
         for candidate in sorted(unpack_dir.glob("*.jsbundle")):
-            if candidate.exists():
+            if candidate.is_file():
                 return candidate
         return None
     return None
@@ -46,6 +46,6 @@ def find_source_map(bundle_path: Path) -> Path | None:
         bundle_path.parent / (bundle_path.stem + ".map"),
     ]
     for candidate in candidates:
-        if candidate.exists():
+        if candidate.is_file():
             return candidate
     return None

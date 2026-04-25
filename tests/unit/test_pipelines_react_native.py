@@ -47,6 +47,14 @@ class TestFindRnBundle:
     def test_ios_no_bundle_returns_none(self, tmp_path: Path):
         assert find_rn_bundle(tmp_path, "ios") is None
 
+    def test_android_directory_named_like_bundle_is_skipped(self, tmp_path: Path):
+        (tmp_path / "assets" / "index.android.bundle").mkdir(parents=True)
+        assert find_rn_bundle(tmp_path, "android") is None
+
+    def test_ios_directory_named_like_bundle_is_skipped(self, tmp_path: Path):
+        (tmp_path / "main.jsbundle").mkdir()
+        assert find_rn_bundle(tmp_path, "ios") is None
+
 
 class TestFindSourceMap:
     def test_sibling_dot_map_suffix(self, tmp_path: Path):
@@ -74,4 +82,10 @@ class TestFindSourceMap:
     def test_no_map_returns_none(self, tmp_path: Path):
         bundle = tmp_path / "main.jsbundle"
         bundle.write_bytes(b"x")
+        assert find_source_map(bundle) is None
+
+    def test_directory_named_like_map_is_skipped(self, tmp_path: Path):
+        bundle = tmp_path / "main.jsbundle"
+        bundle.write_bytes(b"x")
+        (tmp_path / "main.jsbundle.map").mkdir()
         assert find_source_map(bundle) is None
