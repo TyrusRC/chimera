@@ -44,7 +44,7 @@ class HermesDecAdapter(BackendAdapter):
         stdout, stderr = await proc.communicate()
         err_text = stderr.decode(errors="replace")
 
-        if output_file.exists() and output_file.stat().st_size > 0 and proc.returncode == 0:
+        if output_file.exists() and output_file.stat().st_size > 0:
             return {
                 "return_code": proc.returncode,
                 "output_dir": str(output_dir),
@@ -52,7 +52,7 @@ class HermesDecAdapter(BackendAdapter):
                 "decompiled": True,
                 "size": output_file.stat().st_size,
                 "hermes_bytecode_version": _parse_bytecode_version(err_text),
-                "error": None,
+                "error": err_text[-2000:] if proc.returncode != 0 and err_text else None,
             }
 
         return {

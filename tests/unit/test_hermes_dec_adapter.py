@@ -8,9 +8,7 @@ from pathlib import Path
 import pytest
 
 
-pytestmark = pytest.mark.asyncio
-
-
+@pytest.mark.asyncio
 async def test_hermes_dec_argv_shape(tmp_path: Path, monkeypatch):
     from chimera.adapters.hermes_dec import HermesDecAdapter
 
@@ -45,6 +43,7 @@ async def test_hermes_dec_argv_shape(tmp_path: Path, monkeypatch):
     assert Path(result["output_file"]).exists()
 
 
+@pytest.mark.asyncio
 async def test_hermes_dec_failure_parses_bytecode_version(tmp_path: Path, monkeypatch):
     from chimera.adapters.hermes_dec import HermesDecAdapter
 
@@ -69,6 +68,7 @@ async def test_hermes_dec_failure_parses_bytecode_version(tmp_path: Path, monkey
     assert "Unsupported" in result["error"]
 
 
+@pytest.mark.asyncio
 async def test_hermes_dec_default_output_dir(tmp_path: Path, monkeypatch):
     from chimera.adapters.hermes_dec import HermesDecAdapter
 
@@ -91,7 +91,8 @@ async def test_hermes_dec_default_output_dir(tmp_path: Path, monkeypatch):
     await adapter.analyze(str(bundle), {})
 
     argv = captured[0]
-    assert any("hermes_dec" in arg for arg in argv) or any(arg.endswith("decompiled.js") for arg in argv)
+    assert any("hermes_dec" in arg for arg in argv)
+    assert any(arg.endswith("decompiled.js") for arg in argv)
 
 
 def test_hermes_dec_adapter_metadata():

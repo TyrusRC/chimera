@@ -181,5 +181,5 @@ class ReactNativeAnalyzer:
 
     def hermes_bytecode_version(self, stderr: str) -> int | None:
         """Parse 'Unsupported bytecode version: N' from hermes-dec stderr."""
-        m = re.search(r"bytecode version[:\s]+(\d+)", stderr, re.IGNORECASE)
-        return int(m.group(1)) if m else None
+        from chimera.adapters.hermes_dec import _parse_bytecode_version
+        return _parse_bytecode_version(stderr)
