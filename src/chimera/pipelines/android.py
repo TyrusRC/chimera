@@ -13,12 +13,14 @@ from chimera.core.resource_manager import ResourceManager
 from chimera.model.binary import BinaryInfo
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
+from chimera.model.binary import Framework
 from chimera.pipelines.common import (
     _rehydrate_from_cache,
     detect_kotlin,
     find_mapping_file,
     unpack_apk,
 )
+from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,6 @@ async def analyze_apk(
                     binary.sha256[:12], cached_triage.get("reason", "unknown"),
                 )
                 model = UnifiedProgramModel(binary)
-                from chimera.model.binary import Framework
                 try:
                     binary.framework = Framework(cached_triage.get("framework", "native"))
                 except ValueError:
@@ -61,7 +62,6 @@ async def analyze_apk(
                 return model
             logger.info("Cache hit for %s - reusing triage", binary.sha256[:12])
             model = UnifiedProgramModel(binary)
-            from chimera.model.binary import Framework
             try:
                 binary.framework = Framework(cached_triage.get("framework", "native"))
             except ValueError:
@@ -81,7 +81,6 @@ async def analyze_apk(
 
     # Phase 2: Framework detection
     from chimera.frameworks.detector import FrameworkDetector
-    from chimera.model.binary import Framework
     detect_dir = unpack_result["output_dir"]
     detected = FrameworkDetector.detect(detect_dir)
     try:
@@ -91,6 +90,24 @@ async def analyze_apk(
     logger.info("Framework detected: %s%s",
                 detected.framework,
                 f" ({detected.variant})" if detected.variant else "")
+
+    # Phase 2.5: React Native sub-pipeline
+    react_native_context: dict | None = None
+    if binary.framework == Framework.REACT_NATIVE:
+        rn_bundle_path = find_rn_bundle(unpack_result["output_dir"], "android")
+        if rn_bundle_path is not None:
+            logger.info("RN sub-pipeline on bundle: %s", rn_bundle_path)
+            react_native_context = await analyze_react_native_bundle(
+                bundle_path=rn_bundle_path,
+                platform="android",
+                model=model,
+                registry=registry,
+                cache=cache,
+                sha=binary.sha256,
+                output_root=config.project_dir / "rn_decompile",
+            )
+        else:
+            react_native_context = {"bundle_path": None, "skipped_reason": "no_bundle_found"}
 
     # Phase 3: Read manifest (useful for RE even without vuln scan)
     manifest_xml = None
@@ -227,6 +244,7 @@ async def analyze_apk(
             "mapping_used": mapping_path is not None,
             "mapping_source": str(mapping_path) if mapping_path else None,
         },
+        "react_native_context": react_native_context,
     })
 
     logger.info("Analysis complete: %d functions, %d strings",

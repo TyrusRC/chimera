@@ -188,3 +188,60 @@ async def test_android_records_jadx_context_in_triage(tmp_path):
     opts = captured_options[0]
     assert opts["kotlin_aware"] is True
     assert opts["mapping_file"] is not None
+
+
+@pytest.mark.asyncio
+async def test_android_pipeline_runs_react_native_subpipeline(tmp_path, monkeypatch):
+    """When framework=react-native, RN sub-pipeline runs and writes react_native_context."""
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.android import analyze_apk
+
+    apk = tmp_path / "rn.apk"
+    bundle_bytes = b"// JS bundle\n__d(function(){},0,[]);\n"
+    with zipfile.ZipFile(apk, "w") as zf:
+        zf.writestr("AndroidManifest.xml", "<manifest/>")
+        zf.writestr("assets/index.android.bundle", bundle_bytes)
+
+    config = ChimeraConfig(
+        project_dir=tmp_path / "project",
+        cache_dir=tmp_path / "cache",
+    )
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()  # no adapters registered; jadx/r2/ghidra phases skip
+
+    captured: dict = {}
+
+    async def fake_orchestrator(**kwargs):
+        captured.update(kwargs)
+        return {
+            "bundle_path": str(kwargs["bundle_path"]),
+            "variant": "jsc",
+            "bundle_size": 100,
+            "decompile": {"tool": "webcrack", "ran": False, "output_dir": "x",
+                          "file_count": 0, "skipped_reason": "tool_unavailable",
+                          "hermes_bytecode_version": None},
+            "source_map": {"discovered": False, "path": None, "source_count": 0,
+                           "names_populated": 0},
+            "security_issue_count": 0,
+            "module_id_count": 1,
+        }
+
+    monkeypatch.setattr(
+        "chimera.pipelines.android.analyze_react_native_bundle",
+        fake_orchestrator,
+    )
+
+    await analyze_apk(apk, config, registry, resource_mgr, cache)
+
+    assert captured, "RN sub-pipeline was not invoked"
+    assert captured["platform"] == "android"
+
+    import hashlib
+    sha = hashlib.sha256(apk.read_bytes()).hexdigest()
+    triage = cache.get_json(sha, "triage")
+    assert triage["react_native_context"]["variant"] == "jsc"
