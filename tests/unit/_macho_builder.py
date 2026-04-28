@@ -205,12 +205,16 @@ def build_macho_with_objc(
         ncmds, seg_cmd_total, flags, 0,
     )
 
-    # One big segment covers everything.
+    # One big segment covers everything. Set vmaddr=0 so that pool offsets
+    # (which are written as raw pointer values inside class/method structs)
+    # are themselves valid VM addresses inside this segment's range. The
+    # parser's vm-to-file map then resolves a pool-offset pointer P to file
+    # offset (base_offset + P), since fileoff=base_offset.
     seg_cmd = struct.pack(
         "<II16sQQQQiiII",
         LC_SEGMENT_64, seg_cmd_total,
         b"__DATA_CONST".ljust(16, b"\0"),
-        base_offset,                 # vmaddr
+        0,                           # vmaddr (pool-relative VM space)
         len(pool_payload),           # vmsize
         base_offset,                 # fileoff
         len(pool_payload),           # filesize
@@ -222,7 +226,7 @@ def build_macho_with_objc(
         sect_blob += struct.pack(
             "<16s16sQQIIIIIIII",
             sectname, segname,
-            base_offset + addr,      # vmaddr
+            addr,                    # vmaddr (pool offset, matches segment vmaddr=0)
             size,
             base_offset + addr,      # fileoff
             3, 0, 0, 0, 0, 0, 0,     # align=3 (2^3 = 8-byte) matches pool

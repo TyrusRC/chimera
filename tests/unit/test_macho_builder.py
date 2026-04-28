@@ -1,8 +1,6 @@
 """Self-tests for the synthetic Mach-O builder used by parser unit tests."""
 from __future__ import annotations
 
-import pytest
-
 
 def test_builder_emits_structurally_valid_macho_with_three_objc_sections():
     """Walk the synthesized Mach-O headers without using the Task-4 parser."""
@@ -45,7 +43,6 @@ def test_builder_produces_valid_macho_magic():
     assert raw[:4] == b"\xcf\xfa\xed\xfe"
 
 
-@pytest.mark.xfail(reason="parser landed in Task 4", strict=True)
 def test_builder_round_trips_one_class_with_one_method():
     from tests.unit._macho_builder import build_macho_with_objc, BuilderClass, BuilderMethod
 
