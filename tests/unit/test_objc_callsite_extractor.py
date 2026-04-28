@@ -114,3 +114,49 @@ def test_extractor_emits_dynamic_when_receiver_unknown_but_selector_resolved():
     assert len(callsites) == 1
     assert callsites[0]["selector"] == "doSomething"
     assert callsites[0]["receiver_class"] is None
+
+
+def test_extractor_handles_hex_string_keys_in_cstring_pool():
+    """cstring_pool may use hex string keys (lowercase or uppercase)."""
+    from chimera.parsers.objc_callsite_extractor import extract_callsites
+
+    # Use 0xA0 so the address has a hex letter - lowercase/uppercase forms
+    # produce distinct strings ('0x1002000a0' vs '0x1002000A0').
+    per_function_disasm = {
+        "0x100456000": {
+            "name": "sym.test",
+            "ops": [
+                {"offset": 0x100456000, "opcode": "adrp", "operands": ["x1", 0x100200000]},
+                {"offset": 0x100456004, "opcode": "add",  "operands": ["x1", "x1", 0xA0]},
+                {"offset": 0x100456008, "opcode": "bl", "operands": [], "target_sym": "sym.imp.objc_msgSend"},
+                {"offset": 0x10045600c, "opcode": "ret", "operands": []},
+            ],
+        },
+    }
+    callsites = extract_callsites(
+        per_function_disasm=per_function_disasm,
+        class_symbols=set(),
+        cstring_pool={"0x1002000a0": "lowercase"},  # lowercase hex string
+        class_address_to_name={},
+    )
+    assert len(callsites) == 1
+    assert callsites[0]["selector"] == "lowercase"
+
+    # Uppercase-only form must also resolve (covers the f"0x{addr:X}" branch).
+    callsites_upper_only = extract_callsites(
+        per_function_disasm=per_function_disasm,
+        class_symbols=set(),
+        cstring_pool={"0x1002000A0": "uppercase"},
+        class_address_to_name={},
+    )
+    assert callsites_upper_only[0]["selector"] == "uppercase"
+
+    # When both forms are present, lowercase wins (matches `hex(addr)` first).
+    callsites_both = extract_callsites(
+        per_function_disasm=per_function_disasm,
+        class_symbols=set(),
+        cstring_pool={"0x1002000a0": "lowercase", "0x1002000A0": "skipme"},
+        class_address_to_name={},
+    )
+    # Lowercase form takes precedence (matches `hex(addr)`)
+    assert callsites_both[0]["selector"] == "lowercase"

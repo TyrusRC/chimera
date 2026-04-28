@@ -75,9 +75,10 @@ def _resolve_selector(state: RegisterState, cstring_pool: dict) -> str | None:
         # cstring_pool keys may be int OR hex string; accept both.
         sel = cstring_pool.get(val.address)
         if sel is None:
+            # r2 may emit hex keys in lowercase or uppercase form depending on version.
             sel = cstring_pool.get(hex(val.address))
         if sel is None:
-            sel = cstring_pool.get(f"0x{val.address:x}")
+            sel = cstring_pool.get(f"0x{val.address:X}")
         return sel
     return None
 
@@ -111,6 +112,7 @@ def extract_callsites(
         try:
             fn_offset = int(fn_offset_str, 16)
         except ValueError:
+            logger.debug("ObjC extractor: malformed function offset %r; skipping", fn_offset_str)
             continue
         ops = fn_data.get("ops", [])
         state = RegisterState()

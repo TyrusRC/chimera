@@ -177,6 +177,9 @@ def apply_instruction(
         # Needed so receiver-restore patterns like `mov x0, x19` (where x19
         # was set to EntryX0 in the prologue) place EntryX0 into x0 in time
         # for a subsequent objc_msgSend dispatch.
+        # Generic register-to-register mov: copy source state to dest. Source
+        # may be Unknown — overwriting dest with Unknown is intentional (a real
+        # mov clobbers any prior tracked value of the destination).
         state.set(ops[0], state.get(ops[1]))
         return None
 
