@@ -6,7 +6,7 @@ import re as _re
 
 from chimera.model.binary import BinaryInfo
 from chimera.model.function import FunctionInfo, StringEntry, CallEdge
-from chimera.model.objc import ObjCCallSite, ObjCClass, ObjCMethod, ObjCProtocol
+from chimera.model.objc import ObjCCallSite, ObjCCategory, ObjCClass, ObjCMethod, ObjCProtocol
 
 
 class UnifiedProgramModel:
@@ -18,6 +18,7 @@ class UnifiedProgramModel:
         self._objc_methods: list[ObjCMethod] = []
         self._objc_callsites: list[ObjCCallSite] = []
         self._objc_classes: dict[str, ObjCClass] = {}
+        self._objc_categories: dict[str, ObjCCategory] = {}
         self._objc_protocols: dict[str, ObjCProtocol] = {}
         self._regex_cache: dict[str, _re.Pattern[str]] = {}
 
@@ -86,6 +87,10 @@ class UnifiedProgramModel:
         return list(self._objc_classes.values())
 
     @property
+    def objc_categories(self) -> list[ObjCCategory]:
+        return list(self._objc_categories.values())
+
+    @property
     def objc_protocols(self) -> list[ObjCProtocol]:
         return list(self._objc_protocols.values())
 
@@ -98,14 +103,17 @@ class UnifiedProgramModel:
     def add_objc_class(self, c: ObjCClass) -> None:
         self._objc_classes[c.name] = c
 
+    def add_objc_category(self, c: ObjCCategory) -> None:
+        self._objc_categories[c.name] = c
+
     def add_objc_protocol(self, p: ObjCProtocol) -> None:
         self._objc_protocols[p.name] = p
 
     def find_objc_method(
         self,
         *,
-        class_name: str | None,
         selector: str,
+        class_name: str | None = None,
     ) -> list[ObjCMethod]:
         out = []
         for m in self._objc_methods:

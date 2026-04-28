@@ -64,19 +64,25 @@ def test_objc_class_collects_methods_and_protocols():
     assert "FooProtocol" in cls.protocols
 
 
-def test_swift_objc_flag_detection():
-    from chimera.model.objc import ObjCClass
+def test_unified_model_add_objc_category():
+    from chimera.model.objc import ObjCCategory, ObjCMethod
+    from chimera.model.program import UnifiedProgramModel
 
-    cls = ObjCClass(
-        name="_$s4Demo7AppViewC",
-        superclass=None,
-        instance_methods=[],
+    model = UnifiedProgramModel(_make_ios_binary())
+    m = ObjCMethod(class_name="NSString", selector="reversed",
+                   imp_address="0x2", is_class_method=False,
+                   type_signature=None, category="Reversing")
+    cat = ObjCCategory(
+        name="Reversing",
+        target_class="NSString",
+        target_class_imported=True,
+        instance_methods=[m],
         class_methods=[],
         protocols=[],
-        categories=[],
-        is_swift_objc=True,
     )
-    assert cls.is_swift_objc is True
+    model.add_objc_category(cat)
+    assert cat in model.objc_categories
+    assert len(model.objc_categories) == 1
 
 
 def test_unified_model_add_objc_method_and_lookup():
