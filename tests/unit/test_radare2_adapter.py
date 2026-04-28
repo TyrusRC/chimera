@@ -7,7 +7,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_triage_emits_per_function_disasm_class_symbols_cstring_pool(monkeypatch):
+async def test_triage_with_disasm_emits_per_function_disasm_class_symbols_cstring_pool(monkeypatch):
     from chimera.adapters import radare2 as r2_mod
 
     fake_r2 = MagicMock()
@@ -35,7 +35,7 @@ async def test_triage_emits_per_function_disasm_class_symbols_cstring_pool(monke
     monkeypatch.setattr(r2_mod, "r2pipe", MagicMock(open=MagicMock(return_value=fake_r2)))
 
     adapter = r2_mod.Radare2Adapter()
-    result = await adapter.analyze("/tmp/fake.dylib", {"mode": "triage"})
+    result = await adapter.analyze("/tmp/fake.dylib", {"mode": "triage_with_disasm"})
 
     assert "per_function_disasm" in result
     assert "class_symbols" in result
@@ -48,3 +48,22 @@ async def test_triage_emits_per_function_disasm_class_symbols_cstring_pool(monke
     assert "0x100456000" in result["per_function_disasm"] or "0x100456000".lower() in {
         k.lower() for k in result["per_function_disasm"]
     }
+
+
+@pytest.mark.parametrize("disasm,expected_opcode,expected_operands", [
+    ("ret", "ret", []),
+    ("adrp x1, 0x100200000", "adrp", ["x1", 0x100200000]),
+    ("add x1, x1, 0x40", "add", ["x1", "x1", 0x40]),
+    ("ldr x0, [x8, 0x40]", "ldr", ["x0", "x8", 0x40]),
+    ("mov x0, #0x1234", "mov", ["x0", 0x1234]),
+    ("add x0, x0, -0x40", "add", ["x0", "x0", -0x40]),
+    ("bl sym.imp.objc_msgSend", "bl", ["sym.imp.objc_msgSend"]),
+    ("b.eq 0x100456000", "b.eq", [0x100456000]),
+])
+def test_normalize_op_parses_common_arm64_disasm(disasm, expected_opcode, expected_operands):
+    from chimera.adapters.radare2 import _normalize_op
+
+    op = {"offset": 0x1000, "disasm": disasm}
+    result = _normalize_op(op)
+    assert result["opcode"] == expected_opcode
+    assert result["operands"] == expected_operands

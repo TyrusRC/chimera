@@ -31,6 +31,8 @@ class Radare2Adapter(BackendAdapter):
         try:
             if mode == "triage":
                 return self._triage(r2)
+            elif mode == "triage_with_disasm":
+                return self._triage_with_disasm(r2)
             elif mode == "strings":
                 return self._strings(r2)
             elif mode == "functions":
@@ -55,20 +57,43 @@ class Radare2Adapter(BackendAdapter):
         funcs_raw = _cmd_json(r2, "isj")
         funcs_list = funcs_raw if isinstance(funcs_raw, list) else []
 
+        return {
+            "info": info.get("bin", {}),
+            "core": info.get("core", {}),
+            "strings": strings if isinstance(strings, list) else [],
+            "imports": imports if isinstance(imports, list) else [],
+            "functions": [f for f in funcs_list if f.get("type") == "FUNC"],
+        }
+
+    def _triage_with_disasm(self, r2) -> dict:
+        """Extended triage: base triage + per-function disasm + ObjC enrichment.
+
+        Heavier than `_triage` because it runs `aa` and walks every FUNC symbol
+        with `pdfj`. Use only when the SP8 callsite extractor needs the data.
+        """
+        result = self._triage(r2)
+        strings = result["strings"]
+        # Re-pull the full symbol list (incl. non-FUNC) for ObjC class enrichment.
+        funcs_raw = _cmd_json(r2, "isj")
+        funcs_list = funcs_raw if isinstance(funcs_raw, list) else []
+
         # ObjC enrichment for SP8 callsite extraction.
         class_symbols: dict[str, str] = {}
         cstring_pool: dict[str, str] = {}
-        if isinstance(funcs_list, list):
-            for sym in funcs_list:
-                name = sym.get("name", "")
-                if name.startswith("_OBJC_CLASS_$_"):
-                    class_name = name[len("_OBJC_CLASS_$_"):]
-                    class_symbols[class_name] = hex(sym.get("vaddr", 0))
+        for sym in funcs_list:
+            name = sym.get("name", "")
+            if name.startswith("_OBJC_CLASS_$_"):
+                class_name = name[len("_OBJC_CLASS_$_"):]
+                class_symbols[class_name] = hex(sym.get("vaddr", 0))
         if isinstance(strings, list):
             for s in strings:
                 section = s.get("section", "")
                 if section in ("__objc_methname", "__cstring") and s.get("string"):
                     cstring_pool[hex(s.get("vaddr", 0))] = s["string"]
+
+        # Light analysis pass so `pdfj` against `isj` symbols actually returns
+        # ops. `aa` is the auto-analyze prelude; `aaa` is too heavy here.
+        r2.cmd("aa")
 
         # Per-function disassembly walked via pdfj.
         per_function_disasm: dict[str, dict] = {}
@@ -80,9 +105,9 @@ class Radare2Adapter(BackendAdapter):
                 continue
             offset_hex = hex(vaddr)
             raw = _cmd_json(r2, f"pdfj @ {offset_hex}")
-            if not isinstance(raw, dict):
+            if not isinstance(raw, dict) or not raw.get("ops"):
                 continue
-            ops_raw = raw.get("ops", [])
+            ops_raw = raw["ops"]
             normalized_ops = []
             for op in ops_raw:
                 normalized_ops.append(_normalize_op(op))
@@ -91,16 +116,10 @@ class Radare2Adapter(BackendAdapter):
                 "ops": normalized_ops,
             }
 
-        return {
-            "info": info.get("bin", {}),
-            "core": info.get("core", {}),
-            "strings": strings if isinstance(strings, list) else [],
-            "imports": imports if isinstance(imports, list) else [],
-            "functions": [f for f in funcs_list if f.get("type") == "FUNC"],
-            "per_function_disasm": per_function_disasm,
-            "class_symbols": class_symbols,
-            "cstring_pool": cstring_pool,
-        }
+        result["per_function_disasm"] = per_function_disasm
+        result["class_symbols"] = class_symbols
+        result["cstring_pool"] = cstring_pool
+        return result
 
     def _strings(self, r2) -> dict:
         strings = _cmd_json(r2, "izj")
@@ -157,22 +176,29 @@ def _normalize_op(op: dict) -> dict:
     opcode = parts[0] if parts else ""
     operands: list = []
     for tok in parts[1:]:
-        # int operand: 0x... hex literal
-        if tok.startswith("0x"):
+        # Strip square brackets ([x0, 0x40] -> x0, 0x40) and leading '#'
+        # (capstone-style immediate prefix) before classifying.
+        cleaned = tok.strip("[]").lstrip("#")
+        # Hex immediate: 0x... or -0x...
+        sign = ""
+        body = cleaned
+        if body.startswith("-"):
+            sign, body = "-", body[1:]
+        if body.startswith("0x") or body.startswith("0X"):
             try:
-                operands.append(int(tok, 16))
+                operands.append(int(sign + body, 16))
                 continue
             except ValueError:
                 pass
-        # int operand: bare decimal
-        if tok.lstrip("-").isdigit():
+        # Bare decimal (possibly negative).
+        if cleaned.lstrip("-").isdigit():
             try:
-                operands.append(int(tok))
+                operands.append(int(cleaned))
                 continue
             except ValueError:
                 pass
-        # Strip square brackets ([x0, 0x40] → x0, 0x40)
-        operands.append(tok.strip("[]"))
+        # Otherwise: register/symbol token (already cleaned of brackets/'#').
+        operands.append(cleaned)
     return {
         "offset": op.get("offset", 0),
         "opcode": opcode,

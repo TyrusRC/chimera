@@ -127,7 +127,7 @@ async def analyze_ipa(
 
         async def _r2_triage(bin_path: Path) -> None:
             async with resource_mgr.light():
-                triage = await r2.analyze(str(bin_path), {"mode": "triage"})
+                triage = await r2.analyze(str(bin_path), {"mode": "triage_with_disasm"})
                 for s in triage.get("strings", []):
                     if not _valid_r2_string(s):
                         continue
