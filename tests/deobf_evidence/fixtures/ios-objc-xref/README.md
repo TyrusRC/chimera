@@ -10,8 +10,9 @@ tools (the iOS SDK is what ships ObjC's Foundation framework).
 bash build_dylib.sh sample.dylib
 ```
 
-The result is ~16KB and committed to the repo. Regenerate when the parser's
-expectations change (e.g., adding new struct fields).
+The result is ~16KB and will be committed once built on a macOS host. Until
+then, `test_objc_xref_parser_finds_known_classes` SKIPs cleanly. Regenerate
+when the parser's expectations change (e.g., adding new struct fields).
 
 ## SHA pinning
 

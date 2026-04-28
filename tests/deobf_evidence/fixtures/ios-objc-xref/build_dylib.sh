@@ -4,17 +4,33 @@
 set -euo pipefail
 
 OUT="${1:-sample.dylib}"
+SRC="$(mktemp -t Greeter.XXXXXX).m"
+trap 'rm -f "$SRC"' EXIT
 
-cat > /tmp/Greeter.m <<'EOF'
+cat > "$SRC" <<'EOF'
 #import <Foundation/Foundation.h>
 
-@interface Greeter : NSObject
+@protocol Greetable <NSObject>
+- (NSString *)greet;
+@end
+
+@interface Greeter : NSObject <Greetable>
 @property (nonatomic, copy) NSString *name;
 - (NSString *)greet;
+- (void)reset;
 @end
 
 @implementation Greeter
 - (NSString *)greet { return [NSString stringWithFormat:@"Hello, %@", self.name]; }
+- (void)reset { self.name = @""; }
+@end
+
+@interface Greeter (Logging)
+- (void)logGreeting;
+@end
+
+@implementation Greeter (Logging)
+- (void)logGreeting { NSLog(@"%@", [self greet]); }
 @end
 
 @interface AppDelegate : NSObject
@@ -31,6 +47,6 @@ xcrun --sdk iphoneos clang \
     -dynamiclib \
     -framework Foundation \
     -o "$OUT" \
-    /tmp/Greeter.m
+    "$SRC"
 
 echo "Built $OUT"

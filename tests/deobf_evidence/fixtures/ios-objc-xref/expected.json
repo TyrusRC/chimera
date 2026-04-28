@@ -2,7 +2,7 @@
   "variant": "ios-objc-xref",
   "sample_name": "sample.dylib",
   "sample_sha256": "SKIP_SHA_CHECK",
-  "build_tools_required": [],
+  "build_tools_required": ["xcrun"],
   "expected": {
     "objc_xref": {
       "min_classes": 2,
