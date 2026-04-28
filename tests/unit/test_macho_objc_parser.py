@@ -132,8 +132,8 @@ def test_parser_finds_protocol_with_required_and_optional(tmp_path):
     assert [m.selector for m in proto.optional_methods] == ["opt"]
 
 
-def test_parser_drops_null_classlist_entries(tmp_path):
-    """A classlist with a null entry counts the skip but doesn't crash."""
+def test_parser_tolerates_trailing_zero_bytes(tmp_path):
+    """Trailing zeros after the Mach-O end must not crash the parser."""
     from chimera.parsers.macho_objc import parse_objc_metadata
     from tests.unit._macho_builder import build_macho_with_objc, BuilderClass
 
@@ -141,11 +141,8 @@ def test_parser_drops_null_classlist_entries(tmp_path):
         classes=[BuilderClass(name="C", superclass="NSObject")],
         categories=[], protocols=[],
     )
-    # Manually corrupt: replace one classlist entry with zero pointer.
-    # Easier path: build with one class then verify the parser handles a
-    # trailing null pointer (we add one synthetically).
     p = tmp_path / "n.dylib"
-    p.write_bytes(raw + b"\x00" * 8)  # extra zeros tolerated
+    p.write_bytes(raw + b"\x00" * 8)
     md = parse_objc_metadata(p)
     assert len(md.classes) >= 1
 
