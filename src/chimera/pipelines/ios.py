@@ -15,7 +15,7 @@ from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
 from chimera.pipelines.common import _rehydrate_from_cache, unpack_ipa
-from chimera.adapters.swift_demangle import _MANGLED_RE
+from chimera.adapters.swift_demangle import _MANGLED_RE, _MANGLED_TOKEN_RE
 from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
 
 logger = logging.getLogger(__name__)
@@ -219,6 +219,27 @@ async def analyze_ipa(
                         decrypted_from=orig_value,
                     )
                     swift_demangle_context["strings_demangled"] += 1
+
+        # 3. Decompiled bodies — token sweep + in-place substitute.
+        all_tokens: set[str] = set()
+        for f in model.functions:
+            if f.decompiled:
+                all_tokens.update(m.group(0) for m in _MANGLED_TOKEN_RE.finditer(f.decompiled))
+        if all_tokens:
+            tok_map = await demangler.demangle_batch(sorted(all_tokens))
+            swift_demangle_context["decompiled_tokens_demangled"] = sum(
+                1 for m, d in tok_map.items() if d and d != m
+            )
+            sorted_keys = sorted(tok_map, key=len, reverse=True)
+            for f in model.functions:
+                if not f.decompiled:
+                    continue
+                body = f.decompiled
+                for mangled in sorted_keys:
+                    demangled = tok_map[mangled]
+                    if demangled and demangled != mangled and mangled in body:
+                        body = body.replace(mangled, demangled)
+                f.decompiled = body
 
     cache.put_json(binary.sha256, "triage", {
         "platform": "ios",
