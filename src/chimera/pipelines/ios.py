@@ -220,6 +220,7 @@ async def analyze_ipa(
         "names_demangled": 0,
         "strings_demangled": 0,
         "decompiled_tokens_demangled": 0,
+        "objc_classes_demangled": 0,
         "skipped_reason": "tool_unavailable",
     }
     demangler = registry.get("swift_demangle")
@@ -279,17 +280,10 @@ async def analyze_ipa(
         ]
         if objc_class_inputs:
             cls_map = await demangler.demangle_batch(objc_class_inputs)
-            renamed: dict[str, str] = {}
-            for c in model.objc_classes:
-                d = cls_map.get(c.name)
-                if d and d != c.name:
-                    renamed[c.name] = d
-                    c.name = d
-            # Propagate to all ObjCMethod entries (including category methods).
-            for m in model.objc_methods:
-                new_name = renamed.get(m.class_name)
-                if new_name:
-                    m.class_name = new_name
+            for old_name, demangled in cls_map.items():
+                if demangled and demangled != old_name:
+                    model.rename_objc_class(old_name, demangled)
+                    swift_demangle_context["objc_classes_demangled"] += 1
 
     cache.put_json(binary.sha256, "triage", {
         "platform": "ios",

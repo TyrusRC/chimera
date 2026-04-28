@@ -109,6 +109,24 @@ class UnifiedProgramModel:
     def add_objc_protocol(self, p: ObjCProtocol) -> None:
         self._objc_protocols[p.name] = p
 
+    def rename_objc_class(self, old_name: str, new_name: str) -> None:
+        """Atomically rename an ObjCClass and propagate to all ObjCMethods.
+
+        Updates self._objc_classes dict key, the class's .name field, and
+        every ObjCMethod.class_name that referenced the old name.
+        Idempotent if old == new or old not present.
+        """
+        if old_name == new_name:
+            return
+        cls = self._objc_classes.pop(old_name, None)
+        if cls is None:
+            return
+        cls.name = new_name
+        self._objc_classes[new_name] = cls
+        for m in self._objc_methods:
+            if m.class_name == old_name:
+                m.class_name = new_name
+
     def find_objc_method(
         self,
         *,

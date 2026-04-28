@@ -593,3 +593,7 @@ async def test_ios_pipeline_demangles_objc_class_names(tmp_path, monkeypatch):
     classes = [c for c in model.objc_classes if c.is_swift_objc]
     assert len(classes) == 1
     assert classes[0].name.startswith("Demangled<")
+    # Lookup by demangled name must succeed (catches stale-dict-key regressions).
+    demangled_name = classes[0].name
+    looked_up = model.find_objc_method(class_name=demangled_name, selector="auth:")
+    assert len(looked_up) == 1
