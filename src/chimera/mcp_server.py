@@ -182,6 +182,19 @@ async def list_tools() -> list[Tool]:
              inputSchema={"type": "object", "properties": {
                  "file": {"type": "string", "description": "Header filename to read (e.g. 'AppDelegate.h'). Omit to list all headers."},
              }}),
+        Tool(name="objc_xref",
+             description=(
+                 "Query the ObjC cross-reference graph. Pass selector alone to "
+                 "find all classes implementing it. Pass class_name+selector to "
+                 "scope the lookup. Pass imp_address to query by IMP address. "
+                 "Returns matching methods (with callers, category, protocol, "
+                 "and class-dump-enriched signature when available)."
+             ),
+             inputSchema={"type": "object", "properties": {
+                 "selector": {"type": "string", "description": "ObjC selector, e.g. 'authenticate:'"},
+                 "class_name": {"type": "string", "description": "Optional class to scope"},
+                 "imp_address": {"type": "string", "description": "Optional IMP address"},
+             }}),
         # --- Device Interaction ---
         Tool(name="list_packages",
              description="List installed packages/apps on a connected device.",
@@ -973,6 +986,66 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             "skip_fuzzing": config.skip_fuzzing,
             "adb_device": config.adb_device,
             "ios_udid": config.ios_udid,
+        })
+
+    # ── objc_xref ───────────────────────────────────────────────────────
+    elif name == "objc_xref":
+        if not _require_model():
+            return _error("No analysis loaded.")
+        sel = arguments.get("selector")
+        cls = arguments.get("class_name")
+        imp = arguments.get("imp_address")
+        model = _current_model
+
+        if imp:
+            # Lookup by IMP address.
+            method = next(
+                (m for m in model.objc_methods if m.imp_address == imp), None,
+            )
+            methods = [method] if method else []
+        elif sel:
+            methods = model.find_objc_method(class_name=cls, selector=sel)
+        else:
+            return _error("must provide selector or imp_address")
+
+        matches = []
+        for m in methods:
+            callers = []
+            for cs in model.objc_callsites:
+                if cs.selector != m.selector:
+                    continue
+                if cs.receiver_class is None or cs.receiver_class == m.class_name:
+                    callers.append({
+                        "caller_function": cs.caller_function,
+                        "call_address": cs.call_address,
+                        "resolution": cs.resolution,
+                    })
+            matches.append({
+                "class_name": m.class_name,
+                "selector": m.selector,
+                "imp_address": m.imp_address,
+                "is_class_method": m.is_class_method,
+                "type_signature": m.type_signature,
+                "category": m.category,
+                "declared_in_protocol": m.declared_in_protocol,
+                "enriched_signature": m.enriched_signature,
+                "callers": callers,
+            })
+
+        # Determine metadata_complete flag from triage cache if present.
+        metadata_complete = True
+        try:
+            triage = engine.cache.get_json(model.binary.sha256, "triage") or {}
+            ctx = triage.get("objc_xref_context") or {}
+            metadata_complete = bool(ctx.get("class_dump_enriched"))
+        except Exception:
+            metadata_complete = False
+
+        return _json({
+            "matches": matches,
+            "total_methods_in_binary": len(model.objc_methods),
+            "total_callsites_in_binary": len(model.objc_callsites),
+            "metadata_complete": metadata_complete,
         })
 
     return _error(f"Unknown tool: {name}")
