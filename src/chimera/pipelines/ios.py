@@ -187,7 +187,14 @@ async def analyze_ipa(
         r2_main = cache.get_json(binary.sha256, f"r2_{unpack_result['main_binary'].name}")
         r2_xrefs: list[dict] = []
         if isinstance(r2_main, dict):
+            # TODO(future): r2 triage doesn't currently emit "objc_xrefs"; full
+            # objc_msgSend callsite extraction is deferred. Until then this list
+            # stays empty and callsite_count==0 by design.
             r2_xrefs = r2_main.get("objc_xrefs", []) or []
+            if not r2_xrefs:
+                logger.debug(
+                    "Phase 4.5: r2 triage has no objc_xrefs; callsite linker will produce 0 records"
+                )
         objc_xref_context = await build_objc_xref(
             model=model,
             main_binary=unpack_result["main_binary"],

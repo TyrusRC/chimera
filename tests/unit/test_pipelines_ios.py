@@ -537,3 +537,6 @@ async def test_ios_pipeline_runs_phase_4_5_objc_xref(tmp_path):
     assert ctx["available"] is True
     assert ctx["class_count"] == 1
     assert ctx["method_count"] == 1
+    assert ctx["callsite_count"] == 0  # no r2 xrefs registered, expected
+    assert ctx["class_dump_enriched"] is False  # no class-dump JSON, expected
+    assert ctx["category_count"] == 0
