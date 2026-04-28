@@ -170,6 +170,16 @@ def apply_instruction(
             state.set(ops[0], EntryX0)
             return None
 
+    if opcode == "mov" and len(ops) >= 2 \
+            and isinstance(ops[0], str) and isinstance(ops[1], str) \
+            and ops[0].startswith("x") and ops[1].startswith("x"):
+        # Generic register-to-register copy: propagate the source value.
+        # Needed so receiver-restore patterns like `mov x0, x19` (where x19
+        # was set to EntryX0 in the prologue) place EntryX0 into x0 in time
+        # for a subsequent objc_msgSend dispatch.
+        state.set(ops[0], state.get(ops[1]))
+        return None
+
     if opcode == "bl":
         target = insn.get("target_sym", "") or ""
         if target in _OBJC_ALLOC_TARGETS:
