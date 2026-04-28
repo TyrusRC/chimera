@@ -451,3 +451,43 @@ async def test_ios_pipeline_demangles_tokens_in_decompiled_bodies(tmp_path, monk
     sha = hashlib.sha256(ipa.read_bytes()).hexdigest()
     triage = cache.get_json(sha, "triage")
     assert triage["swift_demangle_context"]["decompiled_tokens_demangled"] >= 1
+
+
+async def test_ios_pipeline_swift_demangle_skips_when_unavailable(tmp_path, monkeypatch):
+    """When swift-demangle adapter is unavailable, Phase 5.5 records skipped_reason and counters stay 0."""
+    import plistlib
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.adapters.swift_demangle import SwiftDemangleAdapter
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.ios import analyze_ipa
+
+    ipa = tmp_path / "plain.ipa"
+    plist = plistlib.dumps({"CFBundleExecutable": "App", "CFBundleIdentifier": "com.example.plain"})
+    main_bin = b"\xcf\xfa\xed\xfe" + b"\x00" * 60
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("Payload/App.app/Info.plist", plist)
+        zf.writestr("Payload/App.app/App", main_bin)
+
+    config = ChimeraConfig(project_dir=tmp_path / "project", cache_dir=tmp_path / "cache")
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+
+    registry = AdapterRegistry()
+    adapter = SwiftDemangleAdapter()
+    monkeypatch.setattr(adapter, "is_available", lambda: False)
+    registry.register(adapter)
+
+    await analyze_ipa(ipa, config, registry, resource_mgr, cache)
+
+    import hashlib
+    sha = hashlib.sha256(ipa.read_bytes()).hexdigest()
+    triage = cache.get_json(sha, "triage")
+    ctx = triage["swift_demangle_context"]
+    assert ctx["available"] is False
+    assert ctx["skipped_reason"] == "tool_unavailable"
+    assert ctx["names_demangled"] == 0
+    assert ctx["strings_demangled"] == 0
+    assert ctx["decompiled_tokens_demangled"] == 0
