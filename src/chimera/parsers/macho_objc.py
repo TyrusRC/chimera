@@ -11,7 +11,7 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from chimera.model.objc import ObjCCategory, ObjCClass, ObjCMethod, ObjCProtocol
+from chimera.model.objc import ObjCCallSite, ObjCCategory, ObjCClass, ObjCMethod, ObjCProtocol
 from chimera.parsers.macho_objc_structs import (
     CATEGORY_T,
     CLASS_RO_T,
@@ -414,16 +414,14 @@ def _read_protocol(
 def link_callsites(
     methods: list[ObjCMethod],
     xref_records: list[dict],
-) -> list:
+) -> list[ObjCCallSite]:
     """Pure-logic translator: r2 xref dicts → ObjCCallSite entries.
 
     xref_records each: {caller, addr, selector, receiver_class | None}.
     receiver_class may be the literal "self" or "super" tokens for those
     dispatch styles, or None for dynamic dispatch.
     """
-    from chimera.model.objc import ObjCCallSite
-
-    out: list = []
+    out: list[ObjCCallSite] = []
     for r in xref_records:
         recv = r.get("receiver_class")
         if recv == "self":
