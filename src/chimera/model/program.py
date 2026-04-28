@@ -6,6 +6,7 @@ import re as _re
 
 from chimera.model.binary import BinaryInfo
 from chimera.model.function import FunctionInfo, StringEntry, CallEdge
+from chimera.model.objc import ObjCCallSite, ObjCClass, ObjCMethod, ObjCProtocol
 
 
 class UnifiedProgramModel:
@@ -14,6 +15,10 @@ class UnifiedProgramModel:
         self._functions: dict[str, FunctionInfo] = {}
         self._call_edges: list[CallEdge] = []
         self._strings: list[StringEntry] = []
+        self._objc_methods: list[ObjCMethod] = []
+        self._objc_callsites: list[ObjCCallSite] = []
+        self._objc_classes: dict[str, ObjCClass] = {}
+        self._objc_protocols: dict[str, ObjCProtocol] = {}
         self._regex_cache: dict[str, _re.Pattern[str]] = {}
 
     @property
@@ -67,3 +72,66 @@ class UnifiedProgramModel:
             regex = _re.compile(pattern, _re.IGNORECASE)
             self._regex_cache[pattern] = regex
         return [s for s in self._strings if regex.search(s.value)]
+
+    @property
+    def objc_methods(self) -> list[ObjCMethod]:
+        return list(self._objc_methods)
+
+    @property
+    def objc_callsites(self) -> list[ObjCCallSite]:
+        return list(self._objc_callsites)
+
+    @property
+    def objc_classes(self) -> list[ObjCClass]:
+        return list(self._objc_classes.values())
+
+    @property
+    def objc_protocols(self) -> list[ObjCProtocol]:
+        return list(self._objc_protocols.values())
+
+    def add_objc_method(self, m: ObjCMethod) -> None:
+        self._objc_methods.append(m)
+
+    def add_objc_callsite(self, cs: ObjCCallSite) -> None:
+        self._objc_callsites.append(cs)
+
+    def add_objc_class(self, c: ObjCClass) -> None:
+        self._objc_classes[c.name] = c
+
+    def add_objc_protocol(self, p: ObjCProtocol) -> None:
+        self._objc_protocols[p.name] = p
+
+    def find_objc_method(
+        self,
+        *,
+        class_name: str | None,
+        selector: str,
+    ) -> list[ObjCMethod]:
+        out = []
+        for m in self._objc_methods:
+            if m.selector != selector:
+                continue
+            if class_name is not None and m.class_name != class_name:
+                continue
+            out.append(m)
+        return out
+
+    def find_objc_callers(self, imp_address: str) -> list[ObjCCallSite]:
+        # Resolve the IMP address back to a class+selector first.
+        method = next(
+            (m for m in self._objc_methods if m.imp_address == imp_address),
+            None,
+        )
+        if method is None:
+            return []
+        out = []
+        for cs in self._objc_callsites:
+            if cs.selector != method.selector:
+                continue
+            if cs.receiver_class is None:
+                # Dynamic dispatch — counts as a possible caller.
+                out.append(cs)
+                continue
+            if cs.receiver_class == method.class_name:
+                out.append(cs)
+        return out
