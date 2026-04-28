@@ -184,11 +184,13 @@ async def list_tools() -> list[Tool]:
              }}),
         Tool(name="objc_xref",
              description=(
-                 "Query the ObjC cross-reference graph. Pass selector alone to "
-                 "find all classes implementing it. Pass class_name+selector to "
-                 "scope the lookup. Pass imp_address to query by IMP address. "
-                 "Returns matching methods (with callers, category, protocol, "
-                 "and class-dump-enriched signature when available)."
+                 "Query the ObjC cross-reference graph (iOS only). Pass selector alone "
+                 "to find all classes implementing it. Pass class_name+selector to scope "
+                 "the lookup. Pass imp_address to query by IMP address — if imp_address "
+                 "is given, selector/class_name are ignored. Returns matching methods "
+                 "with callers, category, protocol, and class-dump-enriched signatures. "
+                 "Use this instead of get_functions/get_class_headers when you need "
+                 "selector → implementation → caller lookups."
              ),
              inputSchema={"type": "object", "properties": {
                  "selector": {"type": "string", "description": "ObjC selector, e.g. 'authenticate:'"},
@@ -997,6 +999,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         imp = arguments.get("imp_address")
         model = _current_model
 
+        if cls and not sel and not imp:
+            return _error("class_name requires selector or imp_address")
+
         if imp:
             # Lookup by IMP address.
             method = next(
@@ -1010,16 +1015,14 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
         matches = []
         for m in methods:
-            callers = []
-            for cs in model.objc_callsites:
-                if cs.selector != m.selector:
-                    continue
-                if cs.receiver_class is None or cs.receiver_class == m.class_name:
-                    callers.append({
-                        "caller_function": cs.caller_function,
-                        "call_address": cs.call_address,
-                        "resolution": cs.resolution,
-                    })
+            callers = [
+                {
+                    "caller_function": cs.caller_function,
+                    "call_address": cs.call_address,
+                    "resolution": cs.resolution,
+                }
+                for cs in model.find_objc_callers(m.imp_address)
+            ]
             matches.append({
                 "class_name": m.class_name,
                 "selector": m.selector,
@@ -1038,7 +1041,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             triage = engine.cache.get_json(model.binary.sha256, "triage") or {}
             ctx = triage.get("objc_xref_context") or {}
             metadata_complete = bool(ctx.get("class_dump_enriched"))
-        except Exception:
+        except (AttributeError, OSError, ValueError):
             metadata_complete = False
 
         return _json({

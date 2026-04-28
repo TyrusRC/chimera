@@ -90,3 +90,54 @@ async def test_objc_xref_returns_error_when_no_model(monkeypatch):
     result = await mcp.call_tool("objc_xref", {"selector": "x"})
     payload = json.loads(result[0].text)
     assert "error" in payload
+
+
+async def test_objc_xref_finds_method_by_imp_address(monkeypatch, tmp_path):
+    """imp_address lookup returns the matching method directly."""
+    from chimera.model.objc import ObjCMethod
+    from chimera.model.program import UnifiedProgramModel
+
+    binary = _make_binary_info(tmp_path / "x.ipa", 0)
+    model = UnifiedProgramModel(binary)
+    model.add_objc_method(ObjCMethod(
+        class_name="LoginVC", selector="auth:", imp_address="0x1abc",
+        is_class_method=False, type_signature=None,
+    ))
+    import chimera.mcp_server as mcp
+    monkeypatch.setattr(mcp, "_current_model", model)
+
+    import json
+    result = await mcp.call_tool("objc_xref", {"imp_address": "0x1abc"})
+    payload = json.loads(result[0].text)
+    assert len(payload["matches"]) == 1
+    assert payload["matches"][0]["imp_address"] == "0x1abc"
+
+
+async def test_objc_xref_imp_address_not_found_returns_empty(monkeypatch, tmp_path):
+    """imp_address with no matching method returns empty matches, not an error."""
+    from chimera.model.program import UnifiedProgramModel
+
+    binary = _make_binary_info(tmp_path / "x.ipa", 0)
+    model = UnifiedProgramModel(binary)
+    import chimera.mcp_server as mcp
+    monkeypatch.setattr(mcp, "_current_model", model)
+
+    import json
+    result = await mcp.call_tool("objc_xref", {"imp_address": "0xdeadbeef"})
+    payload = json.loads(result[0].text)
+    assert payload["matches"] == []
+
+
+async def test_objc_xref_no_selector_no_imp_returns_error(monkeypatch, tmp_path):
+    """Calling objc_xref with neither selector nor imp_address returns an error."""
+    from chimera.model.program import UnifiedProgramModel
+
+    binary = _make_binary_info(tmp_path / "x.ipa", 0)
+    model = UnifiedProgramModel(binary)
+    import chimera.mcp_server as mcp
+    monkeypatch.setattr(mcp, "_current_model", model)
+
+    import json
+    result = await mcp.call_tool("objc_xref", {})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
