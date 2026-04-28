@@ -13,6 +13,7 @@ from pathlib import Path
 
 from chimera.model.objc import ObjCCategory, ObjCClass, ObjCMethod, ObjCProtocol
 from chimera.parsers.macho_objc_structs import (
+    CATEGORY_T,
     CLASS_RO_T,
     CLASS_T,
     LC_DYLD_CHAINED_FIXUPS,
@@ -21,6 +22,7 @@ from chimera.parsers.macho_objc_structs import (
     MACH_HEADER_64,
     METHOD_LIST_HEADER,
     METHOD_T,
+    PROTOCOL_T,
     SECTION_64,
     SEGMENT_COMMAND_64,
     strip_pac,
@@ -175,7 +177,9 @@ def parse_objc_metadata(macho_path: Path) -> ObjCMetadata:
     md = ObjCMetadata()
 
     classlist_bytes = _locate_section_in_segments(raw, "__objc_classlist")
-    if not classlist_bytes:
+    catlist_bytes = _locate_section_in_segments(raw, "__objc_catlist")
+    protolist_bytes = _locate_section_in_segments(raw, "__objc_protolist")
+    if not classlist_bytes and not catlist_bytes and not protolist_bytes:
         return md
 
     vm_map = _build_vm_to_file_map(raw)
@@ -207,6 +211,26 @@ def parse_objc_metadata(macho_path: Path) -> ObjCMetadata:
             md.skipped_pointers += 1
             logger.debug("ObjC: skipped classlist entry at index %d (out-of-segment or malformed)", i // 8)
 
+    for i in range(0, len(catlist_bytes), 8):
+        ptr = struct.unpack_from("<Q", catlist_bytes, i)[0]
+        if ptr == 0:
+            md.skipped_pointers += 1
+            continue
+        ptr = strip_pac(ptr) if md.chained_fixups_detected else ptr
+        cat = _read_category(raw, ptr, vm_map)
+        if cat is not None:
+            md.categories.append(cat)
+
+    for i in range(0, len(protolist_bytes), 8):
+        ptr = struct.unpack_from("<Q", protolist_bytes, i)[0]
+        if ptr == 0:
+            md.skipped_pointers += 1
+            continue
+        ptr = strip_pac(ptr) if md.chained_fixups_detected else ptr
+        proto = _read_protocol(raw, ptr, vm_map)
+        if proto is not None:
+            md.protocols.append(proto)
+
     return md
 
 
@@ -218,7 +242,7 @@ def _read_class(
     fo = _vm_to_file(vm_map, class_addr)
     if fo is None or fo + CLASS_T.size > len(raw):
         return None
-    _isa, super_addr, _cache, _vtable, ro_addr = CLASS_T.unpack_from(raw, fo)
+    isa_addr, super_addr, _cache, _vtable, ro_addr = CLASS_T.unpack_from(raw, fo)
     ro_fo = _vm_to_file(vm_map, ro_addr)
     if ro_fo is None or ro_fo + CLASS_RO_T.size > len(raw):
         return None
@@ -255,15 +279,125 @@ def _read_class(
     instance_methods = _read_method_list(
         raw, baseMethods, vm_map, class_name=name, is_class_method=False,
     )
+    # Class methods live on the metaclass, reachable via isa.
+    class_methods: list[ObjCMethod] = []
+    if isa_addr:
+        meta_fo = _vm_to_file(vm_map, isa_addr)
+        if meta_fo is not None and meta_fo + CLASS_T.size <= len(raw):
+            (_misa, _msuper, _mc, _mv, m_ro_addr) = CLASS_T.unpack_from(raw, meta_fo)
+            m_ro_fo = _vm_to_file(vm_map, m_ro_addr)
+            if m_ro_fo is not None and m_ro_fo + CLASS_RO_T.size <= len(raw):
+                (_mf, _mis, _misz, _mr, _mivl, _mn, m_baseMethods,
+                 _mp, _miv, _miwl, _mprops) = CLASS_RO_T.unpack_from(raw, m_ro_fo)
+                class_methods = _read_method_list(
+                    raw, m_baseMethods, vm_map,
+                    class_name=name, is_class_method=True,
+                )
+
+    protocols_names = _read_protocol_list_names(raw, baseProtocols, vm_map)
+
     return ObjCClass(
         name=name,
         superclass=superclass,
         instance_methods=instance_methods,
-        class_methods=[],     # populated by Task 5
-        protocols=[],         # populated by Task 5
-        categories=[],        # populated by Task 5
+        class_methods=class_methods,
+        protocols=protocols_names,
+        categories=[],
         # _$s = Swift 5+, _$S = Swift 4.0-4.1 legacy mangling
         is_swift_objc=name.startswith("_$s") or name.startswith("_$S"),
+    )
+
+
+def _read_protocol_list_names(
+    raw: bytes,
+    list_addr: int,
+    vm_map: list[tuple[int, int, int]],
+) -> list[str]:
+    if list_addr == 0:
+        return []
+    fo = _vm_to_file(vm_map, list_addr)
+    if fo is None or fo + 8 > len(raw):
+        return []
+    count = struct.unpack_from("<Q", raw, fo)[0]
+    if count > 1024:
+        return []
+    out: list[str] = []
+    cur = fo + 8
+    for _ in range(count):
+        if cur + 8 > len(raw):
+            break
+        ptr = struct.unpack_from("<Q", raw, cur)[0]
+        cur += 8
+        # The synthetic builder pools the protocol *name* string directly at
+        # this pointer. Real Mach-O has a protocol_t* here whose name_ptr lives
+        # at offset 8 inside the protocol_t. Try the cstring read first; if it
+        # comes back empty, fall back to the protocol_t layout.
+        name = _read_cstr(raw, _vm_to_file(vm_map, ptr) or 0)
+        if not name:
+            proto_fo = _vm_to_file(vm_map, ptr)
+            if proto_fo is not None and proto_fo + 16 <= len(raw):
+                name_ptr = struct.unpack_from("<Q", raw, proto_fo + 8)[0]
+                name = _read_cstr(raw, _vm_to_file(vm_map, name_ptr) or 0)
+        if name:
+            out.append(name)
+    return out
+
+
+def _read_category(
+    raw: bytes,
+    cat_addr: int,
+    vm_map: list[tuple[int, int, int]],
+) -> ObjCCategory | None:
+    fo = _vm_to_file(vm_map, cat_addr)
+    if fo is None or fo + CATEGORY_T.size > len(raw):
+        return None
+    name_p, cls_p, im_p, cm_p, _proto_p, _prop_p = CATEGORY_T.unpack_from(raw, fo)
+    name = _read_cstr(raw, _vm_to_file(vm_map, name_p) or 0)
+    target_class = _read_cstr(raw, _vm_to_file(vm_map, cls_p) or 0)
+    target_class_imported = not target_class
+    instance_methods = _read_method_list(
+        raw, im_p, vm_map, class_name=target_class or "<imported>",
+        is_class_method=False,
+    )
+    for m in instance_methods:
+        m.category = name
+    class_methods = _read_method_list(
+        raw, cm_p, vm_map, class_name=target_class or "<imported>",
+        is_class_method=True,
+    )
+    for m in class_methods:
+        m.category = name
+    return ObjCCategory(
+        name=name,
+        target_class=target_class or "<imported>",
+        target_class_imported=target_class_imported,
+        instance_methods=instance_methods,
+        class_methods=class_methods,
+        protocols=[],
+    )
+
+
+def _read_protocol(
+    raw: bytes,
+    proto_addr: int,
+    vm_map: list[tuple[int, int, int]],
+) -> ObjCProtocol | None:
+    fo = _vm_to_file(vm_map, proto_addr)
+    if fo is None or fo + PROTOCOL_T.size > len(raw):
+        return None
+    (_isa, name_p, _protos, im_p, _cm_p, opt_im_p, _opt_cm_p,
+     _props, _size, _flags) = PROTOCOL_T.unpack_from(raw, fo)
+    name = _read_cstr(raw, _vm_to_file(vm_map, name_p) or 0)
+    required = _read_method_list(
+        raw, im_p, vm_map, class_name=name, is_class_method=False,
+    )
+    optional = _read_method_list(
+        raw, opt_im_p, vm_map, class_name=name, is_class_method=False,
+    )
+    return ObjCProtocol(
+        name=name,
+        required_methods=required,
+        optional_methods=optional,
     )
 
 

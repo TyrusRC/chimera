@@ -53,7 +53,6 @@ def test_parser_finds_one_class_with_one_method(tmp_path):
     assert m.is_class_method is False
 
 
-@pytest.mark.xfail(reason="metaclass parsing implemented in Task 5", strict=True)
 def test_parser_handles_class_with_class_methods(tmp_path):
     """A class with both instance and class methods returns both lists."""
     from chimera.parsers.macho_objc import parse_objc_metadata
@@ -77,3 +76,57 @@ def test_parser_handles_class_with_class_methods(tmp_path):
     assert [m.selector for m in cls.instance_methods] == ["i:"]
     assert [m.selector for m in cls.class_methods] == ["c:"]
     assert cls.class_methods[0].is_class_method is True
+
+
+def test_parser_finds_category_with_methods(tmp_path):
+    from chimera.parsers.macho_objc import parse_objc_metadata
+    from tests.unit._macho_builder import (
+        build_macho_with_objc, BuilderCategory, BuilderMethod,
+    )
+
+    raw = build_macho_with_objc(
+        classes=[],
+        categories=[BuilderCategory(
+            name="MyCategory", target_class="NSString",
+            methods=[BuilderMethod(selector="reverseString",
+                                    types="@16@0:8",
+                                    imp_addr=0x200)],
+        )],
+        protocols=[],
+    )
+    p = tmp_path / "cat.dylib"
+    p.write_bytes(raw)
+
+    md = parse_objc_metadata(p)
+    assert len(md.categories) == 1
+    cat = md.categories[0]
+    assert cat.name == "MyCategory"
+    assert cat.target_class == "NSString"
+    assert len(cat.instance_methods) == 1
+    assert cat.instance_methods[0].selector == "reverseString"
+    assert cat.instance_methods[0].category == "MyCategory"
+
+
+def test_parser_finds_protocol_with_required_and_optional(tmp_path):
+    from chimera.parsers.macho_objc import parse_objc_metadata
+    from tests.unit._macho_builder import (
+        build_macho_with_objc, BuilderProtocol, BuilderMethod,
+    )
+
+    raw = build_macho_with_objc(
+        classes=[], categories=[],
+        protocols=[BuilderProtocol(
+            name="FooProto",
+            required_methods=[BuilderMethod(selector="req:", types="v16@0:8", imp_addr=0)],
+            optional_methods=[BuilderMethod(selector="opt", types="v16@0:8", imp_addr=0)],
+        )],
+    )
+    p = tmp_path / "proto.dylib"
+    p.write_bytes(raw)
+
+    md = parse_objc_metadata(p)
+    assert len(md.protocols) == 1
+    proto = md.protocols[0]
+    assert proto.name == "FooProto"
+    assert [m.selector for m in proto.required_methods] == ["req:"]
+    assert [m.selector for m in proto.optional_methods] == ["opt"]
