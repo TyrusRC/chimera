@@ -50,6 +50,11 @@ class AllocResult:
     class_name: str
 
 
+# Union of all register-value types. Use this in callers' annotations
+# instead of `object` to keep type information through extractor logic.
+RegValue = ConstantPool | ClassSymbol | AllocResult | _Singleton
+
+
 # ---------------------------------------------------------------------------
 # State container
 # ---------------------------------------------------------------------------
@@ -64,12 +69,12 @@ class RegisterState:
     __slots__ = ("_regs",)
 
     def __init__(self) -> None:
-        self._regs: dict[str, object] = {}
+        self._regs: dict[str, RegValue] = {}
 
-    def get(self, reg: str) -> object:
+    def get(self, reg: str) -> RegValue:
         return self._regs.get(reg, Unknown)
 
-    def set(self, reg: str, value: object) -> None:
+    def set(self, reg: str, value: RegValue) -> None:
         self._regs[reg] = value
 
     def clobber_caller_saved(self) -> None:

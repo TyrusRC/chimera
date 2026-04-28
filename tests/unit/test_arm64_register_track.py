@@ -50,6 +50,15 @@ def test_register_state_set_and_get_roundtrip():
     assert s.get("x0") is EntryX0
 
 
+def test_singletons_are_distinct():
+    """Each singleton marker must be a unique object."""
+    from chimera.parsers.arm64_register_track import Unknown, EntryX0, Super
+
+    assert Unknown is not EntryX0
+    assert Unknown is not Super
+    assert EntryX0 is not Super
+
+
 def test_register_state_clobber_resets_caller_saved():
     """A `bl` to a non-msgSend target clobbers x0..x18 per AAPCS64."""
     from chimera.parsers.arm64_register_track import (
