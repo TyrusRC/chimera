@@ -243,3 +243,30 @@ def test_apply_bl_objc_alloc_with_class_symbol_arg_records_alloc_result():
     apply_instruction(s, {"opcode": "bl", "operands": [], "target_sym": "sym.imp.objc_alloc"},
                        fn_offset=0x1000, insn_offset=0x1100)
     assert s.get("x0") == AllocResult("Greeter")
+
+
+def test_apply_bl_objc_alloc_when_x0_not_class_symbol_falls_to_clobber():
+    """`bl objc_alloc` without a tracked class symbol in x0 falls to generic clobber."""
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ConstantPool, Unknown, apply_instruction,
+    )
+
+    s = RegisterState()
+    s.set("x0", ConstantPool(0x1234))  # not a ClassSymbol
+    apply_instruction(s, {"opcode": "bl", "operands": [], "target_sym": "sym.imp.objc_alloc"},
+                       fn_offset=0x1000, insn_offset=0x1100)
+    assert s.get("x0") == Unknown
+
+
+def test_apply_ldr_with_cross_register_source_propagates_constant_pool():
+    """`ldr x0, [x8, 0x40]` when x8 is ConstantPool(p) sets x0 = ConstantPool(p+0x40)."""
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ConstantPool, apply_instruction,
+    )
+
+    s = RegisterState()
+    apply_instruction(s, {"opcode": "adrp", "operands": ["x8", 0x100300000]},
+                       fn_offset=0x1000, insn_offset=0x1000)
+    apply_instruction(s, {"opcode": "ldr", "operands": ["x0", "x8", 0x40]},
+                       fn_offset=0x1000, insn_offset=0x1004)
+    assert s.get("x0") == ConstantPool(0x100300040)

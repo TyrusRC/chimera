@@ -2,6 +2,20 @@
 
 Pure-data tracker. The extractor walks instructions, calls apply_instruction
 to update state, and inspects state at each `bl objc_msgSend*` callsite.
+
+NOTE on `objc_alloc_init`: the iOS 9+ fused `objc_alloc_init` returns an
+already-initialized instance — semantically `[[ClassName alloc] init]`. The
+tracker records `AllocResult(class_name)` for both `objc_alloc` and
+`objc_alloc_init`. Downstream callers should NOT synthesize a paired
+`-init` callsite for `objc_alloc_init`; the state correctly represents the
+instance reference, so any subsequent selector dispatch on x0 resolves to
+the correct receiver class.
+
+NOTE on upgrade_to_class_symbol: the extractor must invoke this helper after
+each instruction that may have landed a class-symbol address in a register
+(adrp+add chains, cross-register ldr). The tracker itself does not call it
+automatically because the address-to-name mapping is maintained outside the
+tracker module.
 """
 from __future__ import annotations
 
@@ -137,15 +151,16 @@ def apply_instruction(
                 state.set(dest, ConstantPool(cur.address + imm))
                 return None
 
-    if opcode == "ldr" and len(ops) >= 3:
-        # ldr xN, [xN, imm] -- dereference of a ConstantPool anchor refines
-        # to ConstantPool(p+imm). Only fires when dest == src AND state is
-        # already a ConstantPool; otherwise falls through to default clobber.
-        dest, src = ops[0], ops[1]
-        imm = ops[2] if isinstance(ops[2], int) else 0
-        if dest == src:
-            cur = state.get(dest)
+    if opcode == "ldr" and len(ops) >= 2:
+        dest = ops[0]
+        src = ops[1] if len(ops) >= 2 else None
+        imm = ops[2] if len(ops) >= 3 and isinstance(ops[2], int) else 0
+        if isinstance(src, str) and (src.startswith("x") or src.startswith("w")):
+            cur = state.get(src if src.startswith("x") else f"x{src[1:]}")
             if isinstance(cur, ConstantPool):
+                # Cross-register load: dest gets the address pointed at.
+                # If the deref target is a tracked class symbol, the
+                # extractor's upgrade_to_class_symbol pass will refine.
                 state.set(dest, ConstantPool(cur.address + imm))
                 return None
 
