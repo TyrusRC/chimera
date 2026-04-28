@@ -92,6 +92,18 @@ class RegisterState:
 _PROLOGUE_WINDOW_BYTES = 0x40  # 16 instructions @ 4 bytes each
 
 
+# Targets that should be treated as objc_alloc / objc_alloc_init. Covers the
+# naming variants r2 may emit depending on symbol stripping/normalization.
+_OBJC_ALLOC_TARGETS = frozenset({
+    "sym.imp.objc_alloc",
+    "sym.imp.objc_alloc_init",
+    "objc_alloc",
+    "objc_alloc_init",
+    "_objc_alloc",
+    "_objc_alloc_init",
+})
+
+
 def apply_instruction(
     state: RegisterState,
     insn: dict,
@@ -125,11 +137,36 @@ def apply_instruction(
                 state.set(dest, ConstantPool(cur.address + imm))
                 return None
 
+    if opcode == "ldr" and len(ops) >= 3:
+        # ldr xN, [xN, imm] -- dereference of a ConstantPool anchor refines
+        # to ConstantPool(p+imm). Only fires when dest == src AND state is
+        # already a ConstantPool; otherwise falls through to default clobber.
+        dest, src = ops[0], ops[1]
+        imm = ops[2] if isinstance(ops[2], int) else 0
+        if dest == src:
+            cur = state.get(dest)
+            if isinstance(cur, ConstantPool):
+                state.set(dest, ConstantPool(cur.address + imm))
+                return None
+
     if opcode == "mov" and len(ops) >= 2 and ops[1] == "x0":
         # Function-prologue receiver save?
         if insn_offset - fn_offset <= _PROLOGUE_WINDOW_BYTES:
             state.set(ops[0], EntryX0)
             return None
+
+    if opcode == "bl":
+        target = insn.get("target_sym", "") or ""
+        if target in _OBJC_ALLOC_TARGETS:
+            # Read x0 BEFORE clobbering caller-saved.
+            cur_x0 = state.get("x0")
+            if isinstance(cur_x0, ClassSymbol):
+                state.clobber_caller_saved()
+                state.set("x0", AllocResult(cur_x0.name))
+                return None
+        # Generic call: clobber caller-saved (x0..x18) per AAPCS64.
+        state.clobber_caller_saved()
+        return None
 
     # Default rule: opcode with a register destination clobbers it.
     # ARM64 'w' registers alias the lower 32 bits of 'x' — clobber the x-view too.
@@ -140,3 +177,22 @@ def apply_instruction(
         elif dest.startswith("w") and dest[1:].isdigit():
             state.set(f"x{dest[1:]}", Unknown)
     return None
+
+
+def upgrade_to_class_symbol(
+    state: RegisterState,
+    reg: str,
+    *,
+    class_address_to_name: dict[int, str],
+) -> None:
+    """Upgrade `state[reg]` from ConstantPool(addr) to ClassSymbol(name) when
+    `addr` matches a known _OBJC_CLASS_$_<name> symbol address.
+
+    No-op if `state[reg]` is not a ConstantPool, or if its address isn't in
+    the supplied map.
+    """
+    cur = state.get(reg)
+    if isinstance(cur, ConstantPool):
+        name = class_address_to_name.get(cur.address)
+        if name is not None:
+            state.set(reg, ClassSymbol(name))

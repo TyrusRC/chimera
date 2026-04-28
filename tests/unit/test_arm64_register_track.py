@@ -185,3 +185,61 @@ def test_apply_simd_register_write_does_not_touch_x_state():
     apply_instruction(s, {"opcode": "fadd", "operands": ["q0", "q1", "q2"]},
                        fn_offset=0x1000, insn_offset=0x1100)
     assert s.get("x0") == ConstantPool(0x100200040)
+
+
+def test_apply_ldr_with_constant_pool_anchor_dereferences():
+    """`ldr xN, [xN, imm]` when xN is ConstantPool(p) refines to ConstantPool(p+imm)."""
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ConstantPool, apply_instruction,
+    )
+
+    s = RegisterState()
+    apply_instruction(s, {"opcode": "adrp", "operands": ["x0", 0x100200000]},
+                       fn_offset=0x1000, insn_offset=0x1000)
+    apply_instruction(s, {"opcode": "ldr", "operands": ["x0", "x0", 0x80]},
+                       fn_offset=0x1000, insn_offset=0x1004)
+    assert s.get("x0") == ConstantPool(0x100200080)
+
+
+def test_apply_class_symbol_upgrade_promotes_constant_pool():
+    """ConstantPool(addr) gets upgraded to ClassSymbol(name) when addr matches."""
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ClassSymbol, apply_instruction,
+        upgrade_to_class_symbol,
+    )
+
+    s = RegisterState()
+    apply_instruction(s, {"opcode": "adrp", "operands": ["x0", 0x100300000]},
+                       fn_offset=0x1000, insn_offset=0x1000)
+    apply_instruction(s, {"opcode": "add", "operands": ["x0", "x0", 0x10]},
+                       fn_offset=0x1000, insn_offset=0x1004)
+    # Now x0 = ConstantPool(0x100300010) — upgrade if a class symbol lives there.
+    upgrade_to_class_symbol(s, "x0", class_address_to_name={0x100300010: "Greeter"})
+    assert s.get("x0") == ClassSymbol("Greeter")
+
+
+def test_apply_bl_clobbers_caller_saved():
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ConstantPool, Unknown, apply_instruction,
+    )
+
+    s = RegisterState()
+    s.set("x1", ConstantPool(0x40))
+    s.set("x19", ConstantPool(0xDEAD))
+    apply_instruction(s, {"opcode": "bl", "operands": [], "target_sym": "sym.helper"},
+                       fn_offset=0x1000, insn_offset=0x1100)
+    assert s.get("x1") == Unknown
+    assert s.get("x19") == ConstantPool(0xDEAD)
+
+
+def test_apply_bl_objc_alloc_with_class_symbol_arg_records_alloc_result():
+    """`bl objc_alloc` (or sym.imp.objc_alloc) when x0=ClassSymbol → x0=AllocResult."""
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ClassSymbol, AllocResult, apply_instruction,
+    )
+
+    s = RegisterState()
+    s.set("x0", ClassSymbol("Greeter"))
+    apply_instruction(s, {"opcode": "bl", "operands": [], "target_sym": "sym.imp.objc_alloc"},
+                       fn_offset=0x1000, insn_offset=0x1100)
+    assert s.get("x0") == AllocResult("Greeter")
