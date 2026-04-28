@@ -597,3 +597,74 @@ async def test_ios_pipeline_demangles_objc_class_names(tmp_path, monkeypatch):
     demangled_name = classes[0].name
     looked_up = model.find_objc_method(class_name=demangled_name, selector="auth:")
     assert len(looked_up) == 1
+
+
+async def test_ios_pipeline_phase_4_5_resolves_callsites_from_r2_cache(tmp_path):
+    """Phase 4.5 reads cached r2 disassembly and produces non-zero callsite_count."""
+    import plistlib
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.ios import analyze_ipa
+    from tests.unit._macho_builder import (
+        build_macho_with_objc, BuilderClass, BuilderMethod,
+    )
+
+    macho = build_macho_with_objc(
+        classes=[BuilderClass(
+            name="Greeter", superclass="NSObject",
+            methods=[BuilderMethod(selector="greet", types="v16@0:8",
+                                    imp_addr=0x100123abc)],
+        )],
+        categories=[], protocols=[],
+    )
+    ipa = tmp_path / "swift.ipa"
+    plist = plistlib.dumps({"CFBundleExecutable": "App",
+                             "CFBundleIdentifier": "com.example.swift"})
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("Payload/App.app/Info.plist", plist)
+        zf.writestr("Payload/App.app/App", macho)
+
+    config = ChimeraConfig(project_dir=tmp_path / "project",
+                            cache_dir=tmp_path / "cache")
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()  # no r2 adapter
+
+    # Pre-seed the r2 cache with a known callsite pattern. The pipeline will
+    # find it during Phase 4.5 invocation of build_objc_xref → extract_callsites.
+    from chimera.model.binary import BinaryInfo
+    binary = BinaryInfo.from_path(ipa)
+    cache.put_json(binary.sha256, "r2_App", {
+        "strings": [], "functions": [],
+        "per_function_disasm": {
+            "0x100456000": {
+                "name": "sym.test",
+                "ops": [
+                    {"offset": 0x100456000, "opcode": "adrp",
+                     "operands": ["x0", 0x100300000], "target_sym": None},
+                    {"offset": 0x100456004, "opcode": "add",
+                     "operands": ["x0", "x0", 0x10], "target_sym": None},
+                    {"offset": 0x100456008, "opcode": "adrp",
+                     "operands": ["x1", 0x100200000], "target_sym": None},
+                    {"offset": 0x10045600c, "opcode": "add",
+                     "operands": ["x1", "x1", 0x40], "target_sym": None},
+                    {"offset": 0x100456010, "opcode": "bl", "operands": [],
+                     "target_sym": "sym.imp.objc_msgSend"},
+                    {"offset": 0x100456014, "opcode": "ret",
+                     "operands": [], "target_sym": None},
+                ],
+            },
+        },
+        "class_symbols": {"Greeter": "0x100300010"},
+        "cstring_pool": {"0x100200040": "greet"},
+    })
+
+    await analyze_ipa(ipa, config, registry, resource_mgr, cache)
+
+    triage = cache.get_json(binary.sha256, "triage")
+    ctx = triage["objc_xref_context"]
+    assert ctx["callsite_count"] >= 1
+    assert ctx["callsites_resolved_static"] >= 1
