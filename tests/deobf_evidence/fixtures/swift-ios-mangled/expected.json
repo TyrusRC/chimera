@@ -1,0 +1,12 @@
+{
+  "variant": "swift-ios-mangled",
+  "sample_name": "sample.txt",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": ["swift-demangle"],
+  "expected": {
+    "swift_demangle": {
+      "min_demangled": 8,
+      "must_find_demangled_substring": "Hello.Greeter.greet"
+    }
+  }
+}

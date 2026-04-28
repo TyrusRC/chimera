@@ -25,6 +25,7 @@ EXPECTED_MATRIX: set[tuple[str, str]] = {
     ("apktool", "android-proguard-rename"),
     ("webcrack", "rn-jsc-bundle"),
     ("jadx", "android-kotlin-metadata"),
+    ("swift_demangle", "swift-ios-mangled"),
 }
 
 

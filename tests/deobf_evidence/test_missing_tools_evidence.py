@@ -49,6 +49,33 @@ async def test_apktool_decodes_apk(tmp_path):
         assert result["manifest_path"] is not None
 
 
+@register_evidence("swift_demangle", "swift-ios-mangled")
+@pytest.mark.asyncio
+async def test_swift_demangle_adapter_demangles_known_symbols(tmp_path):
+    from chimera.adapters.swift_demangle import SwiftDemangleAdapter
+
+    if shutil.which("swift-demangle") is None:
+        pytest.skip("swift-demangle not on PATH")
+
+    sample = build_sample("swift-ios-mangled")
+    expected = load_expected("swift-ios-mangled")["expected"]["swift_demangle"]
+
+    names = [
+        line.strip()
+        for line in sample.read_text().splitlines()
+        if line.strip()
+    ]
+    adapter = SwiftDemangleAdapter()
+    result = await adapter.demangle_batch(names)
+
+    demangled_count = sum(1 for k, v in result.items() if v != k)
+    assert_min_count(demangled_count, expected["min_demangled"], "swift_demangle")
+    joined = " ".join(result.values())
+    assert expected["must_find_demangled_substring"] in joined, (
+        f"expected substring {expected['must_find_demangled_substring']!r} in demangled output; got: {joined!r}"
+    )
+
+
 def test_frida_dexdump_adapter_is_registered_and_stub_enforces_stub_contract():
     """v1 ships the adapter as availability-only; analyze() must refuse to run."""
     import asyncio
