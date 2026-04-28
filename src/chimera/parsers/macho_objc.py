@@ -328,19 +328,29 @@ def _read_protocol_list_names(
             break
         ptr = struct.unpack_from("<Q", raw, cur)[0]
         cur += 8
-        # The synthetic builder pools the protocol *name* string directly at
-        # this pointer. Real Mach-O has a protocol_t* here whose name_ptr lives
-        # at offset 8 inside the protocol_t. Try the cstring read first; if it
-        # comes back empty, fall back to the protocol_t layout.
-        name = _read_cstr(raw, _vm_to_file(vm_map, ptr) or 0)
+        # Try real-Mach-O layout first: ptr -> protocol_t -> name_ptr at +8.
+        name = ""
+        proto_fo = _vm_to_file(vm_map, ptr)
+        if proto_fo is not None and proto_fo + 16 <= len(raw):
+            name_ptr = struct.unpack_from("<Q", raw, proto_fo + 8)[0]
+            candidate = _read_cstr(raw, _vm_to_file(vm_map, name_ptr) or 0)
+            if candidate and _looks_like_objc_name(candidate):
+                name = candidate
+        # Fallback for synthetic fixtures: ptr points directly at the C-string.
         if not name:
-            proto_fo = _vm_to_file(vm_map, ptr)
-            if proto_fo is not None and proto_fo + 16 <= len(raw):
-                name_ptr = struct.unpack_from("<Q", raw, proto_fo + 8)[0]
-                name = _read_cstr(raw, _vm_to_file(vm_map, name_ptr) or 0)
+            candidate = _read_cstr(raw, _vm_to_file(vm_map, ptr) or 0)
+            if candidate and _looks_like_objc_name(candidate):
+                name = candidate
         if name:
             out.append(name)
     return out
+
+
+def _looks_like_objc_name(s: str) -> bool:
+    """ObjC class/protocol names are alphanumeric+underscore+dollar+colon."""
+    if not s or len(s) > 256:
+        return False
+    return all(c.isalnum() or c in "_$:." for c in s)
 
 
 def _read_category(
