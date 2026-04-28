@@ -7,6 +7,7 @@ returns a triage-cache context dict.
 from __future__ import annotations
 
 import logging
+import struct
 from pathlib import Path
 
 from chimera.model.objc import ObjCMethod
@@ -21,11 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 def _is_macho(path: Path) -> bool:
+    """Detect 64-bit Mach-O (LE or thinned BE) by reading the first 4 bytes only."""
     try:
-        magic = path.read_bytes()[:4]
+        with path.open("rb") as f:
+            magic = f.read(4)
     except OSError:
         return False
-    # 64-bit little-endian Mach-O magic.
     return magic == b"\xcf\xfa\xed\xfe" or magic == b"\xce\xfa\xed\xfe"
 
 
@@ -88,7 +90,7 @@ async def build_objc_xref(
 
     try:
         md = parse_objc_metadata(main_binary)
-    except ObjCParseError as e:
+    except (ObjCParseError, struct.error, ValueError, UnicodeDecodeError) as e:
         logger.warning("ObjC parser failed on %s: %s", main_binary, e)
         ctx["skipped_reason"] = "parser_error"
         return ctx
@@ -101,6 +103,7 @@ async def build_objc_xref(
         for m in cls.instance_methods + cls.class_methods:
             model.add_objc_method(m)
     for cat in md.categories:
+        model.add_objc_category(cat)
         for m in cat.instance_methods + cat.class_methods:
             model.add_objc_method(m)
     for proto in md.protocols:
