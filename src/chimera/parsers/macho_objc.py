@@ -142,6 +142,8 @@ def _read_method_list(
     if fo is None or fo + METHOD_LIST_HEADER.size > len(raw):
         return []
     entsize_and_flags, count = METHOD_LIST_HEADER.unpack_from(raw, fo)
+    # entsize is the lower bits; bit 31 of the original word is the
+    # "small/relative method list" flag (iOS 14+ binaries) — TODO future task.
     entsize = entsize_and_flags & 0xFFFF
     if entsize == 0 or count > 100_000:  # sanity guard
         return []
@@ -179,18 +181,31 @@ def parse_objc_metadata(macho_path: Path) -> ObjCMetadata:
     vm_map = _build_vm_to_file_map(raw)
     md.chained_fixups_detected = _has_chained_fixups(raw)
 
+    if len(classlist_bytes) % 8 != 0:
+        logger.warning("ObjC: __objc_classlist size %d not a multiple of 8; trailing bytes ignored", len(classlist_bytes))
+    classlist_count = len(classlist_bytes) // 8
+    if classlist_count > 100_000:
+        logger.warning("ObjC: __objc_classlist has %d entries; truncating to 100000", classlist_count)
+        classlist_bytes = classlist_bytes[: 100_000 * 8]
+
     # Each entry is one 64-bit class_t pointer.
     for i in range(0, len(classlist_bytes), 8):
         ptr = struct.unpack_from("<Q", classlist_bytes, i)[0]
         if ptr == 0:
             md.skipped_pointers += 1
             continue
+        # TODO(sp7-t7): full chained-fixup pointer-format dispatch.
+        # Currently we apply PAC stripping when LC_DYLD_CHAINED_FIXUPS is
+        # present, which is correct for ARM64e auth_rebase but mishandles
+        # DYLD_CHAINED_PTR_64 where bits 47..63 are addend/format, not auth.
+        # See spec section 3.5.
         ptr = strip_pac(ptr) if md.chained_fixups_detected else ptr
         cls = _read_class(raw, ptr, vm_map)
         if cls is not None:
             md.classes.append(cls)
         else:
             md.skipped_pointers += 1
+            logger.debug("ObjC: skipped classlist entry at index %d (out-of-segment or malformed)", i // 8)
 
     return md
 
@@ -212,9 +227,31 @@ def _read_class(
     name = _read_cstr(raw, _vm_to_file(vm_map, name_p) or 0)
     superclass = None
     if super_addr:
-        super_fo = _vm_to_file(vm_map, super_addr)
-        if super_fo is not None:
-            superclass = _read_cstr(raw, super_fo)
+        # Real Mach-O: super_addr -> class_t -> data -> class_ro_t -> name.
+        # Try this first.
+        super_class_fo = _vm_to_file(vm_map, super_addr)
+        if super_class_fo is not None and super_class_fo + CLASS_T.size <= len(raw):
+            (_si, _ss, _sc, _sv, super_ro_addr) = CLASS_T.unpack_from(
+                raw, super_class_fo,
+            )
+            super_ro_fo = _vm_to_file(vm_map, super_ro_addr)
+            if super_ro_fo is not None and super_ro_fo + CLASS_RO_T.size <= len(raw):
+                (_f, _is_, _isz, _r, _ivl, super_name_p, *_rest) = CLASS_RO_T.unpack_from(
+                    raw, super_ro_fo,
+                )
+                name_fo = _vm_to_file(vm_map, super_name_p)
+                if name_fo is not None:
+                    superclass = _read_cstr(raw, name_fo)
+        # Fallback for synthetic fixtures that pool the name string directly:
+        # super_addr points at a C-string instead of a class_t.
+        # NOTE: Real binaries with extern superclasses (e.g., NSObject in Foundation)
+        # will fall through to None — bind-table resolution is a future task.
+        if superclass is None:
+            super_fo = _vm_to_file(vm_map, super_addr)
+            if super_fo is not None:
+                superclass = _read_cstr(raw, super_fo)
+                if not superclass:
+                    superclass = None
     instance_methods = _read_method_list(
         raw, baseMethods, vm_map, class_name=name, is_class_method=False,
     )
@@ -225,6 +262,7 @@ def _read_class(
         class_methods=[],     # populated by Task 5
         protocols=[],         # populated by Task 5
         categories=[],        # populated by Task 5
+        # _$s = Swift 5+, _$S = Swift 4.0-4.1 legacy mangling
         is_swift_objc=name.startswith("_$s") or name.startswith("_$S"),
     )
 
