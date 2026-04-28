@@ -96,3 +96,35 @@ def test_frida_dexdump_adapter_is_registered_and_stub_enforces_stub_contract():
         assert "Sub-project 2" in str(e)
     else:
         raise AssertionError("stub must raise NotImplementedError")
+
+
+@register_evidence("objc_xref", "ios-objc-xref")
+def test_objc_xref_parser_finds_known_classes(tmp_path):
+    from chimera.parsers.macho_objc import parse_objc_metadata
+    from tests.deobf_evidence._fixtures import (
+        FIXTURES_ROOT,
+        load_expected,
+    )
+
+    fixture_dir = FIXTURES_ROOT / "ios-objc-xref"
+    sample = fixture_dir / "sample.dylib"
+    if not sample.exists():
+        pytest.skip(f"no committed dylib at {sample}; run build_dylib.sh on macOS")
+
+    expected = load_expected("ios-objc-xref")["expected"]["objc_xref"]
+    md = parse_objc_metadata(sample)
+
+    assert_min_count(len(md.classes), expected["min_classes"], "objc_xref classes")
+    method_count = sum(
+        len(c.instance_methods) + len(c.class_methods) for c in md.classes
+    )
+    assert_min_count(method_count, expected["min_methods"], "objc_xref methods")
+
+    class_names = [c.name for c in md.classes]
+    assert expected["must_find_class"] in class_names
+    selectors = [
+        m.selector
+        for c in md.classes
+        for m in c.instance_methods + c.class_methods
+    ]
+    assert expected["must_find_selector"] in selectors

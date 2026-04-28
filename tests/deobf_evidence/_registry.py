@@ -26,6 +26,7 @@ EXPECTED_MATRIX: set[tuple[str, str]] = {
     ("webcrack", "rn-jsc-bundle"),
     ("jadx", "android-kotlin-metadata"),
     ("swift_demangle", "swift-ios-mangled"),
+    ("objc_xref", "ios-objc-xref"),
 }
 
 

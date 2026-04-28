@@ -1,0 +1,14 @@
+{
+  "variant": "ios-objc-xref",
+  "sample_name": "sample.dylib",
+  "sample_sha256": "SKIP_SHA_CHECK",
+  "build_tools_required": [],
+  "expected": {
+    "objc_xref": {
+      "min_classes": 2,
+      "min_methods": 4,
+      "must_find_class": "Greeter",
+      "must_find_selector": "greet"
+    }
+  }
+}
