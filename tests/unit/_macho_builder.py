@@ -118,7 +118,21 @@ def build_macho_with_objc(
         # objc_class_t: isa(super_meta), superclass(super), cache(0), vtable(0),
         # data(ro)
         super_addr = _pool_str(c.superclass) if c.superclass else 0
-        cls = struct.pack("<QQQQQ", 0, super_addr, 0, 0, ro_addr)
+        # Build metaclass when class methods are present so the parser can
+        # walk class_t.isa -> metaclass class_ro_t -> baseMethods.
+        meta_addr = 0
+        if c.class_methods:
+            meta_ro = struct.pack(
+                "<IIII QQQQQQQ",
+                0, 0, 0, 0, 0,
+                _pool_str(c.name),
+                classMethods,
+                0, 0, 0, 0,
+            )
+            meta_ro_addr = pool.append(meta_ro)
+            meta_cls = struct.pack("<QQQQQ", 0, super_addr, 0, 0, meta_ro_addr)
+            meta_addr = pool.append(meta_cls)
+        cls = struct.pack("<QQQQQ", meta_addr, super_addr, 0, 0, ro_addr)
         class_addrs.append(pool.append(cls))
 
     # Build categories
@@ -211,7 +225,7 @@ def build_macho_with_objc(
             base_offset + addr,      # vmaddr
             size,
             base_offset + addr,      # fileoff
-            0, 0, 0, 0, 0, 0, 0,
+            3, 0, 0, 0, 0, 0, 0,     # align=3 (2^3 = 8-byte) matches pool
         )
 
     return header + seg_cmd + sect_blob + pool_payload
