@@ -540,3 +540,56 @@ async def test_ios_pipeline_runs_phase_4_5_objc_xref(tmp_path):
     assert ctx["callsite_count"] == 0  # no r2 xrefs registered, expected
     assert ctx["class_dump_enriched"] is False  # no class-dump JSON, expected
     assert ctx["category_count"] == 0
+
+
+async def test_ios_pipeline_demangles_objc_class_names(tmp_path, monkeypatch):
+    """Phase 5.5 must rewrite mangled class_name on ObjCMethod entries."""
+    import plistlib
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.adapters.swift_demangle import SwiftDemangleAdapter
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.ios import analyze_ipa
+    from tests.unit._macho_builder import (
+        build_macho_with_objc, BuilderClass, BuilderMethod,
+    )
+
+    macho = build_macho_with_objc(
+        classes=[BuilderClass(
+            name="_$s4Demo7AppViewC", superclass="NSObject",
+            methods=[BuilderMethod(selector="auth:", types="v",
+                                    imp_addr=0x100123abc)],
+        )],
+        categories=[], protocols=[],
+    )
+    ipa = tmp_path / "swift.ipa"
+    plist = plistlib.dumps({"CFBundleExecutable": "App",
+                             "CFBundleIdentifier": "com.example.swift"})
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("Payload/App.app/Info.plist", plist)
+        zf.writestr("Payload/App.app/App", macho)
+
+    config = ChimeraConfig(project_dir=tmp_path / "project",
+                            cache_dir=tmp_path / "cache")
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+    registry = AdapterRegistry()
+    adapter = SwiftDemangleAdapter()
+
+    async def fake_demangle(names):
+        return {n: f"Demangled<{n[-4:]}>" for n in names}
+
+    monkeypatch.setattr(adapter, "is_available", lambda: True)
+    monkeypatch.setattr(adapter, "demangle_batch", fake_demangle)
+    registry.register(adapter)
+
+    model = await analyze_ipa(ipa, config, registry, resource_mgr, cache)
+
+    methods = [m for m in model.objc_methods if m.selector == "auth:"]
+    assert len(methods) == 1
+    assert methods[0].class_name.startswith("Demangled<")
+    classes = [c for c in model.objc_classes if c.is_swift_objc]
+    assert len(classes) == 1
+    assert classes[0].name.startswith("Demangled<")

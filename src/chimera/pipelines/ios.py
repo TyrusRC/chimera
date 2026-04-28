@@ -272,6 +272,25 @@ async def analyze_ipa(
                         body = body.replace(mangled, demangled)
                 f.decompiled = body
 
+        # 4. ObjCMethod.class_name + ObjCClass.name (Swift @objc class demangling).
+        objc_class_inputs = [
+            c.name for c in model.objc_classes
+            if c.is_swift_objc and _MANGLED_RE.match(c.name)
+        ]
+        if objc_class_inputs:
+            cls_map = await demangler.demangle_batch(objc_class_inputs)
+            renamed: dict[str, str] = {}
+            for c in model.objc_classes:
+                d = cls_map.get(c.name)
+                if d and d != c.name:
+                    renamed[c.name] = d
+                    c.name = d
+            # Propagate to all ObjCMethod entries (including category methods).
+            for m in model.objc_methods:
+                new_name = renamed.get(m.class_name)
+                if new_name:
+                    m.class_name = new_name
+
     cache.put_json(binary.sha256, "triage", {
         "platform": "ios",
         "framework": binary.framework.value,
