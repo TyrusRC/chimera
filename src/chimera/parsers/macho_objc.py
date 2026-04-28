@@ -411,6 +411,39 @@ def _read_protocol(
     )
 
 
+def link_callsites(
+    methods: list[ObjCMethod],
+    xref_records: list[dict],
+) -> list:
+    """Pure-logic translator: r2 xref dicts → ObjCCallSite entries.
+
+    xref_records each: {caller, addr, selector, receiver_class | None}.
+    receiver_class may be the literal "self" or "super" tokens for those
+    dispatch styles, or None for dynamic dispatch.
+    """
+    from chimera.model.objc import ObjCCallSite
+
+    out: list = []
+    for r in xref_records:
+        recv = r.get("receiver_class")
+        if recv == "self":
+            resolution = "self"
+        elif recv == "super":
+            resolution = "super"
+        elif recv is None:
+            resolution = "dynamic"
+        else:
+            resolution = "static"
+        out.append(ObjCCallSite(
+            caller_function=r["caller"],
+            call_address=r["addr"],
+            selector=r["selector"],
+            receiver_class=recv if resolution in ("static",) else None,
+            resolution=resolution,
+        ))
+    return out
+
+
 def _has_chained_fixups(raw: bytes) -> bool:
     if len(raw) < MACH_HEADER_64.size:
         return False
