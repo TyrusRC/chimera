@@ -23,6 +23,19 @@ def test_method_t_size_is_three_pointers():
     assert METHOD_T.size == 24
 
 
+def test_method_t_pack_unpack_roundtrip():
+    """Field order matters: name(8) types(8) imp(8) — pack and unpack should round-trip."""
+    from chimera.parsers.macho_objc_structs import METHOD_T
+
+    name_p, types_p, imp = 0x1000, 0x2000, 0x3000
+    packed = METHOD_T.pack(name_p, types_p, imp)
+    assert len(packed) == 24
+    n, t, i = METHOD_T.unpack(packed)
+    assert n == name_p
+    assert t == types_p
+    assert i == imp
+
+
 def test_method_list_header_size():
     """method_list_t header: entsize_and_flags(4) count(4)."""
     from chimera.parsers.macho_objc_structs import METHOD_LIST_HEADER

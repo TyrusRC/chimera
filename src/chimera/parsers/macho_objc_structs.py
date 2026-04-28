@@ -63,5 +63,15 @@ _PAC_MASK = (1 << 47) - 1
 
 
 def strip_pac(p: int) -> int:
-    """Mask off ARM64e pointer authentication bits."""
+    """Strip ARM64e pointer authentication bits from a runtime-resolved VA.
+
+    Use only on pointers that already have dyld fixups applied — i.e., values
+    you would observe in a live process or in a Mach-O dump. The 47-bit canonical
+    user-space VA sits in bits 0..46; bits 47..63 are the auth context that
+    dyld would have stripped at fixup time.
+
+    NOT for use on raw `dyld_chained_ptr_arm64e_rebase.target` fields — those
+    encode the target in bits 0..42 with auth metadata above. The chained-fixup
+    decoder in `macho_objc.py` handles that case separately.
+    """
     return p & _PAC_MASK
