@@ -131,7 +131,12 @@ def apply_instruction(
             state.set(ops[0], EntryX0)
             return None
 
-    # Default rule: any opcode that has a destination operand clobbers it.
-    if ops and isinstance(ops[0], str) and ops[0].startswith("x"):
-        state.set(ops[0], Unknown)
+    # Default rule: opcode with a register destination clobbers it.
+    # ARM64 'w' registers alias the lower 32 bits of 'x' — clobber the x-view too.
+    if ops and isinstance(ops[0], str):
+        dest = ops[0]
+        if dest.startswith("x"):
+            state.set(dest, Unknown)
+        elif dest.startswith("w") and dest[1:].isdigit():
+            state.set(f"x{dest[1:]}", Unknown)
     return None

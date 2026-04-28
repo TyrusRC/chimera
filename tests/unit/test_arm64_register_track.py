@@ -144,3 +144,44 @@ def test_apply_unknown_opcode_clobbers_target_register():
     assert s.get("x1") == Unknown
     # x2 is a source; unchanged
     assert s.get("x2") == ConstantPool(0x80)
+
+
+def test_apply_add_with_non_matching_source_clobbers_destination():
+    """`add x1, x2, 0x40` (different source) clobbers x1 to Unknown."""
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ConstantPool, Unknown, apply_instruction,
+    )
+
+    s = RegisterState()
+    s.set("x1", ConstantPool(0x100))
+    s.set("x2", ConstantPool(0x200))
+    apply_instruction(s, {"opcode": "add", "operands": ["x1", "x2", 0x40]},
+                       fn_offset=0x1000, insn_offset=0x1100)
+    assert s.get("x1") == Unknown
+    assert s.get("x2") == ConstantPool(0x200)
+
+
+def test_apply_w_register_write_clobbers_aliased_x_register():
+    """`eor w0, w1, w2` clobbers x0 (w0 is the lower 32 bits of x0)."""
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ConstantPool, Unknown, apply_instruction,
+    )
+
+    s = RegisterState()
+    s.set("x0", ConstantPool(0x100200040))
+    apply_instruction(s, {"opcode": "eor", "operands": ["w0", "w1", "w2"]},
+                       fn_offset=0x1000, insn_offset=0x1100)
+    assert s.get("x0") == Unknown
+
+
+def test_apply_simd_register_write_does_not_touch_x_state():
+    """`fadd q0, q1, q2` is SIMD and outside our tracking — x0 unchanged."""
+    from chimera.parsers.arm64_register_track import (
+        RegisterState, ConstantPool, apply_instruction,
+    )
+
+    s = RegisterState()
+    s.set("x0", ConstantPool(0x100200040))
+    apply_instruction(s, {"opcode": "fadd", "operands": ["q0", "q1", "q2"]},
+                       fn_offset=0x1000, insn_offset=0x1100)
+    assert s.get("x0") == ConstantPool(0x100200040)
