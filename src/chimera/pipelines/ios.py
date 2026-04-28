@@ -16,6 +16,7 @@ from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
 from chimera.pipelines.common import _rehydrate_from_cache, unpack_ipa
 from chimera.adapters.swift_demangle import _MANGLED_RE, _MANGLED_TOKEN_RE
+from chimera.pipelines.objc_xref import build_objc_xref
 from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
 
 logger = logging.getLogger(__name__)
@@ -171,6 +172,29 @@ async def analyze_ipa(
             logger.info("class-dump: %d headers extracted",
                         cd_result.get("header_count", 0))
 
+    # Phase 4.5: ObjC cross-references (post class-dump, pre Ghidra)
+    objc_xref_context = {
+        "available": False, "class_count": 0, "method_count": 0,
+        "category_count": 0, "protocol_count": 0, "callsite_count": 0,
+        "callsites_resolved_static": 0, "callsites_unresolved_dynamic": 0,
+        "class_dump_enriched": False, "chained_fixups_detected": False,
+        "skipped_reason": "no_main_binary",
+    }
+    if unpack_result["main_binary"]:
+        # Pull class-dump output if Phase 4 ran.
+        class_dump_json = cache.get_json(binary.sha256, "class_dump")
+        # Pull r2 main-binary triage to derive xref records.
+        r2_main = cache.get_json(binary.sha256, f"r2_{unpack_result['main_binary'].name}")
+        r2_xrefs: list[dict] = []
+        if isinstance(r2_main, dict):
+            r2_xrefs = r2_main.get("objc_xrefs", []) or []
+        objc_xref_context = await build_objc_xref(
+            model=model,
+            main_binary=unpack_result["main_binary"],
+            class_dump_json=class_dump_json,
+            r2_xrefs=r2_xrefs,
+        )
+
     # Phase 5: Ghidra deep analysis on main binary
     ghidra = registry.get("ghidra")
     if ghidra and ghidra.is_available() and unpack_result["main_binary"]:
@@ -252,6 +276,7 @@ async def analyze_ipa(
         "string_count": len(model.get_strings()),
         "react_native_context": react_native_context,
         "swift_demangle_context": swift_demangle_context,
+        "objc_xref_context": objc_xref_context,
     })
 
     logger.info("Analysis complete: %d functions, %d strings",
