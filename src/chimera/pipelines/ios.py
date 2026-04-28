@@ -206,6 +206,20 @@ async def analyze_ipa(
                     f.name = demangled
                     swift_demangle_context["names_demangled"] += 1
 
+        # 2. Strings — sibling entries; original mangled value preserved.
+        str_inputs = [s.value for s in model.get_strings() if _MANGLED_RE.match(s.value)]
+        if str_inputs:
+            str_map = await demangler.demangle_batch(str_inputs)
+            for i, (orig_value, demangled) in enumerate(str_map.items()):
+                if demangled != orig_value:
+                    model.add_string(
+                        address=f"swift_demangled_{i}",
+                        value=demangled,
+                        section="swift_demangled",
+                        decrypted_from=orig_value,
+                    )
+                    swift_demangle_context["strings_demangled"] += 1
+
     cache.put_json(binary.sha256, "triage", {
         "platform": "ios",
         "framework": binary.framework.value,

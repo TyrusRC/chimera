@@ -332,3 +332,59 @@ async def test_ios_pipeline_demangles_function_names(tmp_path, monkeypatch):
     ctx = triage["swift_demangle_context"]
     assert ctx["available"] is True
     assert ctx["names_demangled"] == 1
+
+
+async def test_ios_pipeline_demangles_strings_as_siblings(tmp_path, monkeypatch):
+    """Phase 5.5 must add sibling string entries for mangled values; original mangled string preserved."""
+    import plistlib
+    import zipfile
+    from chimera.adapters.registry import AdapterRegistry
+    from chimera.adapters.swift_demangle import SwiftDemangleAdapter
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.resource_manager import ResourceManager
+    from chimera.pipelines.ios import analyze_ipa
+
+    ipa = tmp_path / "swift.ipa"
+    plist = plistlib.dumps({"CFBundleExecutable": "App", "CFBundleIdentifier": "com.example.swift"})
+    main_bin = b"\xcf\xfa\xed\xfe" + b"\x00" * 60
+    with zipfile.ZipFile(ipa, "w") as zf:
+        zf.writestr("Payload/App.app/Info.plist", plist)
+        zf.writestr("Payload/App.app/App", main_bin)
+
+    config = ChimeraConfig(project_dir=tmp_path / "project", cache_dir=tmp_path / "cache")
+    cache = AnalysisCache(config.cache_dir)
+    resource_mgr = ResourceManager(total_ram_mb=4096)
+
+    registry = AdapterRegistry()
+    adapter = SwiftDemangleAdapter()
+
+    async def fake_demangle(names):
+        return {n: f"DemangledStr<{n[-4:]}>" for n in names}
+
+    monkeypatch.setattr(adapter, "is_available", lambda: True)
+    monkeypatch.setattr(adapter, "demangle_batch", fake_demangle)
+    registry.register(adapter)
+
+    class _FakeR2:
+        def name(self): return "radare2"
+        def is_available(self): return True
+        def supported_formats(self): return ["macho"]
+        def resource_estimate(self, p): return None
+        async def cleanup(self): pass
+        async def analyze(self, path, opts):
+            return {
+                "strings": [
+                    {"vaddr": 0x100, "string": "_$s4Demo10MetadataStr"},
+                    {"vaddr": 0x200, "string": "Hello world"},
+                ],
+                "functions": [],
+            }
+    registry.register(_FakeR2())
+
+    await analyze_ipa(ipa, config, registry, resource_mgr, cache)
+
+    import hashlib
+    sha = hashlib.sha256(ipa.read_bytes()).hexdigest()
+    triage = cache.get_json(sha, "triage")
+    assert triage["swift_demangle_context"]["strings_demangled"] == 1
