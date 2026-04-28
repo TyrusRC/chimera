@@ -81,3 +81,57 @@ class RegisterState:
         """Reset x0..x18 to Unknown (per AAPCS64 call clobber rules)."""
         for r in _CALLER_SAVED:
             self._regs.pop(r, None)
+
+
+# ---------------------------------------------------------------------------
+# Instruction application
+# ---------------------------------------------------------------------------
+
+# Prologue window: mov xN, x0 in this many bytes from function entry counts
+# as "saved receiver" rather than a generic register copy.
+_PROLOGUE_WINDOW_BYTES = 0x40  # 16 instructions @ 4 bytes each
+
+
+def apply_instruction(
+    state: RegisterState,
+    insn: dict,
+    *,
+    fn_offset: int,
+    insn_offset: int,
+) -> str | None:
+    """Update `state` based on `insn`. Returns 'ret' on terminator, else None.
+
+    `insn` is the normalized op shape: {"opcode": str, "operands": [...]}.
+    `fn_offset` is the function's start address; `insn_offset` is the current
+    instruction's address. Both used to detect prologue context for entry-x0.
+    """
+    opcode = insn.get("opcode", "")
+    ops = insn.get("operands", [])
+
+    if opcode == "ret":
+        return "ret"
+
+    if opcode == "adrp" and len(ops) >= 2 and isinstance(ops[1], int):
+        state.set(ops[0], ConstantPool(ops[1]))
+        return None
+
+    if opcode == "add" and len(ops) >= 3:
+        # add xN, xN, imm -- refine ConstantPool anchor.
+        dest, lhs = ops[0], ops[1]
+        imm = ops[2] if isinstance(ops[2], int) else None
+        if dest == lhs and imm is not None:
+            cur = state.get(dest)
+            if isinstance(cur, ConstantPool):
+                state.set(dest, ConstantPool(cur.address + imm))
+                return None
+
+    if opcode == "mov" and len(ops) >= 2 and ops[1] == "x0":
+        # Function-prologue receiver save?
+        if insn_offset - fn_offset <= _PROLOGUE_WINDOW_BYTES:
+            state.set(ops[0], EntryX0)
+            return None
+
+    # Default rule: any opcode that has a destination operand clobbers it.
+    if ops and isinstance(ops[0], str) and ops[0].startswith("x"):
+        state.set(ops[0], Unknown)
+    return None
