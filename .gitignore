@@ -23,5 +23,5 @@ e2e/material/
 # Deobf evidence harness sample cache (regenerated locally)
 tests/deobf_evidence/fixtures/**/.cache/
 
-# Internal design/plan artifacts (brainstorm + writing-plans output — kept local only)
-docs/superpowers/
+# Internal artifacts — kept local only
+docs/
