@@ -35,7 +35,9 @@ services:
       - "5432:5432"
 
   chimera:
-    build: .
+    build:
+      context: .
+      target: runtime
     image: chimera:latest
     container_name: chimera
     depends_on:

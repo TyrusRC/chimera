@@ -1,0 +1,50 @@
+# VCS
+.git
+.gitignore
+.github
+
+# Internal artifacts (kept local only)
+docs
+
+# Python build artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist
+build
+.eggs
+.venv
+.pytest_cache
+.coverage
+.mypy_cache
+.ruff_cache
+
+# Project-local caches and runtime data
+chimera_project
+chimera_cache
+projects
+cache
+tests/deobf_evidence/fixtures/**/.cache
+
+# Sample binaries and large assets
+*.apk
+*.ipa
+*.dex
+*.so
+e2e/material
+.worktrees
+
+# Frontend artifacts (not needed in image)
+node_modules
+web/dist
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+
+# Docker / CI metadata
+Dockerfile*
+docker-compose*.yml
+.dockerignore
