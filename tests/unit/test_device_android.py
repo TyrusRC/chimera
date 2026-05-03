@@ -49,7 +49,7 @@ async def test_adb_nonzero_exit_raises_with_stderr(monkeypatch):
     mgr = AndroidDeviceManager()
     import pytest
     with pytest.raises(AdbError, match="device offline"):
-        await mgr._adb("devices")
+        await mgr._adb_argv(["devices"])
 
 
 async def test_pull_app_returns_all_split_apks(tmp_path, monkeypatch):

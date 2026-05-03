@@ -169,9 +169,3 @@ class AndroidDeviceManager(DeviceManager):
 
     async def _adb_device_argv(self, device_id: str, argv: list[str]) -> str:
         return await self._adb_argv(["-s", device_id, *argv])
-
-    async def _adb(self, args: str) -> str:
-        return await self._adb_argv(args.split())
-
-    async def _adb_device(self, device_id: str, args: str) -> str:
-        return await self._adb_device_argv(device_id, args.split())

@@ -80,7 +80,6 @@ def _check_react_native(unpack_dir: Path) -> DetectedFramework | None:
     ]
     # iOS bundle
     bundle_paths.extend(unpack_dir.glob("*.jsbundle"))
-    bundle_paths.extend(unpack_dir.glob("main.jsbundle"))
 
     for bundle in bundle_paths:
         if bundle.exists() and bundle.stat().st_size > 0:

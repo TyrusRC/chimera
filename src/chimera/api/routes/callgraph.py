@@ -8,9 +8,9 @@ router = APIRouter(prefix="/api/projects/{project_id}", tags=["callgraph"])
 
 @router.get("/callgraph/{address}")
 async def get_callgraph(project_id: str, address: str, depth: int = Query(2, ge=1, le=10)) -> dict:
-    from chimera.api.routes.projects import _projects
+    from chimera.api.routes.projects import _store
 
-    p = _projects.get(project_id)
+    p = await _store.get(project_id)
     if not p or "model" not in p:
         raise HTTPException(status_code=404, detail="Project not found")
     model = p["model"]

@@ -112,33 +112,36 @@ async def create_project(req: AnalyzeRequest, background_tasks: BackgroundTasks)
 
 
 async def _run_analysis(project_id: str, req: AnalyzeRequest) -> None:
+    config = ChimeraConfig(ghidra_home=req.ghidra_home)
+    engine = ChimeraEngine(config)
     try:
-        config = ChimeraConfig(ghidra_home=req.ghidra_home)
-        engine = ChimeraEngine(config)
-        model = await asyncio.wait_for(
-            engine.analyze(req.path), timeout=_analysis_timeout,
-        )
-        await _store.update(
-            project_id,
-            platform=model.binary.platform.value,
-            format=model.binary.format.value,
-            framework=model.binary.framework.value,
-            function_count=len(model.functions),
-            string_count=len(model.get_strings()),
-            status="complete",
-            model=model,
-        )
-        logger.info("Analysis complete for %s", project_id)
-    except asyncio.TimeoutError:
-        await _store.update(
-            project_id, status=f"error: timeout after {_analysis_timeout}s",
-        )
-    except asyncio.CancelledError:
-        await _store.update(project_id, status="cancelled")
-        raise
-    except Exception as e:
-        logger.error("Analysis failed for %s: %s", project_id, e)
-        await _store.update(project_id, status=f"error: {e}")
+        try:
+            model = await asyncio.wait_for(
+                engine.analyze(req.path), timeout=_analysis_timeout,
+            )
+            await _store.update(
+                project_id,
+                platform=model.binary.platform.value,
+                format=model.binary.format.value,
+                framework=model.binary.framework.value,
+                function_count=len(model.functions),
+                string_count=len(model.get_strings()),
+                status="complete",
+                model=model,
+            )
+            logger.info("Analysis complete for %s", project_id)
+        except asyncio.TimeoutError:
+            await _store.update(
+                project_id, status=f"error: timeout after {_analysis_timeout}s",
+            )
+        except asyncio.CancelledError:
+            await _store.update(project_id, status="cancelled")
+            raise
+        except Exception as e:
+            logger.error("Analysis failed for %s: %s", project_id, e)
+            await _store.update(project_id, status=f"error: {e}")
+    finally:
+        await engine.cleanup()
 
 
 @router.get("/{project_id}")

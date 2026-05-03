@@ -8,9 +8,9 @@ from typing import Optional
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["functions"])
 
 
-def _get_model(project_id: str):
-    from chimera.api.routes.projects import _projects
-    p = _projects.get(project_id)
+async def _get_model(project_id: str):
+    from chimera.api.routes.projects import _store
+    p = await _store.get(project_id)
     if not p or "model" not in p:
         raise HTTPException(status_code=404, detail="Project not found or not analyzed")
     return p["model"]
@@ -25,7 +25,7 @@ async def list_functions(
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
 ) -> dict:
-    model = _get_model(project_id)
+    model = await _get_model(project_id)
     funcs = model.functions
 
     if search:
@@ -61,7 +61,7 @@ async def list_functions(
 
 @router.get("/functions/{address}")
 async def get_function(project_id: str, address: str) -> dict:
-    model = _get_model(project_id)
+    model = await _get_model(project_id)
     func = model.get_function(address)
     if not func:
         raise HTTPException(status_code=404, detail=f"Function {address} not found")
@@ -91,7 +91,7 @@ async def get_disassembly(project_id: str, address: str) -> dict:
     Falls back to stub data when the backend has not produced raw
     disassembly (e.g. only decompiled source is available).
     """
-    model = _get_model(project_id)
+    model = await _get_model(project_id)
     func = model.get_function(address)
     if not func:
         raise HTTPException(status_code=404, detail=f"Function {address} not found")

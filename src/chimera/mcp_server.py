@@ -599,8 +599,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                                 "pass the base to analyze()."
                             )
                         return _json(response)
-                except (OSError, RuntimeError):
-                    pass
+                except (OSError, RuntimeError) as e:
+                    logger.warning("pull_app via %s failed: %s", type(mgr).__name__, e)
                 await mgr.cleanup()
         return _error(f"Failed to pull {package} from device {device_id}. Check device connection and package name.")
 

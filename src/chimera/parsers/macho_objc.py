@@ -172,8 +172,17 @@ def _read_method_list(
 # Public entry point
 # ---------------------------------------------------------------------------
 
+_MAX_MACHO_SIZE = 2 * 1024 * 1024 * 1024  # 2 GiB — well past any real iOS binary.
+
+
 def parse_objc_metadata(macho_path: Path) -> ObjCMetadata:
-    raw = Path(macho_path).read_bytes()
+    macho_path = Path(macho_path)
+    size = macho_path.stat().st_size
+    if size > _MAX_MACHO_SIZE:
+        raise ValueError(
+            f"Mach-O too large for in-memory parse: {size} bytes (cap {_MAX_MACHO_SIZE})"
+        )
+    raw = macho_path.read_bytes()
     md = ObjCMetadata()
 
     classlist_bytes = _locate_section_in_segments(raw, "__objc_classlist")

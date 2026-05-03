@@ -84,11 +84,7 @@ class FridaAdapter(BackendAdapter):
             else:
                 device = frida.get_usb_device(timeout=5)
 
-            if isinstance(package_or_pid, int):
-                session = device.attach(package_or_pid)
-            else:
-                session = device.attach(package_or_pid)
-
+            session = device.attach(package_or_pid)
             frida_session = FridaSession(device, session)
             key = str(package_or_pid)
             self._sessions[key] = frida_session

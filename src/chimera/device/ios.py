@@ -111,6 +111,15 @@ class IOSDeviceManager(DeviceManager):
             return False
 
     async def forward_port(self, device_id: str, local: int, remote: int) -> bool:
+        # Terminate any prior iproxy still attached to this manager — calling
+        # forward_port twice would otherwise leak the previous subprocess.
+        prev = getattr(self, "_iproxy_proc", None)
+        if prev is not None and prev.returncode is None:
+            prev.terminate()
+            try:
+                await asyncio.wait_for(prev.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                prev.kill()
         try:
             # iproxy runs as a background process
             proc = await asyncio.create_subprocess_exec(

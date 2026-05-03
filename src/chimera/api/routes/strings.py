@@ -15,8 +15,8 @@ async def list_strings(
     offset: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=2000),
 ) -> dict:
-    from chimera.api.routes.projects import _projects
-    p = _projects.get(project_id)
+    from chimera.api.routes.projects import _store
+    p = await _store.get(project_id)
     if not p or "model" not in p:
         raise HTTPException(status_code=404, detail="Project not found")
     model = p["model"]
