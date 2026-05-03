@@ -34,16 +34,14 @@ class JadxAdapter(BackendAdapter):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         threads = os.environ.get("CHIMERA_JADX_THREADS", "2")
-        # --deobf-min-length 2: rename only 1-char names (jadx default is 3,
-        # which would also rewrite 2-char names like 'a0'/'b1' that ProGuard
+        # --deobf-min 2: rename only 1-char names (jadx default is 3, which
+        # would also rewrite 2-char names like 'a0'/'b1' that ProGuard
         # actually produces — keep them visible so evidence tests and
         # Sub-project 2's rules can detect the obfuscation pattern).
         cmd = [
             "jadx",
             "--deobf",
-            "--deobf-use-sourcename",
-            "--deobf-min-length", "2",
-            "--deobf-rewrite-cfg",
+            "--deobf-min", "2",
             "--show-bad-code",
             "--log-level", "error",
             "--threads-count", threads,
@@ -51,7 +49,7 @@ class JadxAdapter(BackendAdapter):
 
         mapping_file = options.get("mapping_file")
         if mapping_file and Path(mapping_file).exists():
-            cmd += ["--mapping-file", str(mapping_file)]
+            cmd += ["--mappings-path", str(mapping_file)]
 
         if options.get("kotlin_aware"):
             cmd += [
@@ -59,15 +57,33 @@ class JadxAdapter(BackendAdapter):
                 "--rename-flags", "valid,printable",
             ]
 
+        # jadx caches deobfuscation decisions under $JADX_CACHE_DIR; pin it
+        # per binary so reruns reuse the same renames. jadx ALSO needs a
+        # writable $HOME for its general config dir (created on first run);
+        # in containers run with `--user <uid>:<gid>` the inherited HOME may
+        # be unwritable, so fall back to the cache dir for HOME too. Without
+        # this, jadx aborts with NIO `createDirectories` failures and emits
+        # zero output even though it returns exit 0.
+        env: dict | None = None
+        home = os.environ.get("HOME")
+        home_writable = bool(home) and os.access(home, os.W_OK)
+
         deobf_cache_dir = options.get("deobf_cache_dir")
         if deobf_cache_dir:
             Path(deobf_cache_dir).mkdir(parents=True, exist_ok=True)
-            cmd += ["--deobf-cache", str(deobf_cache_dir)]
+            env = {**os.environ, "JADX_CACHE_DIR": str(deobf_cache_dir)}
+            if not home_writable:
+                # Reuse the cache dir as HOME so jadx's general config
+                # writes have somewhere to land.
+                env["HOME"] = str(deobf_cache_dir)
+        elif not home_writable:
+            env = {**os.environ, "HOME": "/tmp"}
 
         cmd += ["--output-dir", str(output_dir), binary_path]
 
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         stdout, stderr = await proc.communicate()
 

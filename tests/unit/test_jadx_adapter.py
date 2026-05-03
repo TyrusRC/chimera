@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 async def test_jadx_passes_mapping_file_flag(tmp_path, monkeypatch):
-    """When options['mapping_file'] is a path, jadx CLI gets --mapping-file."""
+    """When options['mapping_file'] is a path, jadx CLI gets --mappings-path."""
     from chimera.adapters.jadx import JadxAdapter
 
     mapping = tmp_path / "mapping.txt"
@@ -32,7 +32,7 @@ async def test_jadx_passes_mapping_file_flag(tmp_path, monkeypatch):
         "mapping_file": str(mapping),
     })
     argv = captured[0]
-    assert "--mapping-file" in argv, argv
+    assert "--mappings-path" in argv, argv
     assert str(mapping) in argv
 
 
@@ -95,11 +95,13 @@ async def test_jadx_no_kotlin_flags_when_not_kotlin_aware(tmp_path, monkeypatch)
 
 
 async def test_jadx_passes_deobf_cache_dir(tmp_path, monkeypatch):
+    """deobf_cache_dir is now passed via JADX_CACHE_DIR env, not a CLI flag."""
     from chimera.adapters.jadx import JadxAdapter
     apk = tmp_path / "in.apk"
     apk.write_bytes(b"PK")
 
-    captured: list[list[str]] = []
+    captured_argv: list[list[str]] = []
+    captured_env: list[dict | None] = []
 
     class FakeProc:
         returncode = 0
@@ -107,18 +109,21 @@ async def test_jadx_passes_deobf_cache_dir(tmp_path, monkeypatch):
             return b"", b""
 
     async def fake_exec(*argv, **kw):
-        captured.append(list(argv))
+        captured_argv.append(list(argv))
+        captured_env.append(kw.get("env"))
         return FakeProc()
 
     import asyncio
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
 
     adapter = JadxAdapter()
+    cache_dir = tmp_path / "cache"
     await adapter.analyze(str(apk), {
         "output_dir": str(tmp_path / "out"),
-        "deobf_cache_dir": str(tmp_path / "cache"),
+        "deobf_cache_dir": str(cache_dir),
     })
-    argv = captured[0]
-    assert "--deobf-cache" in argv
-    j = argv.index("--deobf-cache")
-    assert "cache" in argv[j + 1]
+    env = captured_env[0]
+    assert env is not None, "expected env to be set when deobf_cache_dir is provided"
+    assert env.get("JADX_CACHE_DIR") == str(cache_dir)
+    # Cache directory should be created on disk for jadx to write into.
+    assert cache_dir.exists()
