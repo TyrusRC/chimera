@@ -111,9 +111,14 @@ ENV PIP_RETRIES=10
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# yara-python wheels for cpython 3.12 ship libyara statically, so we
+# don't need libyara from apt — but we DO need a C toolchain in case
+# pip falls back to source. Adding gcc here is small enough; the final
+# image stage doesn't carry it.
 RUN set -eux \
     && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates build-essential libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -124,8 +129,17 @@ COPY src/ src/
 # BuildKit cache mount keeps wheels around between rebuilds, so a network
 # wobble during one build doesn't force every dependency to re-download next
 # time. The cache lives outside the image, so it doesn't bloat the layer.
+# `[capa]` is intentionally NOT installed in the default image — capa pins
+# vivisect/smda which clash with our own tooling. Users who want capa
+# capabilities can `pip install flare-capa` inside a venv on the host or
+# rebuild with `--build-arg INSTALL_CAPA=1`.
+ARG INSTALL_CAPA=0
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install .
+    if [ "$INSTALL_CAPA" = "1" ]; then \
+        pip install ".[capa]"; \
+    else \
+        pip install .; \
+    fi
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +160,7 @@ RUN set -eux \
     && r2 -v \
     && jadx --version \
     && test -x /opt/ghidra/support/launch.sh \
+    && python -c "import yara; print('yara OK')" \
     && chimera --help >/dev/null
 
 VOLUME ["/projects", "/cache", "/data"]
