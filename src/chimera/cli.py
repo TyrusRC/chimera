@@ -81,6 +81,20 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
             for lib, info in per_lib.items():
                 click.echo(f"    {lib}: {info}")
 
+        native_protections = cache.get_json(model.binary.sha256, "native_protections") or {}
+        flags: list[str] = []
+        if native_protections.get("commercial_packer"):
+            flags.append(f"packer={native_protections['commercial_packer']}")
+        if native_protections.get("crypto_algorithms"):
+            flags.append(f"crypto={','.join(native_protections['crypto_algorithms'])}")
+        if native_protections.get("obfuscation_techniques"):
+            flags.append(f"obf={','.join(native_protections['obfuscation_techniques'])}")
+        if native_protections.get("capabilities"):
+            flags.append(f"capa={len(native_protections['capabilities'])} hits")
+        if flags:
+            click.echo()
+            click.echo("  Native protections:   " + " · ".join(flags))
+
         click.echo()
         available = [a.name() for a in engine.registry.all_available()]
         unavailable = [a.name() for a in engine.registry.all_registered() if not a.is_available()]
@@ -241,6 +255,21 @@ async def _detect_protections(path: str, project_dir: str | None,
         # Augment with jadx-tree scan so the analyst gets file:line evidence
         # for each detected protection — not just yes/no booleans.
         cache = AnalysisCache(config.cache_dir)
+        native_protections = cache.get_json(model.binary.sha256, "native_protections") or {}
+        if native_protections.get("commercial_packer"):
+            profile.commercial_packer = native_protections["commercial_packer"]
+            profile.has_packer = True
+            profile.packer_name = profile.packer_name or native_protections["commercial_packer"]
+        if native_protections.get("crypto_algorithms"):
+            profile.crypto_algorithms = list(native_protections["crypto_algorithms"])
+        if native_protections.get("obfuscation_techniques"):
+            profile.obfuscation_techniques = list(native_protections["obfuscation_techniques"])
+        if native_protections.get("capabilities"):
+            profile.capabilities = [
+                f"{c.get('namespace')}/{c.get('rule')}".lstrip("/")
+                for c in native_protections["capabilities"]
+            ]
+
         jadx_meta = cache.get_json(model.binary.sha256, "jadx") or {}
         sources_dir = jadx_meta.get("sources_dir")
         hits_by_cat: dict[str, list] = {}
@@ -276,6 +305,17 @@ async def _detect_protections(path: str, project_dir: str | None,
         _emit_protection_line("Integrity checks:   ", profile.has_integrity_check,
                               hits_by_cat.get("integrity"))
         click.echo(f"  Packer:              {'YES (' + (profile.packer_name or '?') + ')' if profile.has_packer else 'no'}")
+        if profile.commercial_packer:
+            click.echo(f"  Commercial packer:   {profile.commercial_packer}")
+        if profile.crypto_algorithms:
+            click.echo(f"  Crypto detected:     {', '.join(profile.crypto_algorithms)}")
+        if profile.obfuscation_techniques:
+            click.echo(f"  Obfuscation:         {', '.join(profile.obfuscation_techniques)}")
+        if profile.capabilities:
+            top = profile.capabilities[:8]
+            more = len(profile.capabilities) - len(top)
+            click.echo(f"  Capabilities (capa): {', '.join(top)}"
+                       + (f"  (+{more} more)" if more > 0 else ""))
         if profile.has_any_protection:
             click.echo(f"\n  Bypass order: {' -> '.join(profile.bypass_order())}")
     finally:

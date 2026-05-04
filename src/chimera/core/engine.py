@@ -7,6 +7,7 @@ from pathlib import Path
 
 from chimera.adapters.afl import AFLAdapter
 from chimera.adapters.apktool import ApktoolAdapter
+from chimera.adapters.capa_adapter import CapaAdapter
 from chimera.adapters.class_dump import ClassDumpAdapter
 from chimera.adapters.frida_adapter import FridaAdapter
 from chimera.adapters.frida_dexdump import FridaDexdumpAdapter
@@ -18,6 +19,7 @@ from chimera.adapters.semgrep import SemgrepAdapter
 from chimera.adapters.hermes_dec import HermesDecAdapter
 from chimera.adapters.swift_demangle import SwiftDemangleAdapter
 from chimera.adapters.webcrack import WebcrackAdapter
+from chimera.adapters.yara_adapter import YaraAdapter
 from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
 from chimera.core.resource_manager import ResourceManager
@@ -51,6 +53,8 @@ class ChimeraEngine:
         self.registry.register(WebcrackAdapter())
         self.registry.register(HermesDecAdapter())
         self.registry.register(SwiftDemangleAdapter())
+        self.registry.register(YaraAdapter())
+        self.registry.register(CapaAdapter())
 
     async def analyze(self, path: str | Path) -> UnifiedProgramModel:
         path = Path(path)

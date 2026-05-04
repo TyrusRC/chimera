@@ -24,6 +24,7 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
     triage = cache.get_json(sha, "triage") or {}
     jadx_meta = cache.get_json(sha, "jadx") or {}
     manifest_bytes = cache.get(sha, "manifest_xml")
+    native_protections = cache.get_json(sha, "native_protections") or {}
 
     # Per-native-lib backend results — walk the cache dir.
     sha_dir = cache.cache_dir / sha[:2] / sha
@@ -85,6 +86,7 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
             "string_truncated": len(model.get_strings()) > 1000,
         },
         "manifest_present": manifest_bytes is not None,
+        "native_protections": native_protections,
     }
 
 
@@ -185,6 +187,9 @@ ul.compact {{ columns: 3; column-gap: 24px; font-size: 12px; }}
 <tr><th>Library</th><th>r2 summary</th><th>ghidra summary</th></tr>
 {libs_rows}
 </table>
+
+<h2>Native protections</h2>
+<pre><code>{html.escape(json.dumps(report.get("native_protections") or {}, indent=2))}</code></pre>
 
 <h2>Model — {model['function_count']:,} functions / {model['string_count']:,} strings</h2>
 <h3>Functions (first 200)</h3>

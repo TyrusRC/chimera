@@ -131,6 +131,12 @@ async def analyze_apk(
     else:
         logger.info("r2 triage on %d native libraries", len(unpack_result["native_libs"]))
 
+        # Aggregate native-side findings across libs.
+        crypto_algos: set[str] = set()
+        commercial_packer: str | None = None
+        obfuscation_techniques: set[str] = set()
+        capabilities: list[dict] = []
+
         async def _r2_triage(lib_path: Path) -> None:
             async with resource_mgr.light():
                 triage = await r2.analyze(str(lib_path), {"mode": "triage"})
@@ -158,6 +164,80 @@ async def analyze_apk(
                 cache.put_json(binary.sha256, f"r2_{lib_path.name}", triage)
 
         await asyncio.gather(*[_r2_triage(lib) for lib in unpack_result["native_libs"]])
+
+        # Phase 4.5: Native-crypto / packer / capa / OLLVM detectors. Each
+        # adapter is best-effort and silently degrades when its tool is
+        # missing. The aggregated result lands in ProtectionProfile fields.
+        from chimera.bypass.ollvm_detector import detect_ollvm_in_disasm, summarize as _ollvm_sum
+        from chimera.bypass.yara_scanner import scan_native_lib
+
+        capa = registry.get("capa")
+
+        async def _native_protections(lib_path: Path) -> None:
+            yara_result = await scan_native_lib(lib_path)
+            for algo in yara_result.get("crypto_algorithms", []):
+                crypto_algos.add(algo)
+            nonlocal commercial_packer
+            if yara_result.get("commercial_packer") and not commercial_packer:
+                commercial_packer = yara_result["commercial_packer"]
+
+            if capa and capa.is_available():
+                async with resource_mgr.light():
+                    capa_result = await capa.analyze(str(lib_path), {})
+                for cap in capa_result.get("capabilities", []):
+                    if cap.get("is_library"):
+                        continue
+                    capabilities.append({
+                        "lib": lib_path.name,
+                        "rule": cap["rule"],
+                        "namespace": cap.get("namespace", ""),
+                        "address_count": cap.get("address_count", 0),
+                    })
+                cache.put_json(binary.sha256, f"capa_{lib_path.name}", capa_result)
+
+            cache.put_json(binary.sha256, f"yara_{lib_path.name}", yara_result)
+
+            # OLLVM heuristic — needs r2 disasm. Run a second r2 pass in
+            # the heavier `triage_with_disasm` mode so we have per-function
+            # ops. Skip for libs over 2 MB to keep runtime bounded.
+            if lib_path.stat().st_size <= 2 * 1024 * 1024:
+                async with resource_mgr.light():
+                    try:
+                        deeper = await r2.analyze(str(lib_path),
+                                                  {"mode": "triage_with_disasm"})
+                    except (OSError, RuntimeError) as exc:
+                        logger.debug("r2 deep pass failed for %s: %s", lib_path, exc)
+                        return
+                ollvm_findings = detect_ollvm_in_disasm(
+                    deeper.get("per_function_disasm") or {})
+                for tech, count in _ollvm_sum(ollvm_findings).items():
+                    obfuscation_techniques.add(tech)
+                    logger.info("OLLVM heuristic: %s x%d in %s",
+                                tech, count, lib_path.name)
+                if ollvm_findings:
+                    cache.put_json(binary.sha256, f"ollvm_{lib_path.name}", {
+                        "summary": _ollvm_sum(ollvm_findings),
+                        "findings": [
+                            {
+                                "function": f.function, "address": f.address,
+                                "technique": f.technique, "score": f.score,
+                                "detail": f.detail,
+                            }
+                            for f in ollvm_findings[:200]
+                        ],
+                    })
+
+        await asyncio.gather(
+            *[_native_protections(lib) for lib in unpack_result["native_libs"]],
+        )
+
+        if crypto_algos or commercial_packer or obfuscation_techniques or capabilities:
+            cache.put_json(binary.sha256, "native_protections", {
+                "crypto_algorithms": sorted(crypto_algos),
+                "commercial_packer": commercial_packer,
+                "obfuscation_techniques": sorted(obfuscation_techniques),
+                "capabilities": capabilities[:200],
+            })
 
     # Phase 5: Decompile with jadx
     if not (jadx and jadx.is_available()):
