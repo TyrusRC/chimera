@@ -9,7 +9,12 @@ from typing import Optional
 
 @dataclass
 class DetectedFramework:
-    framework: str     # native, react-native, flutter, xamarin, unity-il2cpp, cordova, capacitor, ionic
+    # Values match the Framework enum: none (no cross-platform framework),
+    # react-native, flutter, xamarin, unity-il2cpp, cordova, capacitor, ionic.
+    # We never return "native" here — that label was misleading for
+    # Kotlin/Java apps which technically aren't a "native" framework, just
+    # the absence of one.
+    framework: str
     variant: Optional[str] = None  # hermes/jsc for RN, obfuscated/clear for Flutter
     confidence: float = 1.0
     details: Optional[str] = None
@@ -53,7 +58,7 @@ class FrameworkDetector:
         if result:
             return result
 
-        return DetectedFramework(framework="native")
+        return DetectedFramework(framework="none")
 
 
 def _check_flutter(unpack_dir: Path) -> DetectedFramework | None:

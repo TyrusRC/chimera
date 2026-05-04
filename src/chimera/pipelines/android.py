@@ -55,9 +55,9 @@ async def analyze_apk(
                 )
                 model = UnifiedProgramModel(binary)
                 try:
-                    binary.framework = Framework(cached_triage.get("framework", "native"))
+                    binary.framework = Framework(cached_triage.get("framework", "none"))
                 except ValueError:
-                    binary.framework = Framework.NATIVE
+                    binary.framework = Framework.NONE
                 return model
             logger.info("Cache hit for %s - reusing triage", binary.sha256[:12])
             model = UnifiedProgramModel(binary)
@@ -85,7 +85,7 @@ async def analyze_apk(
     try:
         binary.framework = Framework(detected.framework)
     except ValueError:
-        binary.framework = Framework.NATIVE
+        binary.framework = Framework.NONE
     logger.info("Framework detected: %s%s",
                 detected.framework,
                 f" ({detected.variant})" if detected.variant else "")
@@ -189,6 +189,7 @@ async def analyze_apk(
             cache.put_json(binary.sha256, "jadx", {
                 "decompiled_files": jadx_result.get("decompiled_files", 0),
                 "packages": jadx_result.get("packages", []),
+                "sources_dir": jadx_result.get("sources_dir"),
             })
             logger.info("jadx: %d files decompiled", jadx_result.get("decompiled_files", 0))
 
@@ -200,6 +201,17 @@ async def analyze_apk(
                 manifest_xml = jadx_manifest.read_text(errors="replace")
             except OSError:
                 pass
+
+        # Phase 5.5: ingest decompiled classes into the unified model so
+        # downstream consumers (sdks, report, callgraph) see the JVM layer.
+        # Without this, model.functions only ever holds the few native funcs
+        # r2 surfaced, and tools that read it look broken on every Android
+        # app that's mostly Java/Kotlin.
+        if jadx_sources.exists():
+            from chimera.pipelines.jvm_ingest import ingest_jadx_classes
+            classes_added, strings_added = ingest_jadx_classes(model, jadx_sources)
+            logger.info("ingested %d classes / %d strings from jadx",
+                        classes_added, strings_added)
 
     if manifest_xml is None:
         logger.warning("AndroidManifest.xml is binary-encoded. Install jadx for proper manifest analysis.")

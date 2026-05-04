@@ -50,6 +50,7 @@ class Platform(Enum):
 
 
 class Framework(Enum):
+    NONE = "none"
     NATIVE = "native"
     REACT_NATIVE = "react-native"
     FLUTTER = "flutter"

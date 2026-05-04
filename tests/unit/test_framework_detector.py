@@ -57,11 +57,12 @@ class TestFrameworkDetector:
         result = FrameworkDetector.detect(tmp_path)
         assert result.framework == "cordova"
 
-    def test_detect_native(self, tmp_path):
-        # No framework markers
+    def test_detect_none(self, tmp_path):
+        # No cross-platform-framework markers — fallback should be "none",
+        # not "native" (which read as "C/C++" to analysts).
         (tmp_path / "AndroidManifest.xml").write_text("<manifest/>")
         result = FrameworkDetector.detect(tmp_path)
-        assert result.framework == "native"
+        assert result.framework == "none"
 
     def test_detect_flutter_ios(self, tmp_path):
         fw = tmp_path / "Frameworks" / "Flutter.framework"

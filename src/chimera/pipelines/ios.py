@@ -44,9 +44,9 @@ async def analyze_ipa(
                 )
                 model = UnifiedProgramModel(binary)
                 try:
-                    binary.framework = Framework(cached.get("framework", "native"))
+                    binary.framework = Framework(cached.get("framework", "none"))
                 except ValueError:
-                    binary.framework = Framework.NATIVE
+                    binary.framework = Framework.NONE
                 return model
             logger.info("Cache hit for %s - reusing triage", binary.sha256[:12])
             model = UnifiedProgramModel(binary)
@@ -72,7 +72,7 @@ async def analyze_ipa(
     try:
         binary.framework = Framework(detected.framework)
     except ValueError:
-        binary.framework = Framework.NATIVE
+        binary.framework = Framework.NONE
     logger.info("Framework detected: %s%s",
                 detected.framework,
                 f" ({detected.variant})" if detected.variant else "")
