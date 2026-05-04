@@ -90,6 +90,55 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
     }
 
 
+def _render_native_protections_html(nprot: dict) -> str:
+    """Render the native_protections payload as readable HTML, not raw JSON.
+
+    Skips the section gracefully when nothing was detected so the report
+    doesn't show a confusing empty `{}` block.
+    """
+    crypto = nprot.get("crypto_algorithms") or []
+    packer = nprot.get("commercial_packer")
+    obf = nprot.get("obfuscation_techniques") or []
+    capabilities = nprot.get("capabilities") or []
+
+    if not (crypto or packer or obf or capabilities):
+        return '<p class="meta">No native protections detected on this binary.</p>'
+
+    rows: list[str] = []
+    if packer:
+        rows.append(f'<tr><th>Commercial packer</th><td><strong>'
+                    f'{html.escape(packer)}</strong></td></tr>')
+    if crypto:
+        chips = " ".join(f'<span class="chip">{html.escape(a)}</span>'
+                         for a in crypto)
+        rows.append(f"<tr><th>Crypto algorithms</th><td>{chips}</td></tr>")
+    if obf:
+        chips = " ".join(f'<span class="chip">{html.escape(t)}</span>'
+                         for t in obf)
+        rows.append(f"<tr><th>Obfuscation</th><td>{chips}</td></tr>")
+    table = f'<table class="kv">{"".join(rows)}</table>' if rows else ""
+
+    cap_html = ""
+    if capabilities:
+        cap_rows = "".join(
+            f"<tr><td>{html.escape(c.get('lib') or '')}</td>"
+            f"<td>{html.escape(c.get('namespace') or '')}</td>"
+            f"<td>{html.escape(c.get('rule') or '')}</td>"
+            f"<td>{c.get('address_count', 0)}</td></tr>"
+            for c in capabilities[:100]
+        )
+        more = len(capabilities) - 100
+        more_row = (f"<tr><td colspan=4><em>+{more} more</em></td></tr>"
+                    if more > 0 else "")
+        cap_html = (
+            "<h3>Capabilities (capa)</h3>"
+            "<table><tr><th>Library</th><th>Namespace</th><th>Rule</th>"
+            f"<th>Hits</th></tr>{cap_rows}{more_row}</table>"
+        )
+
+    return table + cap_html
+
+
 def _summarize_lib_blob(tag: str, blob: dict) -> dict:
     if tag == "r2":
         return {
@@ -145,6 +194,9 @@ def render_html(report: dict) -> str:
     if jadx["package_count"] > 200:
         pkg_list += f"<li><em>… +{jadx['package_count'] - 200} more</em></li>"
 
+    nprot = report.get("native_protections") or {}
+    nprot_html = _render_native_protections_html(nprot)
+
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -159,6 +211,10 @@ th {{ background: #f6f6f6; font-weight: 600; }}
 code {{ font: 12px ui-monospace, Menlo, monospace; background: #f3f3f3; padding: 0 4px; border-radius: 3px; }}
 .meta {{ color: #666; font-size: 12px; }}
 ul.compact {{ columns: 3; column-gap: 24px; font-size: 12px; }}
+.chip {{ display: inline-block; padding: 1px 8px; margin: 2px;
+        border-radius: 10px; background: #eef3ff; color: #1e3a8a;
+        font-size: 12px; }}
+table.kv th {{ width: 200px; }}
 </style></head>
 <body>
 <h1>{html.escape(title)}</h1>
@@ -189,7 +245,7 @@ ul.compact {{ columns: 3; column-gap: 24px; font-size: 12px; }}
 </table>
 
 <h2>Native protections</h2>
-<pre><code>{html.escape(json.dumps(report.get("native_protections") or {}, indent=2))}</code></pre>
+{nprot_html}
 
 <h2>Model — {model['function_count']:,} functions / {model['string_count']:,} strings</h2>
 <h3>Functions (first 200)</h3>
