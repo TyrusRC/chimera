@@ -64,11 +64,24 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
         click.echo("Analysis complete:")
         click.echo(f"  Platform:  {model.binary.platform.value}")
         click.echo(f"  Format:    {model.binary.format.value}")
+        click.echo(f"  Framework: {_framework_label(model)}")
         click.echo(f"  SHA256:    {model.binary.sha256[:16]}...")
         click.echo(f"  Functions: {len(model.functions)}")
         click.echo(f"  Strings:   {len(model.get_strings())}")
-        click.echo()
 
+        # Per-native-lib outcomes from the cache so the analyst can see
+        # which library each backend actually analyzed (not just "ghidra
+        # ran"). Walks the cache for r2_<name>/ghidra_<name> entries.
+        from chimera.core.cache import AnalysisCache
+        cache = AnalysisCache(config.cache_dir)
+        per_lib = _per_native_lib_summary(cache, model.binary.sha256)
+        if per_lib:
+            click.echo()
+            click.echo("  Native libraries analyzed:")
+            for lib, info in per_lib.items():
+                click.echo(f"    {lib}: {info}")
+
+        click.echo()
         available = [a.name() for a in engine.registry.all_available()]
         unavailable = [a.name() for a in engine.registry.all_registered() if not a.is_available()]
         click.echo(f"  Backends used:        {', '.join(available) or 'none'}")
@@ -76,6 +89,64 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
             click.echo(f"  Backends unavailable: {', '.join(unavailable)}")
     finally:
         await engine.cleanup()
+
+
+def _framework_label(model) -> str:
+    """Honest framework label for the analyze summary.
+
+    `Framework.NONE` becomes "none (jvm/kotlin)" on Android and
+    "none (objc/swift)" on iOS so the analyst sees what code layer they're
+    actually looking at, not just an enum value that reads as "C/C++".
+    """
+    fw = model.binary.framework.value
+    plat = model.binary.platform.value
+    if fw == "none":
+        if plat == "android":
+            return "none (jvm/kotlin)"
+        if plat == "ios":
+            return "none (objc/swift)"
+    return fw
+
+
+def _per_native_lib_summary(cache, sha256: str) -> dict[str, str]:
+    """Summarize per-lib backend outcomes by walking cache keys.
+
+    Looks for `r2_<lib>` and `ghidra_<lib>` blobs and reports lib name →
+    one-line status (function count / error). Empty dict if no native
+    libs were analyzed.
+    """
+    libs: dict[str, dict[str, str]] = {}
+    sha_dir = cache.cache_dir / sha256[:2] / sha256
+    if not sha_dir.exists():
+        return {}
+    import json as _json
+    for entry in sha_dir.iterdir():
+        name = entry.name
+        for prefix in ("r2_", "ghidra_"):
+            if name.startswith(prefix):
+                lib = name[len(prefix):]
+                tag = prefix.rstrip("_")
+                try:
+                    blob = _json.loads(entry.read_text())
+                except (OSError, _json.JSONDecodeError):
+                    continue
+                libs.setdefault(lib, {})[tag] = _summarize_backend_blob(tag, blob)
+    return {lib: ", ".join(f"{tag}={summary}" for tag, summary in sorted(parts.items()))
+            for lib, parts in sorted(libs.items())}
+
+
+def _summarize_backend_blob(tag: str, blob: dict) -> str:
+    if tag == "r2":
+        return f"{len(blob.get('functions') or [])} fn / {len(blob.get('strings') or [])} str"
+    if tag == "ghidra":
+        rc = blob.get("return_code")
+        if rc != 0:
+            err = (blob.get("error") or "").splitlines()[0:1]
+            return f"failed (rc={rc}{'; ' + err[0] if err else ''})"
+        funcs = blob.get("functions") or blob.get("ExportFunctions") or []
+        n = len(funcs) if isinstance(funcs, list) else 0
+        return f"{n} fn"
+    return "ok"
 
 
 @main.command()
@@ -148,9 +219,11 @@ def detect_protections(path: str, project_dir: str | None,
 
 async def _detect_protections(path: str, project_dir: str | None,
                               cache_dir: str | None, ghidra_home: str | None):
+    from chimera.core.cache import AnalysisCache
     from chimera.core.config import ChimeraConfig
     from chimera.core.engine import ChimeraEngine
     from chimera.bypass.detector import ProtectionDetector
+    from chimera.bypass.jadx_scanner import scan_jadx_tree
 
     config = ChimeraConfig(
         project_dir=Path(project_dir) if project_dir else Path.cwd() / "chimera_project",
@@ -165,18 +238,60 @@ async def _detect_protections(path: str, project_dir: str | None,
         detector = ProtectionDetector()
         profile = detector.detect_from_strings(strings, model.binary.platform.value)
 
+        # Augment with jadx-tree scan so the analyst gets file:line evidence
+        # for each detected protection — not just yes/no booleans.
+        cache = AnalysisCache(config.cache_dir)
+        jadx_meta = cache.get_json(model.binary.sha256, "jadx") or {}
+        sources_dir = jadx_meta.get("sources_dir")
+        hits_by_cat: dict[str, list] = {}
+        if sources_dir and Path(sources_dir).exists():
+            hits = scan_jadx_tree(Path(sources_dir), model.binary.platform.value)
+            for h in hits:
+                hits_by_cat.setdefault(h.category, []).append(h)
+            # Promote any jadx hits into the profile so the booleans match.
+            if hits_by_cat.get("root_detection"):
+                profile.has_root_detection = True
+            if hits_by_cat.get("jailbreak_detection"):
+                profile.has_jailbreak_detection = True
+            if hits_by_cat.get("anti_frida"):
+                profile.has_anti_frida = True
+            if hits_by_cat.get("anti_debug"):
+                profile.has_anti_debug = True
+            if hits_by_cat.get("ssl_pinning"):
+                profile.has_ssl_pinning = True
+            if hits_by_cat.get("integrity"):
+                profile.has_integrity_check = True
+
         click.echo(f"Protection profile for {Path(path).name}:")
-        click.echo(f"  Root detection:      {'YES' if profile.has_root_detection else 'no'}")
-        click.echo(f"  Jailbreak detection: {'YES' if profile.has_jailbreak_detection else 'no'}")
-        click.echo(f"  Anti-Frida:          {'YES' if profile.has_anti_frida else 'no'}")
-        click.echo(f"  Anti-debug:          {'YES' if profile.has_anti_debug else 'no'}")
-        click.echo(f"  SSL pinning:         {'YES' if profile.has_ssl_pinning else 'no'}")
-        click.echo(f"  Integrity checks:    {'YES' if profile.has_integrity_check else 'no'}")
+        _emit_protection_line("Root detection:     ", profile.has_root_detection,
+                              hits_by_cat.get("root_detection"))
+        _emit_protection_line("Jailbreak detection:", profile.has_jailbreak_detection,
+                              hits_by_cat.get("jailbreak_detection"))
+        _emit_protection_line("Anti-Frida:         ", profile.has_anti_frida,
+                              hits_by_cat.get("anti_frida"))
+        _emit_protection_line("Anti-debug:         ", profile.has_anti_debug,
+                              hits_by_cat.get("anti_debug"))
+        _emit_protection_line("SSL pinning:        ", profile.has_ssl_pinning,
+                              hits_by_cat.get("ssl_pinning"))
+        _emit_protection_line("Integrity checks:   ", profile.has_integrity_check,
+                              hits_by_cat.get("integrity"))
         click.echo(f"  Packer:              {'YES (' + (profile.packer_name or '?') + ')' if profile.has_packer else 'no'}")
         if profile.has_any_protection:
             click.echo(f"\n  Bypass order: {' -> '.join(profile.bypass_order())}")
     finally:
         await engine.cleanup()
+
+
+def _emit_protection_line(label: str, present: bool, hits: list | None) -> None:
+    """Print one protection row with up to 3 file:line evidence pointers."""
+    status = "YES" if present else "no"
+    click.echo(f"  {label} {status}")
+    if not present or not hits:
+        return
+    for h in hits[:3]:
+        click.echo(f"      ↳ {h.file}:{h.line}  [{h.pattern}]")
+    if len(hits) > 3:
+        click.echo(f"      ↳ ... +{len(hits) - 3} more")
 
 
 @main.command()
@@ -192,6 +307,7 @@ def sdks(path: str, project_dir: str | None, cache_dir: str | None,
 
 async def _sdks(path: str, project_dir: str | None, cache_dir: str | None,
                 ghidra_home: str | None):
+    from chimera.core.cache import AnalysisCache
     from chimera.core.config import ChimeraConfig
     from chimera.core.engine import ChimeraEngine
     from chimera.sdk.analyzer import SDKAnalyzer
@@ -205,11 +321,19 @@ async def _sdks(path: str, project_dir: str | None, cache_dir: str | None,
     try:
         model = await engine.analyze(path)
 
-        packages = set()
+        # Prefer jadx-decompiled package list (already package-shaped) over
+        # deriving from model.functions, which on Android often only holds
+        # native funcs and won't surface JVM SDKs at all.
+        packages: set[str] = set()
+        cache = AnalysisCache(config.cache_dir)
+        jadx_meta = cache.get_json(model.binary.sha256, "jadx") or {}
+        for pkg in jadx_meta.get("packages", []) or []:
+            if isinstance(pkg, str) and pkg:
+                packages.add(pkg)
+        # Fall back to model-derived packages for iOS / native-only inputs.
         for func in model.functions:
             if "." in func.name:
-                parts = func.name.rsplit(".", 1)
-                packages.add(parts[0])
+                packages.add(func.name.rsplit(".", 1)[0])
 
         analyzer = SDKAnalyzer()
         detected = analyzer.detect_from_packages(list(packages))
@@ -226,6 +350,58 @@ async def _sdks(path: str, project_dir: str | None, cache_dir: str | None,
 
 
 @main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+@click.option("--ghidra-home", type=str, default=None)
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Output path. Defaults to <name>.report.{json,html}")
+@click.option("--format", "fmt", type=click.Choice(["json", "html", "both"]),
+              default="both", help="Output format(s)")
+def report(path: str, project_dir: str | None, cache_dir: str | None,
+           ghidra_home: str | None, out_path: str | None, fmt: str):
+    """Run analysis and write a JSON/HTML report for the analyst."""
+    asyncio.run(_report(path, project_dir, cache_dir, ghidra_home, out_path, fmt))
+
+
+async def _report(path: str, project_dir: str | None, cache_dir: str | None,
+                  ghidra_home: str | None, out_path: str | None, fmt: str):
+    import json as _json
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.engine import ChimeraEngine
+    from chimera.report import build_report, render_html
+
+    config = ChimeraConfig(
+        project_dir=Path(project_dir) if project_dir else Path.cwd() / "chimera_project",
+        cache_dir=Path(cache_dir) if cache_dir else Path.cwd() / "chimera_cache",
+        ghidra_home=ghidra_home,
+    )
+    engine = ChimeraEngine(config)
+    try:
+        model = await engine.analyze(path)
+        cache = AnalysisCache(config.cache_dir)
+        payload = build_report(model, cache)
+
+        base = Path(out_path) if out_path else Path.cwd() / f"{Path(path).stem}.report"
+        wrote: list[str] = []
+        if fmt in ("json", "both"):
+            json_path = base.with_suffix(".json")
+            json_path.write_text(_json.dumps(payload, indent=2))
+            wrote.append(str(json_path))
+        if fmt in ("html", "both"):
+            html_path = base.with_suffix(".html")
+            html_path.write_text(render_html(payload))
+            wrote.append(str(html_path))
+
+        click.echo(f"Report written for {Path(path).name}:")
+        for p in wrote:
+            click.echo(f"  {p}")
+    finally:
+        await engine.cleanup()
+
+
+@main.command()
 @click.option("--host", default="0.0.0.0", help="Bind host")
 @click.option("--port", default=8080, help="Bind port")
 def serve(host: str, port: int):
@@ -236,10 +412,12 @@ def serve(host: str, port: int):
 
 
 @main.command()
-def tui():
-    """Launch the Chimera TUI for device interaction."""
+@click.option("--cache-dir", type=click.Path(), default=None,
+              help="Cache root to browse (default: ./chimera_cache)")
+def tui(cache_dir: str | None):
+    """Launch the Chimera TUI — browse analysis results and devices."""
     from chimera.tui.app import run_tui
-    run_tui()
+    run_tui(Path(cache_dir) if cache_dir else None)
 
 
 @main.command()
