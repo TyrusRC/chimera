@@ -17,6 +17,13 @@ class ProtectionProfile:
     has_packer: bool = False
     packer_name: str | None = None
     commercial_protection: str | None = None
+    # Native-side findings, populated by yara/capa/ollvm adapters. Strings
+    # are kept short tag-style ("ollvm_cff", "AES", "Bangcle") so they can
+    # render directly in the analyze summary without further formatting.
+    commercial_packer: str | None = None
+    obfuscation_techniques: list[str] = field(default_factory=list)
+    crypto_algorithms: list[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
     details: list[str] = field(default_factory=list)
 
     def bypass_order(self) -> list[str]:
