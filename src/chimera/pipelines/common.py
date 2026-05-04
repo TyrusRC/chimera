@@ -283,8 +283,8 @@ def unpack_ipa(ipa_path: Path, output_dir: Path) -> dict:
     if info_plist_path.exists():
         try:
             plist = plistlib.loads(info_plist_path.read_bytes())
-        except Exception:
-            pass
+        except (plistlib.InvalidFileException, OSError, ValueError) as exc:
+            logger.warning("failed to parse %s: %s", info_plist_path, exc)
 
     bundle_name = plist.get("CFBundleExecutable", app_bundle.stem)
     bundle_id = plist.get("CFBundleIdentifier", "unknown")
