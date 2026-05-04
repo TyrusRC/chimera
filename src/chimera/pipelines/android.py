@@ -300,14 +300,47 @@ async def analyze_apk(
     if manifest_xml:
         cache.put(binary.sha256, "manifest_xml", manifest_xml.encode())
 
-    # Phase 6: Ghidra deep analysis on native libraries
+    # Phase 6: Ghidra deep analysis on native libraries.
+    # Ghidra serializes per-lib (the global heavy semaphore) and is by
+    # far the slowest backend on modern apps. We honor caps from config
+    # so an analyst can keep analyze under a budget on multi-lib RN/Matrix
+    # builds. Libs over `ghidra_max_lib_mb` and any beyond
+    # `ghidra_max_libs` are still scanned by r2/YARA/OLLVM — they just
+    # skip the slow decompile pass.
+    ghidra_skipped_libs: list[tuple[str, str]] = []
     ghidra = registry.get("ghidra")
-    if not (ghidra and ghidra.is_available() and unpack_result["has_native"]):
+    if config.ghidra_skip:
+        skipped_phases.append("ghidra")
+        logger.info("ghidra phase skipped via config")
+    elif not (ghidra and ghidra.is_available() and unpack_result["has_native"]):
         if unpack_result["has_native"]:
             skipped_phases.append("ghidra")
             logger.warning("ghidra unavailable — skipping deep analysis")
     else:
-        logger.info("Ghidra deep analysis on native libraries")
+        max_mb = config.ghidra_max_lib_mb
+        max_libs = config.ghidra_max_libs
+        size_threshold = max_mb * 1024 * 1024 if max_mb > 0 else 0
+
+        # Stable sort: smallest-first so we maximize the number of libs that
+        # finish within the budget when there's a hard cap.
+        sorted_libs = sorted(unpack_result["native_libs"], key=lambda p: p.stat().st_size)
+        eligible: list[Path] = []
+        for lib in sorted_libs:
+            size = lib.stat().st_size
+            if size_threshold and size > size_threshold:
+                ghidra_skipped_libs.append((lib.name, f"size>{max_mb}MB"))
+                continue
+            if max_libs and len(eligible) >= max_libs:
+                ghidra_skipped_libs.append((lib.name, f"max_libs={max_libs} reached"))
+                continue
+            eligible.append(lib)
+
+        if ghidra_skipped_libs:
+            for name, reason in ghidra_skipped_libs:
+                logger.info("ghidra skip %s (%s)", name, reason)
+
+        logger.info("Ghidra deep analysis on %d/%d native libraries",
+                    len(eligible), len(unpack_result["native_libs"]))
 
         async def _ghidra_analyze(lib_path: Path) -> None:
             async with resource_mgr.heavy():
@@ -317,7 +350,7 @@ async def analyze_apk(
                 })
                 cache.put_json(binary.sha256, f"ghidra_{lib_path.name}", ghidra_result)
 
-        await asyncio.gather(*[_ghidra_analyze(lib) for lib in unpack_result["native_libs"]])
+        await asyncio.gather(*[_ghidra_analyze(lib) for lib in eligible])
 
     cache.put_json(binary.sha256, "triage", {
         "platform": "android",
@@ -330,6 +363,9 @@ async def analyze_apk(
         "string_count": len(model.get_strings()),
         "bundle_format": unpack_result.get("bundle_format"),
         "skipped_phases": skipped_phases,
+        "ghidra_skipped_libs": [
+            {"lib": name, "reason": reason} for name, reason in ghidra_skipped_libs
+        ],
         "jadx_context": {
             "kotlin_detected": kotlin_detected,
             "mapping_used": mapping_path is not None,

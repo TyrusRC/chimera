@@ -14,6 +14,16 @@ class ChimeraConfig:
     cache_dir: Path = field(default_factory=lambda: Path.cwd() / "chimera_cache")
     ghidra_home: Optional[str] = None
     ghidra_max_mem: str = "4g"
+    # Ghidra runs serially per-lib and dominates wall time on modern apps
+    # with many native libs. These caps let analysts trade depth for
+    # speed: skip libs over `ghidra_max_lib_mb`, and stop after
+    # `ghidra_max_libs` libs have been analyzed. r2 + YARA + OLLVM still
+    # run on every lib regardless. Set `ghidra_skip=True` to drop the
+    # phase entirely. The defaults are sized so a typical RN app
+    # (~20 libs, mostly <10 MB each) finishes in under 5 minutes.
+    ghidra_max_lib_mb: int = 20
+    ghidra_max_libs: int = 8
+    ghidra_skip: bool = False
     total_ram_mb: Optional[int] = None
     skip_dynamic: bool = False
     skip_fuzzing: bool = True
