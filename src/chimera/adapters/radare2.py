@@ -26,8 +26,11 @@ class Radare2Adapter(BackendAdapter):
 
     async def analyze(self, binary_path: str, options: dict) -> dict:
         mode = options.get("mode", "triage")
-        # Drop -2 (was silencing stderr); capture-and-surface is better.
-        r2 = r2pipe.open(binary_path, flags=[])
+        # `-2` quiets r2's stderr chatter — stripped Android `.so` files
+        # always trip "Cannot determine entrypoint" and the relocs warning,
+        # which were leaking into our analyst-facing log on every run. We
+        # surface real backend failures via the per-cmd JSON checks instead.
+        r2 = r2pipe.open(binary_path, flags=["-2"])
         try:
             if mode == "triage":
                 return self._triage(r2)

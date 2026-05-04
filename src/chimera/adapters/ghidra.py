@@ -75,10 +75,13 @@ class GhidraAdapter(BackendAdapter):
         analysis_timeout = int(options.get("analysis_timeout", 300))
         post_script = Path(__file__).resolve().parent.parent / "ghidra_scripts"
 
+        # `-Xmx` is a JVM flag, not a Ghidra CLI flag — pass it via
+        # GHIDRA_JVM_ARGS, otherwise analyzeHeadless aborts with
+        # `InvalidInputException: Bad argument: -Xmx4g`.
         cmd = [
             self._analyze_headless, project_dir, project_name,
             "-import", binary_path, "-overwrite",
-            "-max-cpu", "2", f"-Xmx{self._max_mem}",
+            "-max-cpu", "2",
             "-analysisTimeoutPerFile", str(analysis_timeout),
             "-scriptPath", str(post_script),
             "-postScript", "ExportFunctions.java",
@@ -87,8 +90,20 @@ class GhidraAdapter(BackendAdapter):
         if processor:
             cmd.extend(["-processor", processor])
 
+        # Ghidra needs a writable HOME for its config dir
+        # (~/.config/ghidra/<version>). In containers run with --user
+        # <uid>:<gid> the inherited HOME may be `/` (unwritable), which makes
+        # Ghidra abort during startup with `Failed to create directory`. Same
+        # mitigation we use in the jadx adapter: substitute a writable path.
         env = os.environ.copy()
-        env["GHIDRA_JVM_ARGS"] = f"-Dchimera.out.dir={output_dir}"
+        env["GHIDRA_JVM_ARGS"] = (
+            f"-Xmx{self._max_mem} -Dchimera.out.dir={output_dir}"
+        )
+        home = env.get("HOME")
+        if not home or not os.access(home, os.W_OK):
+            ghidra_home_dir = Path(project_dir) / "ghidra_home"
+            ghidra_home_dir.mkdir(parents=True, exist_ok=True)
+            env["HOME"] = str(ghidra_home_dir)
 
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env,
