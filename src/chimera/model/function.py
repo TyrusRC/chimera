@@ -21,6 +21,7 @@ class FunctionInfo:
     ai_renamed: bool = False
     ai_comments: Optional[str] = None
     sources: list[str] = field(default_factory=list)
+    metadata: Optional[dict] = None
 
 
 @dataclass

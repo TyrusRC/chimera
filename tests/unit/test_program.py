@@ -204,3 +204,23 @@ def test_get_strings_caches_compiled_regex():
     finally:
         prog._re.compile = orig_compile  # type: ignore
     assert calls.count("hel") == 1
+
+
+def test_function_info_metadata_default_none():
+    f = FunctionInfo(
+        address="0x1", name="x", original_name="x",
+        language="c", classification="unknown", layer="native",
+        source_backend="r2",
+    )
+    assert f.metadata is None
+
+
+def test_function_info_metadata_round_trip():
+    f = FunctionInfo(
+        address="jvm:Foo::bar(I)V", name="bar", original_name="bar",
+        language="java", classification="native", layer="jvm",
+        source_backend="jadx",
+        metadata={"is_native": True, "file": "Foo.java", "line": 12},
+    )
+    assert f.metadata["is_native"] is True
+    assert f.metadata["line"] == 12
