@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from chimera.parsers.jvm_methods import parse_java_file, JvmMethod
+from chimera.parsers.jvm_methods import parse_java_file, parse_kotlin_file, JvmMethod
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "jvm_methods"
 
@@ -45,3 +45,21 @@ def test_parses_java_varargs_as_array():
     # in our parser today (documented limitation); the assertion below
     # matches the parser's actual canonical Smali contract.
     assert log.smali_sig == "(LString;[LObject;)V"
+
+
+def test_parses_kotlin_external_fun():
+    methods = parse_kotlin_file(FIXTURES / "Bar.kt", "com.example")
+    nd = _by_name(methods, "nativeDecrypt")
+    assert len(nd) == 1
+    assert nd[0].is_native is True
+    assert nd[0].class_fqcn == "com.example.Bar"
+    assert nd[0].language == "kotlin"
+
+
+def test_parses_kotlin_regular_fun():
+    methods = parse_kotlin_file(FIXTURES / "Bar.kt", "com.example")
+    names = sorted(m.name for m in methods)
+    assert "greet" in names
+    assert "staticHelper" in names
+    greet = _by_name(methods, "greet")[0]
+    assert greet.is_native is False
