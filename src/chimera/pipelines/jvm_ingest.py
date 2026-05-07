@@ -98,3 +98,47 @@ def ingest_jadx_classes(
 
     logger.info("jadx ingest: %d classes, %d strings", classes_added, strings_added)
     return classes_added, strings_added
+
+
+from chimera.parsers.jvm_methods import parse_jvm_methods
+
+
+def ingest_jadx_methods(
+    model: UnifiedProgramModel,
+    sources_dir: Path,
+    *,
+    max_methods: int = 50000,
+) -> int:
+    """Add one FunctionInfo per parsed JVM method. Returns count added.
+
+    Address scheme: `jvm:<fqcn>::<name><smali_sig>`. The class-level
+    `ingest_jadx_classes` and the method-level pass coexist; downstream
+    consumers can filter by `metadata.is_native` or `classification`.
+    """
+    sources_dir = Path(sources_dir)
+    if not sources_dir.exists():
+        return 0
+    methods = parse_jvm_methods(sources_dir, max_methods=max_methods)
+    added = 0
+    for m in methods:
+        addr = f"jvm:{m.class_fqcn}::{m.name}{m.smali_sig}"
+        model.add_function(FunctionInfo(
+            address=addr,
+            name=m.name,
+            original_name=f"{m.class_fqcn}.{m.name}",
+            language=m.language,
+            classification="native" if m.is_native else "unknown",
+            layer="jvm",
+            source_backend="jadx",
+            metadata={
+                "is_native": m.is_native,
+                "file": m.file,
+                "line": m.line,
+                "smali_sig": m.smali_sig,
+                "class_fqcn": m.class_fqcn,
+                "modifiers": list(m.modifiers),
+            },
+        ))
+        added += 1
+    logger.info("jadx method ingest: %d methods", added)
+    return added
