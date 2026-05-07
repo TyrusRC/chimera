@@ -3,6 +3,15 @@
 Regex-based; tolerates jadx output but not arbitrary handwritten code.
 False positives in `is_native` are biased low: the `native` modifier
 must appear as a whole word in the modifier list.
+
+Limitation: jadx output uses unqualified type names in source bodies
+(e.g. `String` rather than `java.lang.String`). The parser preserves
+this — `LString;` rather than `Ljava/lang/String;`. This is consistent
+across both the JVM and (parser-driven) JNI sides of the static
+linker, so non-overloaded bindings still match. Overloaded bindings
+that rely on canonical descriptor matching against runtime-recovered
+signatures (e.g. RegisterNatives entries) may need import-resolved
+descriptors; that resolution is deferred to a follow-up.
 """
 from __future__ import annotations
 
@@ -68,6 +77,9 @@ def _java_type_to_smali(t: str) -> str:
     while t.endswith("[]"):
         arr += 1
         t = t[:-2].rstrip()
+    if t.endswith("..."):
+        arr += 1
+        t = t[:-3].rstrip()
     if t in _JAVA_PRIMS:
         s = _JAVA_PRIMS[t]
     else:
@@ -116,7 +128,7 @@ def parse_java_file(path: Path, package: str) -> list[JvmMethod]:
         mods = re.findall(r"\w+", m.group("mods") or "")
         try:
             smali = _build_smali_sig(m.group("params") or "", m.group("ret") or "void")
-        except Exception:
+        except (ValueError, AttributeError, TypeError):
             smali = "(?)?"
         methods.append(JvmMethod(
             class_fqcn=fqcn, name=m.group("name"),

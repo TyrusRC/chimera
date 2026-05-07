@@ -12,4 +12,6 @@ public class Foo {
     public int sum(int a, int b) throws RuntimeException {
         return a + b;
     }
+
+    public void log(String fmt, Object... args) {}
 }
