@@ -108,6 +108,9 @@ async def list_tools() -> list[Tool]:
         Tool(name="get_manifest",
              description="Get the decoded AndroidManifest.xml content (Android only). Useful for reviewing permissions, components, intent-filters.",
              inputSchema={"type": "object", "properties": {}}),
+        Tool(name="get_manifest_findings",
+             description="AndroidManifest + network_security_config findings (debuggable, allowBackup, exported components, cleartext traffic, user-CA trust). Requires a prior analyze(path=...) call so the manifest XML is in cache.",
+             inputSchema={"type": "object", "properties": {}}),
 
         # --- Detection ---
         Tool(name="get_info",
@@ -462,6 +465,36 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 return _json({"source": "raw", "xml": content})
             return _error("Manifest is binary-encoded. Install jadx to decode it.")
         return _error("AndroidManifest.xml not found in unpacked directory.")
+
+    # ── get_manifest_findings ───────────────────────────────────────────
+    elif name == "get_manifest_findings":
+        if _current_model is None:
+            return _json({"error": "no project loaded; call analyze(path=...) first"})
+        from chimera.parsers.android_manifest import parse_manifest as _pm
+        from chimera.parsers.network_security_config import parse_nsc as _pn
+        from chimera.detection_engineering.manifest_findings import (
+            build_findings_from_models,
+        )
+        import tempfile
+        from pathlib import Path as _P
+
+        cache = engine.cache
+        sha = _current_model.binary.sha256
+        mxml = cache.get(sha, "manifest_xml")
+        if mxml is None:
+            return _json({"findings": [], "hint": "no manifest_xml in cache (non-Android binary?)"})
+        with tempfile.TemporaryDirectory() as td:
+            mp = _P(td) / "AndroidManifest.xml"
+            mp.write_bytes(mxml)
+            manifest_model = _pm(mp)
+            nsc_model = None
+            nxml = cache.get(sha, "nsc_xml")
+            if nxml:
+                np = _P(td) / "network_security_config.xml"
+                np.write_bytes(nxml)
+                nsc_model = _pn(np)
+            findings = build_findings_from_models(manifest_model, nsc=nsc_model)
+        return _json({"findings": [f.to_dict() for f in findings]})
 
     # ── get_info ────────────────────────────────────────────────────────
     elif name == "get_info":
