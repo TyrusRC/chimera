@@ -78,11 +78,40 @@ def build_findings_from_chimera(model, cache) -> list[Finding]:
     Each returned Finding is a DRAFT — title/desc are filled, but the
     analyst must validate exploitability before reporting.
     """
+    findings: list[Finding] = []
+
+    # Manifest + NSC findings (Android only).
+    if getattr(model.binary, "platform", None) == "android":
+        try:
+            from chimera.parsers.android_manifest import parse_manifest
+            from chimera.parsers.network_security_config import parse_nsc
+            from chimera.detection_engineering.manifest_findings import (
+                build_findings_from_models,
+            )
+            import tempfile
+            from pathlib import Path as _P
+            mxml = cache.get(model.binary.sha256, "manifest_xml")
+            if mxml:
+                with tempfile.TemporaryDirectory() as td:
+                    mp = _P(td) / "AndroidManifest.xml"
+                    mp.write_bytes(mxml)
+                    manifest_model = parse_manifest(mp)
+                    nsc_model = None
+                    nxml = cache.get(model.binary.sha256, "nsc_xml")
+                    if nxml:
+                        np = _P(td) / "network_security_config.xml"
+                        np.write_bytes(nxml)
+                        nsc_model = parse_nsc(np)
+                    findings.extend(
+                        build_findings_from_models(manifest_model, nsc=nsc_model)
+                    )
+        except Exception:
+            pass
+
     if not model.binary.format.is_mobile:
-        return []   # mobile-only mapping for now
+        return findings   # mobile-only mapping for the rest
 
     sha = model.binary.sha256
-    findings: list[Finding] = []
 
     pp = cache.get_json(sha, "protection_profile") or {}
     native_pp = cache.get_json(sha, "native_protection") or {}
