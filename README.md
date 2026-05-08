@@ -23,6 +23,7 @@ MCP server so Claude or any compatible model can drive the pipeline.
 - **Cross-layer call graph** — Java / Kotlin ↔ JNI ↔ native ARM64, unified into one model.
 - **Framework detection** — React Native (Hermes/JSC), Flutter, Unity IL2CPP, Xamarin, Cordova/Capacitor.
 - **Protection bypass** — root / jailbreak / Frida / debugger / packer detection with bypass scripts.
+- **Manifest + NSC hardening** — `chimera manifest app.apk` reports `android:debuggable`, `allowBackup` without rules, exported components without permissions, cleartext-traffic flags, and `network_security_config.xml` issues (cleartext base/domain configs, user-CA trust). Each finding cites the source file and line.
 - **Static + dynamic** — static rules from Semgrep, runtime confirmation via Frida.
 - **MCP server** — high-level analysis tools exposed to any MCP-compatible LLM client.
 - **Web UI + TUI** — FastAPI-backed UI for project browsing; Textual TUI for device interaction.
@@ -233,6 +234,10 @@ chimera analyze app.apk --mapping-file release.mapping
 
 # Detect protections (root / jailbreak / Frida / debugger / packer)
 chimera detect-protections app.apk
+
+# Manifest + NSC hardening findings (Android)
+chimera manifest app.apk
+chimera manifest app.apk --format json
 
 # List third-party SDKs
 chimera sdks app.apk
