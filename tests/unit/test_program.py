@@ -224,3 +224,42 @@ def test_function_info_metadata_round_trip():
     )
     assert f.metadata["is_native"] is True
     assert f.metadata["line"] == 12
+
+
+def test_report_includes_cross_layer_section():
+    from pathlib import Path
+    from chimera.model.binary import (
+        Architecture, BinaryFormat, BinaryInfo, Framework, Platform,
+    )
+    from chimera.model.function import FunctionInfo
+    from chimera.model.program import UnifiedProgramModel
+    from chimera.report import build_report
+    bi = BinaryInfo(
+        sha256="e" * 64, path=Path("/tmp/z.apk"),
+        format=BinaryFormat.APK, platform=Platform.ANDROID,
+        arch=Architecture.ARM64, framework=Framework.NATIVE, size_bytes=1,
+    )
+    m = UnifiedProgramModel(bi)
+    m.add_function(FunctionInfo(
+        address="jvm:p.A::f()V", name="f", original_name="p.A.f",
+        language="java", classification="native", layer="jvm",
+        source_backend="jadx",
+        metadata={"is_native": True, "class_fqcn": "p.A", "smali_sig": "()V"},
+    ))
+    m.add_function(FunctionInfo(
+        address="0x42", name="Java_p_A_f", original_name="Java_p_A_f",
+        language="c", classification="unknown", layer="native",
+        source_backend="r2",
+    ))
+    m.add_call_edge("jvm:p.A::f()V", "0x42", "jni-static")
+
+    class _Cache:
+        cache_dir = Path("/tmp/no-such-cache-dir")
+        def get_json(self, *_a): return None
+        def get(self, *_a): return None
+
+    rep = build_report(m, _Cache())
+    assert "cross_layer" in rep
+    assert rep["cross_layer"]["bindings"][0]["jvm"] == "jvm:p.A::f()V"
+    assert rep["cross_layer"]["bindings"][0]["native"] == "0x42"
+    assert rep["cross_layer"]["bindings"][0]["type"] == "jni-static"

@@ -41,6 +41,28 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
                         continue
                     libs.setdefault(lib, {})[tag] = _summarize_lib_blob(tag, blob)
 
+    cross_layer_bindings: list[dict] = []
+    for f in model.functions:
+        if f.layer != "jvm":
+            continue
+        if not f.metadata or not f.metadata.get("is_native"):
+            continue
+        callees = model.get_callees(f.address)
+        if callees:
+            for c in callees:
+                edge_type = "jni-static"
+                for e in model._call_edges:
+                    if e.caller_addr == f.address and e.callee_addr == c.address:
+                        edge_type = e.call_type
+                        break
+                cross_layer_bindings.append({
+                    "jvm": f.address, "native": c.address, "type": edge_type,
+                })
+        else:
+            cross_layer_bindings.append({
+                "jvm": f.address, "native": None, "type": "unbound",
+            })
+
     return {
         "schema": "chimera-report/1",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -87,6 +109,7 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
         },
         "manifest_present": manifest_bytes is not None,
         "native_protections": native_protections,
+        "cross_layer": {"bindings": cross_layer_bindings},
     }
 
 
@@ -197,6 +220,14 @@ def render_html(report: dict) -> str:
     nprot = report.get("native_protections") or {}
     nprot_html = _render_native_protections_html(nprot)
 
+    cl_bindings = (report.get("cross_layer") or {}).get("bindings") or []
+    cl_rows = "".join(
+        f"<tr><td><code>{html.escape(b['jvm'])}</code></td>"
+        f"<td><code>{html.escape(b['native'] or '—')}</code></td>"
+        f"<td>{html.escape(b['type'])}</td></tr>"
+        for b in cl_bindings
+    ) or "<tr><td colspan=3><em>none</em></td></tr>"
+
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -246,6 +277,12 @@ table.kv th {{ width: 200px; }}
 
 <h2>Native protections</h2>
 {nprot_html}
+
+<h2>Cross-layer bindings</h2>
+<table>
+  <tr><th>JVM method</th><th>Native fn</th><th>Type</th></tr>
+  {cl_rows}
+</table>
 
 <h2>Model — {model['function_count']:,} functions / {model['string_count']:,} strings</h2>
 <h3>Functions (first 200)</h3>
