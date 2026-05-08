@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.bk">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="33"/>
+    <application
+        android:debuggable="false"
+        android:allowBackup="true">
+        <activity android:name=".M" android:exported="false"/>
+    </application>
+</manifest>
