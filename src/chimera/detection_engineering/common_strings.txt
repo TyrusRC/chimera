@@ -1,0 +1,97 @@
+# Common Windows DLLs
+kernel32.dll
+user32.dll
+ntdll.dll
+advapi32.dll
+shell32.dll
+ole32.dll
+oleaut32.dll
+shlwapi.dll
+ws2_32.dll
+wininet.dll
+winhttp.dll
+crypt32.dll
+gdi32.dll
+msvcrt.dll
+msvcr120.dll
+msvcp140.dll
+vcruntime140.dll
+ucrtbase.dll
+
+# Common Linux libs
+libc.so.6
+libc.so
+libdl.so.2
+libpthread.so.0
+libm.so.6
+ld-linux.so.2
+ld-linux-x86-64.so.2
+
+# Common compiler/runtime markers
+GCC: (Ubuntu)
+GCC: (GNU)
+Visual C++ Runtime
+Microsoft Corporation
+Microsoft (R) Visual C++
+Mingw-w64 runtime
+__libc_start_main
+__cxa_finalize
+__gmon_start__
+_ITM_deregisterTMCloneTable
+_ITM_registerTMCloneTable
+
+# Common English connector phrases that look distinctive but aren't
+hello world
+hello, world
+Hello, World!
+The quick brown fox
+
+# Common file paths that appear in nearly every binary
+/usr/bin
+/usr/lib
+/usr/local
+/etc/passwd
+/proc/self/exe
+C:\Windows
+C:\Program Files
+
+# Common section/symbol names
+.text
+.data
+.rdata
+.rsrc
+.reloc
+.bss
+
+# License boilerplate fragments
+GNU General Public License
+Apache License
+The MIT License
+Permission is hereby granted
+
+# Common error-message stems
+Out of memory
+Stack overflow
+Segmentation fault
+Bus error
+Bad file descriptor
+File not found
+
+# JSON / XML markers that show up everywhere
+application/json
+text/html; charset
+charset=utf-8
+Content-Type
+Accept-Encoding
+
+# Generic format strings
+%s%s%s
+%d%d
+0x%08x
+%-20s
+
+# Generic error and status words
+ERROR_SUCCESS
+ERROR_INVALID_PARAMETER
+SUCCESS
+FAILURE
