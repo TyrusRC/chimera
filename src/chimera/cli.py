@@ -551,6 +551,85 @@ def _emit_protection_line(label: str, present: bool, hits: list | None) -> None:
         click.echo(f"      ↳ ... +{len(hits) - 3} more")
 
 
+def _load_cache_and_sha(path: str, project_dir: str | None, cache_dir: str | None):
+    """Load the cache and resolve the binary's sha256.
+
+    Helper for CLI commands that need to look up cached analyzer outputs
+    by sha256 (e.g. ``chimera manifest``). Computes sha256 directly with
+    hashlib so we don't have to spin up the full engine just to read a
+    blob out of cache.
+    """
+    import hashlib
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+
+    config = ChimeraConfig(
+        project_dir=Path(project_dir) if project_dir else Path.cwd() / "chimera_project",
+        cache_dir=Path(cache_dir) if cache_dir else Path.cwd() / "chimera_cache",
+    )
+    cache = AnalysisCache(config.cache_dir)
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return cache, h.hexdigest()
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+@click.option("--format", "fmt",
+              type=click.Choice(["text", "json"]),
+              default="text",
+              help="Output format")
+def manifest(path: str, project_dir: str | None, cache_dir: str | None, fmt: str):
+    """Print AndroidManifest + network_security_config findings.
+
+    Requires the project to have been analyzed (chimera analyze <path>) so
+    the manifest XML is in cache.
+    """
+    import json as _json
+    import tempfile
+    from chimera.parsers.android_manifest import parse_manifest as _pm
+    from chimera.parsers.network_security_config import parse_nsc as _pn
+    from chimera.detection_engineering.manifest_findings import build_findings_from_models
+
+    cache, sha = _load_cache_and_sha(path, project_dir, cache_dir)
+    manifest_bytes = cache.get(sha, "manifest_xml")
+    if manifest_bytes is None:
+        click.echo("No manifest_xml in cache. Run `chimera analyze` first.", err=True)
+        raise SystemExit(2)
+
+    with tempfile.TemporaryDirectory() as td:
+        mp = Path(td) / "AndroidManifest.xml"
+        mp.write_bytes(manifest_bytes)
+        manifest_model = _pm(mp)
+        nsc_bytes = cache.get(sha, "nsc_xml")
+        nsc_model = None
+        if nsc_bytes:
+            np = Path(td) / "network_security_config.xml"
+            np.write_bytes(nsc_bytes)
+            nsc_model = _pn(np)
+
+        findings = build_findings_from_models(manifest_model, nsc=nsc_model)
+
+    if fmt == "json":
+        click.echo(_json.dumps([f.to_dict() for f in findings], indent=2))
+        return
+
+    if not findings:
+        click.echo("No manifest/NSC findings.")
+        return
+    click.echo(f"{len(findings)} finding(s):")
+    for f in findings:
+        click.echo(f"  [{f.severity}] {f.finding_id}: {f.title}")
+        for ev in f.evidence:
+            click.echo(f"    - {ev}")
+        if f.recommendation:
+            click.echo(f"    fix: {f.recommendation}")
+
+
 @main.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--project-dir", type=click.Path(), default=None)
