@@ -117,3 +117,35 @@ def test_native_libs_changed_when_sha_differs():
     assert {n.name for n in diff.native_libs_changed} == {"libfoo.so"}
     assert diff.native_libs_added == []
     assert diff.native_libs_removed == []
+
+
+_MANIFEST_DEBUG_REGRESSION = b"""<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.x">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/>
+    <application android:debuggable="true" android:allowBackup="false"
+        android:fullBackupContent="@xml/bk">
+        <activity android:name=".M" android:exported="false"/>
+    </application>
+</manifest>
+"""
+
+
+def test_findings_regression_and_resolution():
+    # A: clean (no manifest issues); B: introduces MANIFEST-DEBUGGABLE.
+    a = _snap(manifest_xml=_MANIFEST_A)
+    b = _snap(manifest_xml=_MANIFEST_DEBUG_REGRESSION)
+    diff = diff_projects(a, b)
+    added_ids = {f.finding_id for f in diff.findings_added}
+    assert "MANIFEST-DEBUGGABLE" in added_ids
+    # MANIFEST-EXPORTED was in A (.OldActivity exported true, no permission)
+    # but resolved in B (only .M activity, exported=false).
+    removed_ids = {f.finding_id for f in diff.findings_resolved}
+    assert "MANIFEST-EXPORTED" in removed_ids
+
+
+def test_findings_unchanged_not_listed():
+    a = _snap(manifest_xml=_MANIFEST_DEBUG_REGRESSION)
+    b = _snap(manifest_xml=_MANIFEST_DEBUG_REGRESSION)
+    diff = diff_projects(a, b)
+    assert diff.findings_added == []
+    assert diff.findings_resolved == []

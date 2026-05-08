@@ -6,10 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from chimera.detection_engineering.cvss_findings import Finding
+from chimera.detection_engineering.manifest_findings import build_findings_from_models
 from chimera.diff.loader import ProjectSnapshot
 from chimera.parsers.android_manifest import (
     ManifestComponent, ManifestModel, parse_manifest,
 )
+from chimera.parsers.network_security_config import NSCModel, parse_nsc
 
 
 @dataclass
@@ -32,6 +35,8 @@ class ProjectDiff:
     native_libs_added: list[NativeLibChange] = field(default_factory=list)
     native_libs_removed: list[NativeLibChange] = field(default_factory=list)
     native_libs_changed: list[NativeLibChange] = field(default_factory=list)
+    findings_added: list[Finding] = field(default_factory=list)
+    findings_resolved: list[Finding] = field(default_factory=list)
 
 
 def _parse_manifest_or_none(xml: Optional[bytes]) -> Optional[ManifestModel]:
@@ -44,6 +49,36 @@ def _parse_manifest_or_none(xml: Optional[bytes]) -> Optional[ManifestModel]:
             return parse_manifest(p)
         except Exception:
             return None
+
+
+def _parse_nsc_or_none(xml: Optional[bytes]) -> Optional[NSCModel]:
+    if not xml:
+        return None
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "network_security_config.xml"
+        p.write_bytes(xml)
+        try:
+            return parse_nsc(p)
+        except Exception:
+            return None
+
+
+def _evidence_key(f: Finding) -> str:
+    """Stable identity key for a finding across two app versions.
+
+    Uses (rule_id + first evidence string), which captures the location
+    well enough that line-shifts don't create false 'resolved + added'
+    pairs unless the rule actually fires on a different element.
+    """
+    return f.evidence[0] if f.evidence else ""
+
+
+def _findings_for(snap: ProjectSnapshot) -> list[Finding]:
+    manifest = _parse_manifest_or_none(snap.manifest_xml)
+    if manifest is None:
+        return []
+    nsc = _parse_nsc_or_none(snap.nsc_xml)
+    return build_findings_from_models(manifest, nsc=nsc)
 
 
 def _exported_components(model: Optional[ManifestModel]) -> list[ManifestComponent]:
@@ -103,5 +138,14 @@ def diff_projects(a: ProjectSnapshot, b: ProjectSnapshot) -> ProjectDiff:
             diff.native_libs_changed.append(NativeLibChange(
                 name=name, a_sha256=a_sha, b_sha256=b_sha,
             ))
+
+    a_findings = _findings_for(a)
+    b_findings = _findings_for(b)
+    a_keys = {(f.finding_id, _evidence_key(f)) for f in a_findings}
+    b_keys = {(f.finding_id, _evidence_key(f)) for f in b_findings}
+    diff.findings_added = [f for f in b_findings
+                           if (f.finding_id, _evidence_key(f)) not in a_keys]
+    diff.findings_resolved = [f for f in a_findings
+                              if (f.finding_id, _evidence_key(f)) not in b_keys]
 
     return diff
