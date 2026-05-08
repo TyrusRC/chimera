@@ -25,3 +25,27 @@ def test_parse_clean_manifest_returns_typed_model():
     assert activity.exported is False
     assert activity.has_intent_filter is True
     assert activity.permission is None
+
+
+def test_parse_records_application_line():
+    model = parse_manifest(FIXTURES / "debuggable.xml")
+    # <application ...> opens on line 5 in the fixture
+    assert model.application.line == 5
+    assert model.application.debuggable is True
+    assert model.application.allow_backup is True
+
+
+def test_implicit_export_via_intent_filter():
+    model = parse_manifest(FIXTURES / "exported_no_perm.xml")
+    by_name = {a.name: a for a in model.services}
+    svc = by_name[".Svc"]
+    # exported attr not set → exported is None, but has_intent_filter is True
+    assert svc.exported is None
+    assert svc.has_intent_filter is True
+
+
+def test_provider_with_explicit_permission():
+    model = parse_manifest(FIXTURES / "exported_no_perm.xml")
+    p = model.providers[0]
+    assert p.permission == "com.example.expo.READ"
+    assert p.exported is True

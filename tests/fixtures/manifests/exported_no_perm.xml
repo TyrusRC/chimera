@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.expo">
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="33"/>
+    <application android:debuggable="false">
+        <activity android:name=".Pub" android:exported="true"/>
+        <service android:name=".Svc">
+            <intent-filter>
+                <action android:name="com.x.RUN"/>
+            </intent-filter>
+        </service>
+        <provider android:name=".P" android:exported="true"
+            android:authorities="com.example.expo.p"
+            android:permission="com.example.expo.READ"/>
+    </application>
+</manifest>
