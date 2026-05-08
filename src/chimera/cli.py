@@ -505,11 +505,19 @@ async def _sdks(path: str, project_dir: str | None, cache_dir: str | None,
 @click.option("--ghidra-home", type=str, default=None)
 @click.option("--out", "out_path", type=click.Path(), default=None,
               help="Output path. Defaults to <name>.report.{json,html}")
-@click.option("--format", "fmt", type=click.Choice(["json", "html", "both"]),
-              default="both", help="Output format(s)")
+@click.option("--format", "fmt",
+              type=click.Choice(["json", "html", "both", "masvs", "cvss", "sbom"]),
+              default="both",
+              help="Output format(s). 'masvs' = MASVS coverage matrix; "
+                   "'cvss' = CVSS finding draft (Markdown); "
+                   "'sbom' = CycloneDX 1.6 SBOM (JSON).")
 def report(path: str, project_dir: str | None, cache_dir: str | None,
            ghidra_home: str | None, out_path: str | None, fmt: str):
-    """Run analysis and write a JSON/HTML report for the analyst."""
+    """Run analysis and write a report for the analyst.
+
+    Supported formats: JSON+HTML (default), MASVS coverage matrix,
+    CVSS finding draft (Markdown), CycloneDX 1.6 SBOM.
+    """
     asyncio.run(_report(path, project_dir, cache_dir, ghidra_home, out_path, fmt))
 
 
@@ -530,18 +538,40 @@ async def _report(path: str, project_dir: str | None, cache_dir: str | None,
     try:
         model = await engine.analyze(path)
         cache = AnalysisCache(config.cache_dir)
-        payload = build_report(model, cache)
 
         base = Path(out_path) if out_path else Path.cwd() / f"{Path(path).stem}.report"
         wrote: list[str] = []
+
         if fmt in ("json", "both"):
+            payload = build_report(model, cache)
             json_path = base.with_suffix(".json")
             json_path.write_text(_json.dumps(payload, indent=2))
             wrote.append(str(json_path))
         if fmt in ("html", "both"):
+            payload = build_report(model, cache)
             html_path = base.with_suffix(".html")
             html_path.write_text(render_html(payload))
             wrote.append(str(html_path))
+        if fmt == "masvs":
+            from chimera.detection_engineering.masvs import build_masvs_matrix
+            matrix = build_masvs_matrix(model, cache)
+            masvs_path = base.with_suffix(".masvs.json")
+            masvs_path.write_text(_json.dumps(matrix, indent=2))
+            wrote.append(str(masvs_path))
+        if fmt == "cvss":
+            from chimera.detection_engineering.cvss_findings import (
+                build_findings_from_chimera, render_findings_markdown,
+            )
+            findings = build_findings_from_chimera(model, cache)
+            md_path = base.with_suffix(".cvss.md")
+            md_path.write_text(render_findings_markdown(findings))
+            wrote.append(str(md_path))
+        if fmt == "sbom":
+            from chimera.detection_engineering.cyclonedx_sbom import build_cyclonedx_sbom
+            sbom = build_cyclonedx_sbom(model, cache)
+            sbom_path = base.with_suffix(".sbom.json")
+            sbom_path.write_text(_json.dumps(sbom, indent=2))
+            wrote.append(str(sbom_path))
 
         click.echo(f"Report written for {Path(path).name}:")
         for p in wrote:
