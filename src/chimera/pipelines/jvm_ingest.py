@@ -19,6 +19,7 @@ from pathlib import Path
 
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
+from chimera.parsers.jvm_methods import parse_jvm_methods
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +99,6 @@ def ingest_jadx_classes(
 
     logger.info("jadx ingest: %d classes, %d strings", classes_added, strings_added)
     return classes_added, strings_added
-
-
-from chimera.parsers.jvm_methods import parse_jvm_methods
 
 
 def ingest_jadx_methods(
