@@ -17,10 +17,17 @@ class TestDetectPlatform:
             zf.writestr("Payload/App.app/Info.plist", "<plist/>")
         assert detect_platform(ipa) == "ios"
 
-    def test_elf_so_is_android(self, tmp_path):
+    def test_elf_so_with_bionic_marker_is_android(self, tmp_path):
+        so = tmp_path / "libtest.so"
+        # Truncated ELF; the byte-level fallback in _classify_elf_context
+        # picks up the `liblog.so` marker and routes to Android.
+        so.write_bytes(b"\x7fELF" + b"\x00" * 200 + b"liblog.so" + b"\x00" * 200)
+        assert detect_platform(so) == "android"
+
+    def test_elf_so_without_bionic_marker_is_linux_native(self, tmp_path):
         so = tmp_path / "libtest.so"
         so.write_bytes(b"\x7fELF" + b"\x00" * 60)
-        assert detect_platform(so) == "android"
+        assert detect_platform(so) == "linux_native"
 
     def test_macho_is_ios(self, tmp_path):
         macho = tmp_path / "binary"
@@ -62,10 +69,15 @@ class TestDetectBinaryFormat:
             zf.writestr("AndroidManifest.xml", "<manifest/>")
         assert detect_binary_format(apk) == "apk"
 
-    def test_elf(self, tmp_path):
+    def test_elf_with_bionic_marker(self, tmp_path):
+        so = tmp_path / "test.so"
+        so.write_bytes(b"\x7fELF" + b"\x00" * 200 + b"liblog.so" + b"\x00" * 200)
+        assert detect_binary_format(so) == "elf"
+
+    def test_elf_without_bionic_marker_is_standalone(self, tmp_path):
         so = tmp_path / "test.so"
         so.write_bytes(b"\x7fELF" + b"\x00" * 60)
-        assert detect_binary_format(so) == "elf"
+        assert detect_binary_format(so) == "elf_standalone"
 
     def test_macho(self, tmp_path):
         m = tmp_path / "binary"

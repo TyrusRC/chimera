@@ -15,20 +15,39 @@ logger = logging.getLogger(__name__)
 def _classify_elf_context(path: Path) -> str:
     """Distinguish Android JNI .so from standalone Linux ELF.
 
-    Heuristic: If filename ends in .so, assume Android JNI context (return "elf").
-    Otherwise, check for Bionic-targeted libraries in the first 16 KB.
-    Replaced by `parse_elf` (DT_NEEDED inspection) in Phase 2.
+    Inspects DT_NEEDED via pyelftools (`parse_elf`). Returns "elf"
+    (Android JNI context) when the ELF declares any Bionic-only library
+    in its dynamic NEEDED list (`liblog.so`, `libandroid.so`,
+    `libbinder_ndk.so`, `libnativehelper.so`, etc). Otherwise returns
+    "elf_standalone".
+
+    Falls back to a coarse byte-level scan if pyelftools is unavailable
+    or the ELF is malformed enough to make pyelftools raise — analysts
+    dropping a corrupt binary expect best-effort triage rather than a
+    hard failure.
     """
-    if path.suffix.lower() == ".so":
-        return "elf"
+    bionic_libs = {
+        "liblog.so", "libandroid.so", "libbinder_ndk.so",
+        "libnativehelper.so", "libmediandk.so", "libcamera2ndk.so",
+        "libnativewindow.so", "libamidi.so",
+    }
     try:
-        with open(path, "rb") as fh:
-            head = fh.read(16 * 1024)
-    except OSError:
+        from chimera.parsers.elf_header import parse_elf
+        info = parse_elf(path)
+        for needed in info.needed:
+            if needed in bionic_libs:
+                return "elf"
         return "elf_standalone"
-    if b"liblog.so" in head or b"libandroid.so" in head:
-        return "elf"
-    return "elf_standalone"
+    except Exception:
+        # Fallback: byte-level scan of the first 16 KB.
+        try:
+            with open(path, "rb") as fh:
+                head = fh.read(16 * 1024)
+        except OSError:
+            return "elf_standalone"
+        if b"liblog.so" in head or b"libandroid.so" in head:
+            return "elf"
+        return "elf_standalone"
 
 
 def _classify_pe_string(path: Path) -> str:
