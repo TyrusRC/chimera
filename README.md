@@ -19,7 +19,7 @@ MCP server so Claude or any compatible model can drive the pipeline.
 ## Features
 
 - **Standalone pipeline** — unpack → triage → decompile → detect → confirm, no AI required.
-- **Mobile-only focus** — Android (APK / AAB / DEX / split bundles) and iOS (IPA / Mach-O / dylib).
+- **Multi-platform coverage** — Android (APK / AAB / DEX / split bundles), iOS (IPA / Mach-O / dylib), Windows PE / .NET, and standalone Linux ELF.
 - **Cross-layer call graph** — Java / Kotlin ↔ JNI ↔ native ARM64, unified into one model.
 - **Framework detection** — React Native (Hermes/JSC), Flutter, Unity IL2CPP, Xamarin, Cordova/Capacitor.
 - **Protection bypass** — root / jailbreak / Frida / debugger / packer detection with bypass scripts.
@@ -27,6 +27,49 @@ MCP server so Claude or any compatible model can drive the pipeline.
 - **MCP server** — high-level analysis tools exposed to any MCP-compatible LLM client.
 - **Web UI + TUI** — FastAPI-backed UI for project browsing; Textual TUI for device interaction.
 - **OWASP MASVS** — findings tagged with MASVS categories.
+
+## Non-mobile binary support
+
+Chimera can analyze Windows PE (`.exe`/`.dll`/.NET assemblies) and
+standalone Linux ELF binaries, in addition to its primary mobile
+targets. Triage covers:
+
+- **PE / PE32+**: header parse, import-table scoring (PEStudio-style
+  buckets: process injection, anti-debug, persistence, network, crypto,
+  evasion), TLS/Authenticode flags, section entropy, FLOSS-decoded
+  strings (when available), capa capabilities, YARA scan.
+- **.NET assemblies**: ILSpy decompilation per type when `ilspycmd` is
+  on PATH. Falls back to Ghidra otherwise (managed-mode coverage is
+  limited).
+- **Linux ELF**: header + dynamic section parse, persistence-string
+  scan (cron/systemd/`LD_PRELOAD`/init.d), syscall scoring, XOR-string
+  heuristic for unsophisticated obfuscation, capa, YARA, Ghidra deep.
+
+### Quick start
+
+```sh
+chimera analyze /path/to/sample.exe       # auto-routes to PE pipeline
+chimera analyze /path/to/server.bin       # standalone ELF
+chimera imports /path/to/sample.exe       # bucket-grouped suspicious imports
+chimera persistence /path/to/server.bin   # Linux persistence strings
+```
+
+### Optional tools
+
+- `floss` (`pip install flare-floss`) — string deobfuscation for PE/ELF.
+- `ilspycmd` (`dotnet tool install -g ilspycmd`) — .NET decompilation.
+- `capa` (`pip install flare-capa`) — capability matching.
+
+All optional; pipelines skip gracefully when a tool isn't installed.
+
+### Limitations
+
+- No sandbox, no symbolic execution.
+- Authenticode signatures are detected (presence) but not validated.
+- Mixed-mode .NET (C++/CLI) falls back to Ghidra.
+- Memory-image / live-host forensics is out of scope (see roadmap #7).
+
+---
 
 ## Status
 
