@@ -24,6 +24,7 @@ MCP server so Claude or any compatible model can drive the pipeline.
 - **Framework detection** — React Native (Hermes/JSC), Flutter, Unity IL2CPP, Xamarin, Cordova/Capacitor.
 - **Protection bypass** — root / jailbreak / Frida / debugger / packer detection with bypass scripts.
 - **Manifest + NSC hardening** — `chimera manifest app.apk` reports `android:debuggable`, `allowBackup` without rules, exported components without permissions, cleartext-traffic flags, and `network_security_config.xml` issues (cleartext base/domain configs, user-CA trust). Each finding cites the source file and line.
+- **Binary-vs-binary diff** — `chimera diff <a> <b>` compares two cached projects and reports added/removed permissions, exported components, SDK packages, native libraries (with sha256), and manifest+NSC findings (regression / resolution).
 - **Static + dynamic** — static rules from Semgrep, runtime confirmation via Frida.
 - **MCP server** — high-level analysis tools exposed to any MCP-compatible LLM client.
 - **Web UI + TUI** — FastAPI-backed UI for project browsing; Textual TUI for device interaction.
@@ -238,6 +239,12 @@ chimera detect-protections app.apk
 # Manifest + NSC hardening findings (Android)
 chimera manifest app.apk
 chimera manifest app.apk --format json
+
+# Compare two app versions
+chimera analyze app-1.0.0.apk
+chimera analyze app-1.1.0.apk
+chimera diff <sha256-a> <sha256-b>            # markdown output
+chimera diff <sha256-a> <sha256-b> --format json
 
 # List third-party SDKs
 chimera sdks app.apk
