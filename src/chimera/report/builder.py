@@ -125,6 +125,16 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
             {"dll": e.dll, "name": e.name, "address": e.address, "ordinal": e.ordinal, "bucket": e.bucket}
             for e in model.imports
         ][:500],
+        "vol_pslist":            cache.get_json(sha, "vol_pslist") or {},
+        "vol_pstree":            cache.get_json(sha, "vol_pstree") or {},
+        "vol_bash":              cache.get_json(sha, "vol_bash") or {},
+        "vol_netstat":           cache.get_json(sha, "vol_netstat") or {},
+        "vol_malfind":           cache.get_json(sha, "vol_malfind") or {},
+        "vol_lsmod":             cache.get_json(sha, "vol_lsmod") or {},
+        "vol_check_modules":     cache.get_json(sha, "vol_check_modules") or {},
+        "vol_check_syscall":     cache.get_json(sha, "vol_check_syscall") or {},
+        "memory_persistence":    cache.get_json(sha, "memory_persistence") or {},
+        "memory_protection":     cache.get_json(sha, "memory_protection") or {},
     }
 
 
@@ -297,6 +307,81 @@ def render_html(report: dict) -> str:
         '<p class="meta">No native-side protection signals detected.</p>'
     )
 
+    # Memory analysis sections
+    vol_pslist = report.get("vol_pslist") or {}
+    pslist_rows_data = vol_pslist.get("rows") or []
+    process_count = len(pslist_rows_data)
+
+    vol_pstree = report.get("vol_pstree") or {}
+    pstree_text = vol_pstree.get("text") or ""
+    if not pstree_text and vol_pstree.get("rows"):
+        # Render a simple indent-tree from rows if text field absent
+        pstree_text = "\n".join(
+            f"{'  ' * int(r.get('depth', 0))}{r.get('pid', '?')} {r.get('name', '?')}"
+            for r in (vol_pstree.get("rows") or [])
+        )
+    pstree_html = html.escape(pstree_text) if pstree_text else "<em>no process tree data</em>"
+
+    vol_bash = report.get("vol_bash") or {}
+    bash_count = len(vol_bash.get("rows") or [])
+
+    vol_netstat = report.get("vol_netstat") or {}
+    netstat_count = len(vol_netstat.get("rows") or [])
+
+    vol_malfind = report.get("vol_malfind") or {}
+    malfind_count = len(vol_malfind.get("rows") or [])
+
+    vol_lsmod = report.get("vol_lsmod") or {}
+    lsmod_count = len(vol_lsmod.get("rows") or [])
+
+    vol_check_modules = report.get("vol_check_modules") or {}
+    hidden_module_count = len(vol_check_modules.get("rows") or [])
+
+    vol_check_syscall = report.get("vol_check_syscall") or {}
+    hooked_syscall_count = len([
+        r for r in (vol_check_syscall.get("rows") or [])
+        if r.get("handler_symbol") in (None, "", "UNKNOWN")
+    ])
+
+    mem_pers = report.get("memory_persistence") or {}
+    mem_pers_findings = mem_pers.get("findings") or []
+    mem_persistence_rows = "".join(
+        f"<tr><td>{html.escape(r.get('category', ''))}</td>"
+        f"<td><code>{html.escape(r.get('path', ''))}</code></td>"
+        f"<td>{html.escape(str(r.get('inode', '—')))}</td></tr>"
+        for r in mem_pers_findings
+    ) or "<tr><td colspan=3><em>none</em></td></tr>"
+
+    # Gate memory sections — only include block when image is a memory image
+    has_memory_data = any([
+        process_count, bash_count, netstat_count, malfind_count,
+        lsmod_count, hidden_module_count, hooked_syscall_count, mem_pers_findings,
+    ])
+    memory_sections_html = ""
+    if has_memory_data:
+        memory_sections_html = f"""
+<h2>Memory analysis — process tree ({process_count} processes)</h2>
+<details><summary>process tree</summary>
+<pre>{pstree_html}</pre>
+</details>
+
+<h2>Memory artifacts</h2>
+<table>
+  <tr><th>Bash commands</th><td>{bash_count}</td></tr>
+  <tr><th>Network connections</th><td>{netstat_count}</td></tr>
+  <tr><th>Malfind hits</th><td>{malfind_count}</td></tr>
+  <tr><th>Kernel modules</th><td>{lsmod_count}</td></tr>
+  <tr><th>Hidden modules</th><td>{hidden_module_count}</td></tr>
+  <tr><th>Hooked syscalls</th><td>{hooked_syscall_count}</td></tr>
+</table>
+
+<h2>Memory persistence</h2>
+<table>
+<tr><th>Category</th><th>Path</th><th>Inode</th></tr>
+{mem_persistence_rows}
+</table>
+"""
+
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -370,7 +455,7 @@ table.kv th {{ width: 200px; }}
 
 <h2>Native protection profile</h2>
 {native_prot_html}
-
+{memory_sections_html}
 <h2>Model — {model['function_count']:,} functions / {model['string_count']:,} strings</h2>
 <h3>Functions (first 200)</h3>
 <table><tr><th>Address</th><th>Name</th><th>Layer</th><th>Language</th><th>Backend</th></tr>{fn_rows}</table>
