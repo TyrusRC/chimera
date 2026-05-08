@@ -153,3 +153,21 @@ def link_jvm_callsites(model: UnifiedProgramModel, callsites) -> int:
             model.add_call_edge(caller_addr, candidates[0], "calls")
             edges += 1
     return edges
+
+
+def link_jni_dynamic(
+    model: UnifiedProgramModel,
+    class_fqcn: str,
+    entries,
+) -> int:
+    """For each RegisterNativesEntry, find the matching JVM method
+    (by class+name+signature) and emit a `jni-dynamic` edge.
+    """
+    edges = 0
+    for e in entries:
+        addr = f"jvm:{class_fqcn}::{e.method_name}{e.signature}"
+        if model.get_function(addr) is None:
+            continue
+        model.add_call_edge(addr, e.fn_addr, "jni-dynamic")
+        edges += 1
+    return edges

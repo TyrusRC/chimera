@@ -122,3 +122,24 @@ def test_link_jvm_callsites_emits_edges():
     assert n == 1
     callees = m.get_callees("jvm:com.example.Foo::caller()V")
     assert any(c.address == "jvm:com.example.Foo::decrypt([B)I" for c in callees)
+
+
+def test_link_jni_dynamic_resolves_by_class_method_sig():
+    from chimera.parsers.jni_register_natives import RegisterNativesEntry
+    from chimera.pipelines.cross_layer import link_jni_dynamic
+    m = _make_model()
+    # Add the native function that will be linked
+    m.add_function(FunctionInfo(
+        address="0x55500", name="Java_com_example_Foo_decrypt_dyn",
+        original_name="Java_com_example_Foo_decrypt_dyn",
+        language="c", classification="unknown", layer="native",
+        source_backend="r2",
+    ))
+    entries = [
+        RegisterNativesEntry(method_name="decrypt", signature="([B)I",
+                             fn_addr="0x55500"),
+    ]
+    result = link_jni_dynamic(m, "com.example.Foo", entries)
+    assert result == 1
+    callees = m.get_callees("jvm:com.example.Foo::decrypt([B)I")
+    assert any(c.address == "0x55500" for c in callees)
