@@ -57,17 +57,17 @@ def _parse_imm(s: str) -> int:
 def _track_register_value(ops: list[dict], reg: str, until_idx: int) -> int | None:
     """Walk ops[:until_idx] backwards; return the resolved literal value
     of `reg` if reachable through `adrp+add` or `mov #imm`. None on
-    failure.
+    failure. On `add dst, src, #imm`, the search switches from `dst` to
+    `src` to chase the preceding `adrp`.
     """
-    val: int | None = None
     base: int | None = None
     for op in reversed(ops[:until_idx]):
         d = op.get("disasm", "")
         m = _MOV_IMM_RX.search(d)
-        if m and m.group("reg") == reg and val is None:
+        if m and m.group("reg") == reg:
             return _parse_imm(m.group("imm"))
         m = _ADD_RX.search(d)
-        if m and m.group("dst") == reg and val is None:
+        if m and m.group("dst") == reg:
             base = _parse_imm(m.group("imm"))
             reg = m.group("src")
             continue
