@@ -75,3 +75,31 @@ def link_jni_static(
     logger.info("jni-static link: %d edges, %d unresolved",
                 result.static_edges, result.unresolved)
     return result
+
+
+def collect_native_exports_from_cache(
+    cache, sha256: str, lib_keys: list[str],
+) -> dict[str, list[tuple[str, str]]]:
+    """Pull `Java_*` exports from cached r2 triage blobs.
+
+    Each lib_key is a cache key like `r2_libnative.so`. Falls back to
+    scanning `functions` for `Java_`-prefixed names when no `exports`
+    field is present.
+    """
+    out: dict[str, list[tuple[str, str]]] = {}
+    for key in lib_keys:
+        blob = cache.get_json(sha256, key) or {}
+        lib = key.removeprefix("r2_") or key
+        items: list[tuple[str, str]] = []
+        for sym in (blob.get("exports") or []):
+            name = sym.get("name", "")
+            if name.startswith("Java_"):
+                items.append((name, hex(sym.get("vaddr", 0))))
+        if not items:
+            for fn in blob.get("functions") or []:
+                name = fn.get("name", "")
+                if name.startswith("Java_"):
+                    items.append((name, hex(fn.get("vaddr", 0))))
+        if items:
+            out[lib] = items
+    return out

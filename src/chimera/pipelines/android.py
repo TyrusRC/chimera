@@ -358,6 +358,24 @@ async def analyze_apk(
 
         await asyncio.gather(*[_ghidra_analyze(lib) for lib in eligible])
 
+    # Phase 6.5: cross-layer linker. Connects JVM native methods to
+    # `Java_*` exports in the analyzed native libs.
+    try:
+        from chimera.pipelines.cross_layer import (
+            collect_native_exports_from_cache, link_jni_static,
+        )
+        lib_keys = [k for k in cache.list_keys(binary.sha256)
+                    if k.startswith("r2_") and k != "r2_triage"]
+        if lib_keys:
+            exports = collect_native_exports_from_cache(
+                cache, binary.sha256, lib_keys,
+            )
+            jni_result = link_jni_static(model, exports)
+            logger.info("jni-static: %d edges, %d unresolved",
+                        jni_result.static_edges, jni_result.unresolved)
+    except Exception as exc:
+        logger.warning("cross-layer linker failed: %s", exc)
+
     cache.put_json(binary.sha256, "triage", {
         "platform": "android",
         "format": binary.format.value,

@@ -50,3 +50,25 @@ def test_link_jni_static_unresolved_native_method():
     result = link_jni_static(m, native_exports={"libnative.so": []})
     assert result.static_edges == 0
     assert result.unresolved == 1
+
+
+class _StubCache:
+    def __init__(self, blobs):
+        self._blobs = blobs
+
+    def get_json(self, sha, key):
+        return self._blobs.get((sha, key))
+
+
+def test_collect_native_exports_from_cache():
+    from chimera.pipelines.cross_layer import collect_native_exports_from_cache
+    cache = _StubCache({
+        ("d" * 64, "r2_libnative.so"): {
+            "functions": [
+                {"name": "Java_com_example_Foo_decrypt", "vaddr": 0x12340},
+                {"name": "fclose", "vaddr": 0x99},
+            ],
+        },
+    })
+    out = collect_native_exports_from_cache(cache, "d" * 64, ["r2_libnative.so"])
+    assert out == {"libnative.so": [("Java_com_example_Foo_decrypt", "0x12340")]}

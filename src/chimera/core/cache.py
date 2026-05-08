@@ -49,3 +49,10 @@ class AnalysisCache:
                 "cache entry corrupted, dropping: %s/%s (%s)", sha256[:12], category, exc
             )
             return None
+
+    def list_keys(self, sha256: str) -> list[str]:
+        """Return all category keys cached for this binary."""
+        entry = self._entry_dir(sha256)
+        if not entry.exists():
+            return []
+        return sorted(p.name for p in entry.iterdir() if p.is_file())
