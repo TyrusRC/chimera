@@ -576,6 +576,59 @@ def _load_cache_and_sha(path: str, project_dir: str | None, cache_dir: str | Non
 
 
 @main.command()
+@click.argument("a", type=str)
+@click.argument("b", type=str)
+@click.option("--cache-dir", type=click.Path(), default=None)
+@click.option("--format", "fmt",
+              type=click.Choice(["md", "json"]), default="md",
+              help="Output format")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Write output to this file (default: stdout)")
+def diff(a: str, b: str, cache_dir: str | None, fmt: str, out_path: str | None):
+    """Diff two cached chimera projects.
+
+    A and B can be sha256 hashes or unique sha256 prefixes (>= 8 chars).
+    Both projects must already be cached — run `chimera analyze` first.
+    """
+    import json as _json
+    from chimera.core.cache import AnalysisCache
+    from chimera.core.config import ChimeraConfig
+    from chimera.diff import (
+        ProjectNotInCacheError, diff_projects, load_project,
+        render_json, render_markdown,
+    )
+
+    config = ChimeraConfig(
+        project_dir=Path.cwd() / "chimera_project",
+        cache_dir=Path(cache_dir) if cache_dir else Path.cwd() / "chimera_cache",
+    )
+    cache = AnalysisCache(config.cache_dir)
+
+    try:
+        snap_a = load_project(a, cache)
+        snap_b = load_project(b, cache)
+    except ProjectNotInCacheError as e:
+        click.echo(f"project not in cache: {e}", err=True)
+        raise SystemExit(2)
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(2)
+
+    project_diff = diff_projects(snap_a, snap_b)
+
+    if fmt == "json":
+        text = _json.dumps(render_json(project_diff), indent=2)
+    else:
+        text = render_markdown(project_diff)
+
+    if out_path:
+        Path(out_path).write_text(text)
+        click.echo(f"wrote {out_path}")
+    else:
+        click.echo(text)
+
+
+@main.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--project-dir", type=click.Path(), default=None)
 @click.option("--cache-dir", type=click.Path(), default=None)
