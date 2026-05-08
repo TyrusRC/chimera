@@ -26,3 +26,9 @@ def test_report_help_describes_format_choices():
     r = CliRunner().invoke(main, ["report", "--help"])
     assert r.exit_code == 0
     assert "MASVS" in r.output or "CVSS" in r.output or "SBOM" in r.output
+
+
+def test_report_help_lists_ir():
+    r = CliRunner().invoke(main, ["report", "--help"])
+    assert r.exit_code == 0
+    assert "ir" in r.output.lower()
