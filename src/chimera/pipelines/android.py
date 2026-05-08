@@ -306,6 +306,24 @@ async def analyze_apk(
     if manifest_xml:
         cache.put(binary.sha256, "manifest_xml", manifest_xml.encode())
 
+    # Cache referenced network_security_config.xml so the manifest_findings
+    # detector can read it on demand without re-running jadx.
+    if manifest_xml:
+        try:
+            from chimera.parsers.android_manifest import parse_manifest as _pm
+            _manifest_tmp = jadx_output / "resources" / "AndroidManifest.xml"
+            if _manifest_tmp.exists():
+                _model = _pm(_manifest_tmp)
+                nsc_ref = _model.application.network_security_config
+                if nsc_ref and nsc_ref.startswith("@xml/"):
+                    nsc_name = nsc_ref.split("/", 1)[1]
+                    nsc_path = jadx_output / "resources" / "res" / "xml" / f"{nsc_name}.xml"
+                    if nsc_path.exists():
+                        cache.put(binary.sha256, "nsc_xml", nsc_path.read_bytes())
+                        logger.info("nsc: cached %s", nsc_path.name)
+        except Exception as e:
+            logger.warning("nsc cache step failed: %s", e)
+
     # Phase 6: Ghidra deep analysis on native libraries.
     # Ghidra serializes per-lib (the global heavy semaphore) and is by
     # far the slowest backend on modern apps. We honor caps from config
