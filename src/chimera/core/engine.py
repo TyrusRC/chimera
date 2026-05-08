@@ -72,8 +72,22 @@ class ChimeraEngine:
             return await analyze_ipa(
                 path, self.config, self.registry, self.resource_mgr, self.cache,
             )
+        elif platform == "windows":
+            from chimera.pipelines.pe import analyze_pe
+            return await analyze_pe(
+                path, self.config, self.registry, self.resource_mgr, self.cache,
+            )
+        elif platform == "linux_native":
+            from chimera.pipelines.elf import analyze_elf
+            return await analyze_elf(
+                path, self.config, self.registry, self.resource_mgr, self.cache,
+            )
         else:
-            raise ValueError(f"Unsupported platform for {path.name}. Chimera only analyzes mobile binaries.")
+            raise ValueError(
+                f"Unsupported platform for {path.name}. "
+                f"Supported: Android (APK/AAB/DEX), iOS (IPA/Mach-O), "
+                f"Windows (PE/DLL/.NET), Linux (ELF)."
+            )
 
     async def cleanup(self) -> None:
         for adapter in self.registry.all_registered():

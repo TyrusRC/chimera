@@ -5,10 +5,84 @@ from __future__ import annotations
 import json
 import logging
 import plistlib
+import struct
 import zipfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _classify_elf_context(path: Path) -> str:
+    """Distinguish Android JNI .so from standalone Linux ELF.
+
+    Heuristic: If filename ends in .so, assume Android JNI context (return "elf").
+    Otherwise, check for Bionic-targeted libraries in the first 16 KB.
+    Replaced by `parse_elf` (DT_NEEDED inspection) in Phase 2.
+    """
+    if path.suffix.lower() == ".so":
+        return "elf"
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(16 * 1024)
+    except OSError:
+        return "elf_standalone"
+    if b"liblog.so" in head or b"libandroid.so" in head:
+        return "elf"
+    return "elf_standalone"
+
+
+def _classify_pe_string(path: Path) -> str:
+    """Walk a PE file's headers to distinguish PE32, PE32+, and .NET PE.
+
+    Returns a STRING instead of an enum (mirrors _classify_pe from model/binary.py).
+    On malformed input, returns "pe32" as the stable default.
+    """
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return "pe32"
+
+    if len(data) < 0x40 or data[:2] != b"MZ":
+        return "pe32"
+
+    # e_lfanew at 0x3C, uint32 little-endian
+    try:
+        pe_off = struct.unpack_from("<I", data, 0x3C)[0]
+    except struct.error:
+        return "pe32"
+
+    if pe_off + 24 > len(data):
+        return "pe32"
+    if data[pe_off:pe_off + 4] != b"PE\x00\x00":
+        return "pe32"
+
+    # IMAGE_FILE_HEADER is 20 bytes starting at pe_off+4.
+    # IMAGE_OPTIONAL_HEADER.Magic is uint16 LE at pe_off+24.
+    try:
+        optional_magic = struct.unpack_from("<H", data, pe_off + 24)[0]
+    except struct.error:
+        return "pe32"
+
+    # IMAGE_DATA_DIRECTORY[14] (CLR header) lives at:
+    #   PE32  (Magic 0x10b) -> pe_off + 24 + 208
+    #   PE32+ (Magic 0x20b) -> pe_off + 24 + 224
+    if optional_magic == 0x20b:
+        clr_off = pe_off + 24 + 224
+    else:
+        clr_off = pe_off + 24 + 208
+
+    if clr_off + 8 <= len(data):
+        try:
+            clr_va, clr_size = struct.unpack_from("<II", data, clr_off)
+            if clr_va != 0 and clr_size != 0:
+                return "dotnet_pe"
+        except struct.error:
+            pass
+
+    if optional_magic == 0x20b:
+        return "pe64"
+    return "pe32"
 
 
 def detect_binary_format(path: Path) -> str:
@@ -22,7 +96,7 @@ def detect_binary_format(path: Path) -> str:
         magic = fh.read(8)
 
     if magic[:4] == b"\x7fELF":
-        return "elf"
+        return _classify_elf_context(path)
     if magic[:4] in (b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe"):
         return "macho"
     if magic[:4] in (b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbe"):
@@ -31,6 +105,8 @@ def detect_binary_format(path: Path) -> str:
         return "dex"
     if magic[:4] == b"PK\x03\x04" or path.suffix.lower() in (".apk", ".ipa", ".aab", ".xapk", ".apkm", ".apks"):
         return _detect_zip_format(path)
+    if magic[:2] == b"MZ":
+        return _classify_pe_string(path)
     ext_map = {".so": "elf", ".dylib": "dylib", ".dll": "dll", ".hbc": "hbc"}
     return ext_map.get(path.suffix.lower(), "unknown")
 
@@ -63,12 +139,17 @@ def detect_platform(path: Path) -> str:
     fmt = detect_binary_format(path)
     android_formats = {"apk", "aab", "xapk", "apkm", "dex"}
     ios_formats = {"ipa", "macho", "fat", "dylib"}
+    windows_formats = {"pe32", "pe64", "dotnet_pe", "dll"}
     if fmt in android_formats:
         return "android"
     if fmt in ios_formats:
         return "ios"
+    if fmt in windows_formats:
+        return "windows"
+    if fmt == "elf_standalone":
+        return "linux_native"
     if fmt == "elf":
-        return "android"
+        return "android"  # JNI library context
     return "unknown"
 
 
