@@ -27,6 +27,7 @@ class ChimeraConfig:
     total_ram_mb: Optional[int] = None
     skip_dynamic: bool = False
     skip_fuzzing: bool = True
+    skip_jvm_methods: bool = False
     adb_device: Optional[str] = None
     ios_udid: Optional[str] = None
     mapping_file: Optional[Path] = None

@@ -288,10 +288,16 @@ async def analyze_apk(
         # r2 surfaced, and tools that read it look broken on every Android
         # app that's mostly Java/Kotlin.
         if jadx_sources.exists():
-            from chimera.pipelines.jvm_ingest import ingest_jadx_classes
+            from chimera.pipelines.jvm_ingest import (
+                ingest_jadx_classes,
+                ingest_jadx_methods,
+            )
             classes_added, strings_added = ingest_jadx_classes(model, jadx_sources)
             logger.info("ingested %d classes / %d strings from jadx",
                         classes_added, strings_added)
+            if not config.skip_jvm_methods:
+                methods_added = ingest_jadx_methods(model, jadx_sources)
+                logger.info("ingested %d methods from jadx", methods_added)
 
     if manifest_xml is None:
         logger.warning("AndroidManifest.xml is binary-encoded. Install jadx for proper manifest analysis.")

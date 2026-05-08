@@ -38,22 +38,24 @@ main.add_command(db_cli)
               help="ProGuard/R8 mapping.txt to restore original identifiers")
 @click.option("--no-ghidra", "skip_ghidra", is_flag=True,
               help="Skip the Ghidra decompile phase entirely (faster on big apps)")
+@click.option("--no-jvm-methods", "skip_jvm_methods", is_flag=True,
+              help="Skip JVM method-level ingestion (faster, smaller model)")
 @click.option("--ghidra-max-lib-mb", type=int, default=None,
               help="Skip Ghidra on native libs over this size in MB (default 20)")
 @click.option("--ghidra-max-libs", type=int, default=None,
               help="Cap total libs sent to Ghidra (default 8, smallest-first)")
 def analyze(path: str, project_dir: str | None, cache_dir: str | None,
             device: str | None, ghidra_home: str | None,
-            mapping_file: str | None, skip_ghidra: bool,
+            mapping_file: str | None, skip_ghidra: bool, skip_jvm_methods: bool,
             ghidra_max_lib_mb: int | None, ghidra_max_libs: int | None):
     """Analyze a mobile app binary (APK, IPA, DEX, Mach-O, ELF .so)."""
     asyncio.run(_analyze(path, project_dir, cache_dir, device, ghidra_home,
-                         mapping_file, skip_ghidra, ghidra_max_lib_mb, ghidra_max_libs))
+                         mapping_file, skip_ghidra, skip_jvm_methods, ghidra_max_lib_mb, ghidra_max_libs))
 
 
 async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
                    device: str | None, ghidra_home: str | None,
-                   mapping_file: str | None, skip_ghidra: bool = False,
+                   mapping_file: str | None, skip_ghidra: bool = False, skip_jvm_methods: bool = False,
                    ghidra_max_lib_mb: int | None = None,
                    ghidra_max_libs: int | None = None):
     from chimera.core.config import ChimeraConfig
@@ -66,6 +68,7 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
         adb_device=device,
         mapping_file=Path(mapping_file) if mapping_file else None,
         ghidra_skip=skip_ghidra,
+        skip_jvm_methods=skip_jvm_methods,
     )
     if ghidra_max_lib_mb is not None:
         cfg_kwargs["ghidra_max_lib_mb"] = ghidra_max_lib_mb
