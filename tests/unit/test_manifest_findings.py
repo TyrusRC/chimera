@@ -34,3 +34,30 @@ def test_clean_manifest_emits_no_findings():
     manifest = parse_manifest(FIXTURES / "clean.xml")
     findings = build_findings_from_models(manifest, nsc=None)
     assert findings == []
+
+
+def test_cleartext_explicit_true_emits_finding():
+    manifest = parse_manifest(FIXTURES / "cleartext_attr.xml")
+    findings = build_findings_from_models(manifest, nsc=None)
+    ids = _ids(findings)
+    assert "MANIFEST-CLEARTEXT" in ids
+
+
+def test_cleartext_default_true_for_old_target_sdk():
+    # exported_no_perm.xml has targetSdk=33 with no usesCleartextTraffic →
+    # default since API 28 is FALSE → no finding.
+    manifest = parse_manifest(FIXTURES / "exported_no_perm.xml")
+    findings = build_findings_from_models(manifest, nsc=None)
+    assert "MANIFEST-CLEARTEXT" not in _ids(findings)
+
+
+def test_exported_component_without_permission_emits_finding():
+    manifest = parse_manifest(FIXTURES / "exported_no_perm.xml")
+    findings = build_findings_from_models(manifest, nsc=None)
+    matches = [f for f in findings if f.finding_id == "MANIFEST-EXPORTED"]
+    # .Pub activity is exported=true with no permission; .Svc is implicit-export
+    # via intent-filter with no permission; .P provider has explicit permission so OK.
+    assert len(matches) == 2
+    titles = {f.title for f in matches}
+    assert any(".Pub" in e for f in matches for e in f.evidence)
+    assert any(".Svc" in e for f in matches for e in f.evidence)

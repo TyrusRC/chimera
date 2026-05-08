@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.ct">
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="27"/>
+    <application
+        android:debuggable="false"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/bk"
+        android:usesCleartextTraffic="true">
+        <activity android:name=".M" android:exported="false"/>
+    </application>
+</manifest>
