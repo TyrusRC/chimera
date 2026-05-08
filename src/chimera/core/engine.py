@@ -9,9 +9,11 @@ from chimera.adapters.afl import AFLAdapter
 from chimera.adapters.apktool import ApktoolAdapter
 from chimera.adapters.capa_adapter import CapaAdapter
 from chimera.adapters.class_dump import ClassDumpAdapter
+from chimera.adapters.floss import FlossAdapter
 from chimera.adapters.frida_adapter import FridaAdapter
 from chimera.adapters.frida_dexdump import FridaDexdumpAdapter
 from chimera.adapters.ghidra import GhidraAdapter
+from chimera.adapters.ilspy import IlspyAdapter
 from chimera.adapters.jadx import JadxAdapter
 from chimera.adapters.radare2 import Radare2Adapter
 from chimera.adapters.registry import AdapterRegistry
@@ -55,6 +57,8 @@ class ChimeraEngine:
         self.registry.register(SwiftDemangleAdapter())
         self.registry.register(YaraAdapter())
         self.registry.register(CapaAdapter())
+        self.registry.register(FlossAdapter())
+        self.registry.register(IlspyAdapter())
 
     async def analyze(self, path: str | Path) -> UnifiedProgramModel:
         path = Path(path)
