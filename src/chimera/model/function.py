@@ -38,3 +38,19 @@ class CallEdge:
     caller_addr: str
     callee_addr: str
     call_type: str
+
+
+@dataclass
+class ImportEntry:
+    """A single function/symbol import from another module.
+
+    For PE: `dll` is the importing DLL ("kernel32.dll"). For ELF or
+    ordinal-imports: `dll` may be empty. `bucket` is set later by
+    `parsers.import_scoring.score_imports` when the symbol matches a
+    suspicious-imports bucket.
+    """
+    dll: str
+    name: str
+    address: str | None = None
+    ordinal: int | None = None
+    bucket: str | None = None

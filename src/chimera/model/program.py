@@ -5,7 +5,7 @@ from __future__ import annotations
 import re as _re
 
 from chimera.model.binary import BinaryInfo
-from chimera.model.function import FunctionInfo, StringEntry, CallEdge
+from chimera.model.function import FunctionInfo, StringEntry, CallEdge, ImportEntry
 from chimera.model.objc import ObjCCallSite, ObjCCategory, ObjCClass, ObjCMethod, ObjCProtocol
 
 
@@ -15,6 +15,7 @@ class UnifiedProgramModel:
         self._functions: dict[str, FunctionInfo] = {}
         self._call_edges: list[CallEdge] = []
         self._strings: list[StringEntry] = []
+        self._imports: list[ImportEntry] = []
         self._objc_methods: list[ObjCMethod] = []
         self._objc_callsites: list[ObjCCallSite] = []
         self._objc_classes: dict[str, ObjCClass] = {}
@@ -73,6 +74,13 @@ class UnifiedProgramModel:
             regex = _re.compile(pattern, _re.IGNORECASE)
             self._regex_cache[pattern] = regex
         return [s for s in self._strings if regex.search(s.value)]
+
+    @property
+    def imports(self) -> list[ImportEntry]:
+        return list(self._imports)
+
+    def add_import(self, entry: ImportEntry) -> None:
+        self._imports.append(entry)
 
     @property
     def objc_methods(self) -> list[ObjCMethod]:

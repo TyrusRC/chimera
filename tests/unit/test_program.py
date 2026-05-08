@@ -263,3 +263,55 @@ def test_report_includes_cross_layer_section():
     assert rep["cross_layer"]["bindings"][0]["jvm"] == "jvm:p.A::f()V"
     assert rep["cross_layer"]["bindings"][0]["native"] == "0x42"
     assert rep["cross_layer"]["bindings"][0]["type"] == "jni-static"
+
+
+def _make_model() -> UnifiedProgramModel:
+    bi = BinaryInfo(
+        sha256="d" * 64, path=Path("/tmp/x.exe"),
+        format=BinaryFormat.PE32, platform=Platform.WINDOWS,
+        arch=Architecture.X86, framework=Framework.NATIVE, size_bytes=1,
+    )
+    return UnifiedProgramModel(bi)
+
+
+def test_imports_starts_empty():
+    m = _make_model()
+    assert m.imports == []
+
+
+def test_add_import_round_trip():
+    m = _make_model()
+    from chimera.model.function import ImportEntry
+    e = ImportEntry(dll="kernel32.dll", name="VirtualAllocEx", address="0x401000")
+    m.add_import(e)
+    assert len(m.imports) == 1
+    assert m.imports[0].name == "VirtualAllocEx"
+    assert m.imports[0].dll == "kernel32.dll"
+
+
+def test_add_import_preserves_order():
+    m = _make_model()
+    from chimera.model.function import ImportEntry
+    m.add_import(ImportEntry(dll="kernel32.dll", name="A"))
+    m.add_import(ImportEntry(dll="kernel32.dll", name="B"))
+    m.add_import(ImportEntry(dll="user32.dll", name="C"))
+    names = [e.name for e in m.imports]
+    assert names == ["A", "B", "C"]
+
+
+def test_imports_returns_a_copy():
+    m = _make_model()
+    from chimera.model.function import ImportEntry
+    m.add_import(ImportEntry(dll="kernel32.dll", name="A"))
+    snapshot = m.imports
+    m.add_import(ImportEntry(dll="kernel32.dll", name="B"))
+    # snapshot was a copy at the time of the call
+    assert len(snapshot) == 1
+
+
+def test_import_entry_optional_fields_default_none():
+    from chimera.model.function import ImportEntry
+    e = ImportEntry(dll="user32.dll", name="MessageBoxA")
+    assert e.address is None
+    assert e.ordinal is None
+    assert e.bucket is None
