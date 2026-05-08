@@ -52,11 +52,14 @@ async def analyze_elf(
     # Phase 1: Triage cache check
     # -----------------------------------------------------------------------
     binary = BinaryInfo.from_path(elf_path)
-    # Ensure the format is always ELF_STANDALONE for standalone executables
-    # (BinaryInfo.from_path may return BinaryFormat.ELF for magic-based detection)
-    if binary.format not in (BinaryFormat.ELF_STANDALONE, BinaryFormat.ELF):
-        pass  # unexpected; proceed anyway
+    # `model/binary.py:_detect_format` doesn't disambiguate Android-JNI ELF
+    # from a standalone Linux ELF — the dispatcher in `pipelines/common.py`
+    # already routed us here, so override the format/platform tuple to
+    # match. Without this, downstream consumers (CLI summary, report)
+    # display the misleading default (Platform.ANDROID).
+    from chimera.model.binary import Platform
     binary.format = BinaryFormat.ELF_STANDALONE
+    binary.platform = Platform.LINUX_NATIVE
     sha = binary.sha256
 
     if cache.has(sha):

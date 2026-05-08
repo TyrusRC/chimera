@@ -50,6 +50,16 @@ async def analyze_pe(
     # Phase 1: Triage cache check
     # -----------------------------------------------------------------------
     binary = BinaryInfo.from_path(pe_path)
+    # Force the platform tuple for PE-family inputs — `_detect_format`
+    # already classified the format correctly via magic bytes, but
+    # `_guess_platform`'s mapping is the authoritative source for the
+    # CLI summary line.
+    from chimera.model.binary import Platform, Architecture
+    binary.platform = Platform.WINDOWS
+    if binary.format == BinaryFormat.PE32 and binary.arch == Architecture.UNKNOWN:
+        binary.arch = Architecture.X86
+    elif binary.format in (BinaryFormat.PE64, BinaryFormat.DOTNET_PE) and binary.arch == Architecture.UNKNOWN:
+        binary.arch = Architecture.X86_64
     sha = binary.sha256
 
     if cache.has(sha):

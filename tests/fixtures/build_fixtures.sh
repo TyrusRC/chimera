@@ -4,8 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "==> Building Linux ELF fixture (gcc, static)"
-gcc -static -O0 -o elf/hello src/hello.c
+echo "==> Building Linux ELF fixture (gcc, dynamic, stripped)"
+mkdir -p elf
+gcc -O0 -o elf/hello src/hello.c
 strip elf/hello
 ls -lh elf/hello
 
