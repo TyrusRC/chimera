@@ -44,20 +44,33 @@ main.add_command(db_cli)
               help="Skip Ghidra on native libs over this size in MB (default 20)")
 @click.option("--ghidra-max-libs", type=int, default=None,
               help="Cap total libs sent to Ghidra (default 8, smallest-first)")
+@click.option("--no-floss", "skip_floss", is_flag=True,
+              help="Skip FLOSS string deobfuscation (PE/ELF only)")
+@click.option("--no-ilspy", "skip_ilspy", is_flag=True,
+              help="Skip ILSpy decompile pass on .NET assemblies")
+@click.option("--no-pe-imports", "skip_pe_imports", is_flag=True,
+              help="Skip PE import-table scoring")
+@click.option("--floss-timeout", "floss_timeout", type=int, default=None,
+              help="FLOSS timeout in seconds (default: 90)")
 def analyze(path: str, project_dir: str | None, cache_dir: str | None,
             device: str | None, ghidra_home: str | None,
             mapping_file: str | None, skip_ghidra: bool, skip_jvm_methods: bool,
-            ghidra_max_lib_mb: int | None, ghidra_max_libs: int | None):
+            ghidra_max_lib_mb: int | None, ghidra_max_libs: int | None,
+            skip_floss: bool, skip_ilspy: bool, skip_pe_imports: bool,
+            floss_timeout: int | None):
     """Analyze a mobile app binary (APK, IPA, DEX, Mach-O, ELF .so)."""
     asyncio.run(_analyze(path, project_dir, cache_dir, device, ghidra_home,
-                         mapping_file, skip_ghidra, skip_jvm_methods, ghidra_max_lib_mb, ghidra_max_libs))
+                         mapping_file, skip_ghidra, skip_jvm_methods, ghidra_max_lib_mb, ghidra_max_libs,
+                         skip_floss, skip_ilspy, skip_pe_imports, floss_timeout))
 
 
 async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
                    device: str | None, ghidra_home: str | None,
                    mapping_file: str | None, skip_ghidra: bool = False, skip_jvm_methods: bool = False,
                    ghidra_max_lib_mb: int | None = None,
-                   ghidra_max_libs: int | None = None):
+                   ghidra_max_libs: int | None = None,
+                   skip_floss: bool = False, skip_ilspy: bool = False,
+                   skip_pe_imports: bool = False, floss_timeout: int | None = None):
     from chimera.core.config import ChimeraConfig
     from chimera.core.engine import ChimeraEngine
 
@@ -69,11 +82,16 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
         mapping_file=Path(mapping_file) if mapping_file else None,
         ghidra_skip=skip_ghidra,
         skip_jvm_methods=skip_jvm_methods,
+        skip_floss=skip_floss,
+        skip_ilspy=skip_ilspy,
+        skip_pe_imports=skip_pe_imports,
     )
     if ghidra_max_lib_mb is not None:
         cfg_kwargs["ghidra_max_lib_mb"] = ghidra_max_lib_mb
     if ghidra_max_libs is not None:
         cfg_kwargs["ghidra_max_libs"] = ghidra_max_libs
+    if floss_timeout is not None:
+        cfg_kwargs["floss_timeout"] = floss_timeout
     config = ChimeraConfig(**cfg_kwargs)
     engine = ChimeraEngine(config)
     try:
