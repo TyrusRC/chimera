@@ -28,6 +28,10 @@ class ChimeraConfig:
     skip_dynamic: bool = False
     skip_fuzzing: bool = True
     skip_jvm_methods: bool = False
+    skip_floss: bool = False
+    skip_ilspy: bool = False
+    skip_pe_imports: bool = False
+    floss_timeout: int = 90
     adb_device: Optional[str] = None
     ios_udid: Optional[str] = None
     mapping_file: Optional[Path] = None
