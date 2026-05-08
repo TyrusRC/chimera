@@ -72,3 +72,23 @@ def test_collect_native_exports_from_cache():
     })
     out = collect_native_exports_from_cache(cache, "d" * 64, ["r2_libnative.so"])
     assert out == {"libnative.so": [("Java_com_example_Foo_decrypt", "0x12340")]}
+
+
+def test_collect_native_exports_prefers_explicit_exports_field():
+    # When the cached blob carries an `exports` list, use it directly and
+    # ignore the `functions` fallback. This is the path r2 takes once it
+    # surfaces an `iEj`-derived export list.
+    from chimera.pipelines.cross_layer import collect_native_exports_from_cache
+    cache = _StubCache({
+        ("e" * 64, "r2_libfoo.so"): {
+            "exports": [
+                {"name": "Java_p_A_g", "vaddr": 0xABCD0},
+                {"name": "_init", "vaddr": 0x10},
+            ],
+            "functions": [
+                {"name": "Java_should_be_ignored", "vaddr": 0xDEAD},
+            ],
+        },
+    })
+    out = collect_native_exports_from_cache(cache, "e" * 64, ["r2_libfoo.so"])
+    assert out == {"libfoo.so": [("Java_p_A_g", "0xabcd0")]}
