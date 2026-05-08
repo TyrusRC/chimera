@@ -103,3 +103,53 @@ def collect_native_exports_from_cache(
         if items:
             out[lib] = items
     return out
+
+
+def _index_jvm_native_methods(model: UnifiedProgramModel) -> dict[tuple[str, str], str]:
+    """Return {(class_fqcn, method_name): jvm_address} for native methods.
+
+    When multiple overloads exist, prefers the first one. Callsite
+    discovery is name-only, so overload resolution is best-effort.
+    """
+    out: dict[tuple[str, str], str] = {}
+    for f in model.functions:
+        if f.layer != "jvm":
+            continue
+        if not f.metadata or not f.metadata.get("is_native"):
+            continue
+        key = (f.metadata.get("class_fqcn", ""), f.name)
+        out.setdefault(key, f.address)
+    return out
+
+
+def link_jvm_callsites(model: UnifiedProgramModel, callsites) -> int:
+    """Emit `calls` edges from each callsite's enclosing method to the
+    matching native method address. Returns the number of edges added.
+
+    Resolution order:
+        1. same-class method match
+        2. any class with that method name (best-effort)
+    """
+    native_index = _index_jvm_native_methods(model)
+    by_name: dict[str, list[str]] = {}
+    for (cls, name), addr in native_index.items():
+        by_name.setdefault(name, []).append(addr)
+    edges = 0
+    for cs in callsites:
+        caller_addr = (
+            f"jvm:{cs.caller.class_fqcn}::{cs.caller.name}{cs.caller.smali_sig}"
+        )
+        if model.get_function(caller_addr) is None:
+            continue
+        same_class_addr = native_index.get(
+            (cs.caller.class_fqcn, cs.callee_name)
+        )
+        if same_class_addr is not None:
+            model.add_call_edge(caller_addr, same_class_addr, "calls")
+            edges += 1
+            continue
+        candidates = by_name.get(cs.callee_name, [])
+        if len(candidates) == 1:
+            model.add_call_edge(caller_addr, candidates[0], "calls")
+            edges += 1
+    return edges

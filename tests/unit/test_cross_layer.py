@@ -92,3 +92,33 @@ def test_collect_native_exports_prefers_explicit_exports_field():
     })
     out = collect_native_exports_from_cache(cache, "e" * 64, ["r2_libfoo.so"])
     assert out == {"libfoo.so": [("Java_p_A_g", "0xabcd0")]}
+
+
+def test_link_jvm_callsites_emits_edges():
+    from chimera.parsers.jvm_methods import JvmMethod
+    from chimera.pipelines.cross_layer import link_jvm_callsites
+    m = _make_model()
+    # add a non-native caller to the model
+    m.add_function(FunctionInfo(
+        address="jvm:com.example.Foo::caller()V",
+        name="caller", original_name="com.example.Foo.caller",
+        language="java", classification="unknown", layer="jvm",
+        source_backend="jadx",
+        metadata={"is_native": False, "class_fqcn": "com.example.Foo",
+                  "smali_sig": "()V"},
+    ))
+    callsites = [
+        type("CS", (), {
+            "caller": JvmMethod(
+                class_fqcn="com.example.Foo", name="caller",
+                smali_sig="()V", is_native=False,
+                file="X.java", line=10, language="java",
+            ),
+            "callee_name": "decrypt",
+            "line": 11,
+        })(),
+    ]
+    n = link_jvm_callsites(m, callsites)
+    assert n == 1
+    callees = m.get_callees("jvm:com.example.Foo::caller()V")
+    assert any(c.address == "jvm:com.example.Foo::decrypt([B)I" for c in callees)
