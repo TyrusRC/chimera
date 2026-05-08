@@ -136,7 +136,8 @@ def _detect_format(path: Path) -> BinaryFormat:
     }
     if suffix in format_map:
         # Even with a "known" suffix, an IPA may be mislabeled .zip; disambiguate ZIPs below
-        if suffix not in (".apk", ".aab", ".xapk", ".apkm", ".apks", ".ipa"):
+        # Also, .dll may be a .NET PE, so check magic bytes
+        if suffix not in (".apk", ".aab", ".xapk", ".apkm", ".apks", ".ipa", ".dll"):
             return format_map[suffix]
 
     with open(path, "rb") as fh:
@@ -150,12 +151,60 @@ def _detect_format(path: Path) -> BinaryFormat:
         return BinaryFormat.FAT
     if magic[:4] == b"dex\n":
         return BinaryFormat.DEX
+    if magic[:2] == b"MZ":
+        return _classify_pe(path)
     if magic[:4] == b"PK\x03\x04":
         return _classify_zip(path, suffix)
 
     if suffix in format_map:
         return format_map[suffix]
     return BinaryFormat.ELF
+
+
+def _classify_pe(path: Path) -> BinaryFormat:
+    """Walk a PE file's headers to distinguish PE32, PE32+, and .NET PE.
+
+    Returns a stable default (PE32) on malformed input rather than raising;
+    the caller can do nothing useful with a thrown exception here, and
+    analysts dropping a corrupt binary expect best-effort triage.
+    """
+    import struct
+
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return BinaryFormat.PE32
+
+    if len(data) < 0x40 or data[:2] != b"MZ":
+        return BinaryFormat.PE32
+
+    # e_lfanew at 0x3C, uint32 little-endian
+    pe_off = struct.unpack_from("<I", data, 0x3C)[0]
+    if pe_off + 24 > len(data):
+        return BinaryFormat.PE32
+    if data[pe_off:pe_off + 4] != b"PE\x00\x00":
+        return BinaryFormat.PE32
+
+    # IMAGE_FILE_HEADER is 20 bytes starting at pe_off+4.
+    # IMAGE_OPTIONAL_HEADER.Magic is uint16 LE at pe_off+24.
+    optional_magic = struct.unpack_from("<H", data, pe_off + 24)[0]
+
+    # IMAGE_DATA_DIRECTORY[14] (CLR header) lives at:
+    #   PE32  (Magic 0x10b) -> pe_off + 24 + 208
+    #   PE32+ (Magic 0x20b) -> pe_off + 24 + 224
+    if optional_magic == 0x20b:
+        clr_off = pe_off + 24 + 224
+    else:
+        clr_off = pe_off + 24 + 208
+    if clr_off + 8 <= len(data):
+        clr_va, clr_size = struct.unpack_from("<II", data, clr_off)
+        if clr_va != 0 and clr_size != 0:
+            return BinaryFormat.DOTNET_PE
+
+    if optional_magic == 0x20b:
+        return BinaryFormat.PE64
+    return BinaryFormat.PE32
 
 
 def _classify_zip(path: Path, suffix: str) -> BinaryFormat:
