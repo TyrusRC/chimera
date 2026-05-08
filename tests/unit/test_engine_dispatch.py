@@ -53,6 +53,18 @@ def test_engine_routes_standalone_elf_to_analyze_elf(tmp_path):
         fake.assert_awaited_once()
 
 
+def test_engine_routes_memory_image_to_analyze_memory(tmp_path):
+    img = tmp_path / "core.lime"
+    img.write_bytes(b"LiME" + b"\x00" * 200)
+    config = ChimeraConfig(project_dir=tmp_path/"p", cache_dir=tmp_path/"c")
+    eng = ChimeraEngine(config)
+    fake_model = UnifiedProgramModel(BinaryInfo.from_path(img))
+    with patch("chimera.pipelines.memory.analyze_memory",
+               new=AsyncMock(return_value=fake_model)) as fake:
+        asyncio.run(eng.analyze(str(img)))
+        fake.assert_awaited_once()
+
+
 def test_engine_rejects_unknown_format(tmp_path):
     p = tmp_path / "garbage.bin"
     p.write_bytes(b"\x00" * 100)

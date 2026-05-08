@@ -86,6 +86,11 @@ class ChimeraEngine:
             return await analyze_elf(
                 path, self.config, self.registry, self.resource_mgr, self.cache,
             )
+        elif platform == "linux_memory":
+            from chimera.pipelines.memory import analyze_memory
+            return await analyze_memory(
+                path, self.config, self.registry, self.resource_mgr, self.cache,
+            )
         else:
             raise ValueError(
                 f"Unsupported platform for {path.name}. "
