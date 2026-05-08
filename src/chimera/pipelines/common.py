@@ -126,8 +126,16 @@ def detect_binary_format(path: Path) -> str:
         return _detect_zip_format(path)
     if magic[:2] == b"MZ":
         return _classify_pe_string(path)
+    if magic[:4] in (b"LiME", b"EMiL"):
+        return "memory_lime"
+
+    suffix = path.suffix.lower()
+    if suffix in (".raw", ".mem", ".dmp", ".vmem"):
+        return "memory_raw"
+    if suffix == ".lime":
+        return "memory_lime"
     ext_map = {".so": "elf", ".dylib": "dylib", ".dll": "dll", ".hbc": "hbc"}
-    return ext_map.get(path.suffix.lower(), "unknown")
+    return ext_map.get(suffix, "unknown")
 
 
 def _detect_zip_format(path: Path) -> str:
@@ -159,6 +167,7 @@ def detect_platform(path: Path) -> str:
     android_formats = {"apk", "aab", "xapk", "apkm", "dex"}
     ios_formats = {"ipa", "macho", "fat", "dylib"}
     windows_formats = {"pe32", "pe64", "dotnet_pe", "dll"}
+    memory_formats = {"memory_lime", "memory_raw"}
     if fmt in android_formats:
         return "android"
     if fmt in ios_formats:
@@ -167,6 +176,8 @@ def detect_platform(path: Path) -> str:
         return "windows"
     if fmt == "elf_standalone":
         return "linux_native"
+    if fmt in memory_formats:
+        return "linux_memory"
     if fmt == "elf":
         return "android"  # JNI library context
     return "unknown"

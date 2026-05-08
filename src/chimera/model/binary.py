@@ -30,6 +30,8 @@ class BinaryFormat(Enum):
     PE64 = "pe64"
     DOTNET_PE = "dotnet_pe"
     ELF_STANDALONE = "elf_standalone"
+    MEMORY_LIME = "memory_lime"
+    MEMORY_RAW = "memory_raw"
 
     @property
     def is_mobile(self) -> bool:
@@ -40,8 +42,14 @@ class BinaryFormat(Enum):
             BinaryFormat.DOTNET_PE,
             BinaryFormat.DLL,
             BinaryFormat.ELF_STANDALONE,
+            BinaryFormat.MEMORY_LIME,
+            BinaryFormat.MEMORY_RAW,
         }
         return self not in non_mobile
+
+    @property
+    def is_memory_image(self) -> bool:
+        return self in {BinaryFormat.MEMORY_LIME, BinaryFormat.MEMORY_RAW}
 
 
 class Architecture(Enum):
@@ -64,6 +72,7 @@ class Platform(Enum):
     IOS = "ios"
     WINDOWS = "windows"
     LINUX_NATIVE = "linux_native"
+    LINUX_MEMORY = "linux_memory"
     UNKNOWN = "unknown"
 
 
@@ -155,7 +164,13 @@ def _detect_format(path: Path) -> BinaryFormat:
         return _classify_pe(path)
     if magic[:4] == b"PK\x03\x04":
         return _classify_zip(path, suffix)
+    if magic[:4] in (b"LiME", b"EMiL"):
+        return BinaryFormat.MEMORY_LIME
 
+    if suffix in (".raw", ".mem", ".dmp", ".vmem"):
+        return BinaryFormat.MEMORY_RAW
+    if suffix == ".lime":
+        return BinaryFormat.MEMORY_LIME
     if suffix in format_map:
         return format_map[suffix]
     return BinaryFormat.ELF
@@ -236,6 +251,7 @@ def _guess_platform(fmt: BinaryFormat) -> Platform:
     ios = {BinaryFormat.IPA, BinaryFormat.MACHO, BinaryFormat.FAT, BinaryFormat.DYLIB}
     windows = {BinaryFormat.PE, BinaryFormat.PE32, BinaryFormat.PE64, BinaryFormat.DOTNET_PE, BinaryFormat.DLL}
     linux = {BinaryFormat.ELF_STANDALONE}
+    memory = {BinaryFormat.MEMORY_LIME, BinaryFormat.MEMORY_RAW}
     if fmt in android:
         return Platform.ANDROID
     if fmt in ios:
@@ -244,6 +260,8 @@ def _guess_platform(fmt: BinaryFormat) -> Platform:
         return Platform.WINDOWS
     if fmt in linux:
         return Platform.LINUX_NATIVE
+    if fmt in memory:
+        return Platform.LINUX_MEMORY
     if fmt == BinaryFormat.ELF:
         return Platform.ANDROID  # JNI .so default
     return Platform.UNKNOWN
