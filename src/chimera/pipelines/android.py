@@ -358,6 +358,7 @@ async def analyze_apk(
 
         await asyncio.gather(*[_ghidra_analyze(lib) for lib in eligible])
 
+    jni_result = None
     # Phase 6.5: cross-layer linker. Connects JVM native methods to
     # `Java_*` exports in the analyzed native libs.
     try:
@@ -413,6 +414,14 @@ async def analyze_apk(
                 logger.warning("dynamic JNI linker failed: %s", exc)
     except Exception as exc:
         logger.warning("cross-layer linker failed: %s", exc)
+
+    if jni_result is not None:
+        cache.put_json(binary.sha256, "jni_summary", {
+            "static": jni_result.static_edges,
+            "dynamic": jni_result.dynamic_edges,
+            "callsites": jni_result.callsite_edges,
+            "unresolved": jni_result.unresolved,
+        })
 
     cache.put_json(binary.sha256, "triage", {
         "platform": "android",

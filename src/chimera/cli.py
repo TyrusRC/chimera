@@ -124,6 +124,16 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
             click.echo()
             click.echo("  Native protections:   " + " · ".join(flags))
 
+        jni = cache.get_json(model.binary.sha256, "jni_summary") or {}
+        if jni:
+            click.echo()
+            click.echo(
+                f"  JNI bindings: {jni.get('static', 0) + jni.get('dynamic', 0)} "
+                f"({jni.get('static', 0)} static, "
+                f"{jni.get('dynamic', 0)} dynamic, "
+                f"{jni.get('unresolved', 0)} unresolved)"
+            )
+
         click.echo()
         available = [a.name() for a in engine.registry.all_available()]
         unavailable = [a.name() for a in engine.registry.all_registered() if not a.is_available()]
