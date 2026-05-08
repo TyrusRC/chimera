@@ -26,10 +26,22 @@ class BinaryFormat(Enum):
     IL2CPP = "il2cpp"
     JS_BUNDLE = "js_bundle"
     PE = "pe"
+    PE32 = "pe32"
+    PE64 = "pe64"
+    DOTNET_PE = "dotnet_pe"
+    ELF_STANDALONE = "elf_standalone"
 
     @property
     def is_mobile(self) -> bool:
-        return self != BinaryFormat.PE
+        non_mobile = {
+            BinaryFormat.PE,
+            BinaryFormat.PE32,
+            BinaryFormat.PE64,
+            BinaryFormat.DOTNET_PE,
+            BinaryFormat.DLL,
+            BinaryFormat.ELF_STANDALONE,
+        }
+        return self not in non_mobile
 
 
 class Architecture(Enum):
@@ -40,12 +52,18 @@ class Architecture(Enum):
     HERMES = "hermes"
     DART = "dart"
     DOTNET_IL = "dotnet_il"
+    X86 = "x86"
+    X86_64 = "x86_64"
+    MIPS = "mips"
+    RISCV = "riscv"
     UNKNOWN = "unknown"
 
 
 class Platform(Enum):
     ANDROID = "android"
     IOS = "ios"
+    WINDOWS = "windows"
+    LINUX_NATIVE = "linux_native"
     UNKNOWN = "unknown"
 
 
@@ -78,11 +96,7 @@ class BinaryInfo:
     sub_binaries: list[BinaryInfo] = field(default_factory=list)
 
     def __post_init__(self):
-        if not self.format.is_mobile:
-            raise ValueError(
-                f"{self.format.value} is not a supported mobile format. "
-                "Chimera only analyzes mobile app binaries."
-            )
+        pass
 
     @property
     def is_mobile(self) -> bool:
@@ -171,12 +185,18 @@ def _classify_zip(path: Path, suffix: str) -> BinaryFormat:
 def _guess_platform(fmt: BinaryFormat) -> Platform:
     android = {BinaryFormat.APK, BinaryFormat.AAB, BinaryFormat.XAPK, BinaryFormat.APKM, BinaryFormat.DEX}
     ios = {BinaryFormat.IPA, BinaryFormat.MACHO, BinaryFormat.FAT, BinaryFormat.DYLIB}
+    windows = {BinaryFormat.PE, BinaryFormat.PE32, BinaryFormat.PE64, BinaryFormat.DOTNET_PE, BinaryFormat.DLL}
+    linux = {BinaryFormat.ELF_STANDALONE}
     if fmt in android:
         return Platform.ANDROID
     if fmt in ios:
         return Platform.IOS
+    if fmt in windows:
+        return Platform.WINDOWS
+    if fmt in linux:
+        return Platform.LINUX_NATIVE
     if fmt == BinaryFormat.ELF:
-        return Platform.ANDROID
+        return Platform.ANDROID  # JNI .so default
     return Platform.UNKNOWN
 
 
@@ -187,4 +207,10 @@ def _guess_arch(fmt: BinaryFormat) -> Architecture:
         return Architecture.HERMES
     if fmt in (BinaryFormat.MACHO, BinaryFormat.FAT, BinaryFormat.IPA):
         return Architecture.ARM64
+    if fmt in (BinaryFormat.PE64, BinaryFormat.DOTNET_PE):
+        return Architecture.X86_64
+    if fmt == BinaryFormat.PE32:
+        return Architecture.X86
+    if fmt == BinaryFormat.ELF_STANDALONE:
+        return Architecture.X86_64  # default; refined later via parse_elf
     return Architecture.UNKNOWN

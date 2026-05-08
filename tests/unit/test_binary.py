@@ -65,14 +65,16 @@ class TestBinaryInfo:
         assert info.platform == Platform.ANDROID
         assert info.is_mobile is True
 
-    def test_reject_non_mobile_format(self):
-        with pytest.raises(ValueError, match="not a supported mobile format"):
-            BinaryInfo(
-                sha256="abc", path=Path("/tmp/test.exe"),
-                format=BinaryFormat.PE, platform=Platform.ANDROID,
-                arch=Architecture.ARM64, framework=Framework.NATIVE,
-                size_bytes=1024,
-            )
+    def test_accept_non_mobile_format_pe(self):
+        # PE format is no longer rejected; mobile invariant has been lifted
+        info = BinaryInfo(
+            sha256="abc", path=Path("/tmp/test.exe"),
+            format=BinaryFormat.PE, platform=Platform.WINDOWS,
+            arch=Architecture.X86_64, framework=Framework.NATIVE,
+            size_bytes=1024,
+        )
+        assert info.format == BinaryFormat.PE
+        assert info.is_mobile is False
 
     def test_from_path_computes_sha256(self, tmp_path):
         apk = tmp_path / "test.apk"
@@ -141,3 +143,61 @@ def test_detect_format_suffix_still_wins_for_empty_zip(tmp_path):
     with zipfile.ZipFile(ipa, "w") as _:
         pass
     assert _detect_format(ipa) is BinaryFormat.IPA
+
+
+def test_binary_format_has_pe_family_members():
+    assert BinaryFormat.PE32.value == "pe32"
+    assert BinaryFormat.PE64.value == "pe64"
+    assert BinaryFormat.DOTNET_PE.value == "dotnet_pe"
+    assert BinaryFormat.ELF_STANDALONE.value == "elf_standalone"
+
+
+def test_binary_format_is_mobile_property():
+    assert BinaryFormat.APK.is_mobile is True
+    assert BinaryFormat.IPA.is_mobile is True
+    assert BinaryFormat.DEX.is_mobile is True
+    assert BinaryFormat.IL2CPP.is_mobile is True
+    assert BinaryFormat.PE.is_mobile is False
+    assert BinaryFormat.PE32.is_mobile is False
+    assert BinaryFormat.PE64.is_mobile is False
+    assert BinaryFormat.DOTNET_PE.is_mobile is False
+    assert BinaryFormat.DLL.is_mobile is False
+    assert BinaryFormat.ELF_STANDALONE.is_mobile is False
+
+
+def test_platform_has_windows_and_linux_native():
+    assert Platform.WINDOWS.value == "windows"
+    assert Platform.LINUX_NATIVE.value == "linux_native"
+
+
+def test_architecture_has_x86_family():
+    assert Architecture.X86.value == "x86"
+    assert Architecture.X86_64.value == "x86_64"
+    assert Architecture.MIPS.value == "mips"
+    assert Architecture.RISCV.value == "riscv"
+
+
+def test_binary_info_accepts_pe_format(tmp_path):
+    p = tmp_path / "x.exe"
+    p.write_bytes(b"MZ" + b"\x00" * 100)
+    bi = BinaryInfo(
+        sha256="a" * 64, path=p,
+        format=BinaryFormat.PE32, platform=Platform.WINDOWS,
+        arch=Architecture.X86_64, framework=Framework.NATIVE,
+        size_bytes=p.stat().st_size,
+    )
+    # would have raised ValueError before this commit
+    assert bi.format is BinaryFormat.PE32
+    assert bi.is_mobile is False
+
+
+def test_binary_info_accepts_elf_standalone(tmp_path):
+    p = tmp_path / "binary"
+    p.write_bytes(b"\x7fELF" + b"\x00" * 100)
+    bi = BinaryInfo(
+        sha256="b" * 64, path=p,
+        format=BinaryFormat.ELF_STANDALONE, platform=Platform.LINUX_NATIVE,
+        arch=Architecture.X86_64, framework=Framework.NATIVE,
+        size_bytes=p.stat().st_size,
+    )
+    assert bi.is_mobile is False
