@@ -67,7 +67,51 @@ All optional; pipelines skip gracefully when a tool isn't installed.
 - No sandbox, no symbolic execution.
 - Authenticode signatures are detected (presence) but not validated.
 - Mixed-mode .NET (C++/CLI) falls back to Ghidra.
-- Memory-image / live-host forensics is out of scope (see roadmap #7).
+
+---
+
+## Memory image triage (Linux)
+
+Chimera analyzes Linux memory captures (LiME / raw) via Volatility 3.
+Coverage:
+
+- **Process tree** (`linux.pslist`, `linux.pstree`)
+- **Recovered bash history** (`linux.bash`)
+- **Open sockets** (`linux.sockstat`, falls back to `linux.netstat`)
+- **Malfind RWX hits** (`linux.malfind`)
+- **Kernel modules + rootkit indicators** (`linux.lsmod`,
+  `linux.check_modules`, `linux.check_syscall`)
+- **Persistence-relevant cached files** (`linux.pagecache.Files`
+  cross-referenced against cron / systemd / `LD_PRELOAD` / init.d patterns)
+- **Auto-stub IR findings** mapped to MITRE ATT&CK (T1014, T1055, T1543, T1071)
+
+### Quick start
+
+```sh
+chimera memory /path/to/core.lime           # full pipeline + summary
+chimera memory pslist /path/to/core.lime    # process list only
+chimera memory netstat /path/to/core.lime   # connections only
+chimera memory malfind /path/to/core.lime   # RWX hits only
+chimera memory findings /path/to/core.lime  # IR findings (Markdown)
+chimera report --format ir /path/to/core.lime --out report.ir.md
+```
+
+### Required tools
+
+- **Volatility 3** (`pip install volatility3` or distro package). Make sure
+  `vol` is on PATH. Volatility also needs Linux ISFs (kernel symbol tables)
+  for the target image — see Volatility 3 docs.
+- All optional; when `vol` is missing, the pipeline degrades to detection
+  + format identification only.
+
+### Limitations
+
+- **Linux only** for now. Windows memory triage isn't wired up.
+- **No symbolic execution / behavioral reconstruction.** Volatility
+  output goes through Chimera's parsers as-is; deeper analysis is the
+  analyst's job.
+- **Memory-image fixtures are tiny synthetic stubs.** Real triage runs
+  need GB-scale captures + matching ISF symbols.
 
 ---
 
