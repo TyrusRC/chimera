@@ -282,11 +282,11 @@ async def analyze_apk(
             except OSError:
                 pass
 
-        # Phase 5.5: ingest decompiled classes into the unified model so
-        # downstream consumers (sdks, report, callgraph) see the JVM layer.
-        # Without this, model.functions only ever holds the few native funcs
-        # r2 surfaced, and tools that read it look broken on every Android
-        # app that's mostly Java/Kotlin.
+        # Phase 5.5: ingest decompiled classes AND methods into the unified
+        # model so downstream consumers (sdks, report, callgraph, cross-layer
+        # linker) see the JVM layer. Without this, model.functions only ever
+        # holds the few native funcs r2 surfaced, and tools that read it look
+        # broken on every Android app that's mostly Java/Kotlin.
         if jadx_sources.exists():
             from chimera.pipelines.jvm_ingest import (
                 ingest_jadx_classes,
