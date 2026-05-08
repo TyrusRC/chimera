@@ -20,6 +20,8 @@ class ProjectDiff:
     permissions_removed: list[str] = field(default_factory=list)
     exported_added: list[ManifestComponent] = field(default_factory=list)
     exported_removed: list[ManifestComponent] = field(default_factory=list)
+    sdks_added: list[str] = field(default_factory=list)
+    sdks_removed: list[str] = field(default_factory=list)
 
 
 def _parse_manifest_or_none(xml: Optional[bytes]) -> Optional[ManifestModel]:
@@ -68,5 +70,10 @@ def diff_projects(a: ProjectSnapshot, b: ProjectSnapshot) -> ProjectDiff:
     b_exp = {(c.kind, c.name): c for c in _exported_components(b_manifest)}
     diff.exported_added = [b_exp[k] for k in b_exp if k not in a_exp]
     diff.exported_removed = [a_exp[k] for k in a_exp if k not in b_exp]
+
+    a_pkgs = set(a.jadx_packages)
+    b_pkgs = set(b.jadx_packages)
+    diff.sdks_added = sorted(b_pkgs - a_pkgs)
+    diff.sdks_removed = sorted(a_pkgs - b_pkgs)
 
     return diff

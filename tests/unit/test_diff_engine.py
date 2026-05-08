@@ -72,3 +72,20 @@ def test_no_manifest_yields_empty_manifest_diff():
     assert diff.permissions_removed == []
     assert diff.exported_added == []
     assert diff.exported_removed == []
+
+
+def test_sdk_packages_added_and_removed():
+    a = _snap(jadx_packages=["okhttp3", "kotlinx.coroutines.core", "androidx.compose.ui"])
+    b = _snap(jadx_packages=["okhttp3", "kotlinx.coroutines.core",
+                             "androidx.compose.ui", "com.google.firebase.crashlytics"])
+    diff = diff_projects(a, b)
+    assert "com.google.firebase.crashlytics" in diff.sdks_added
+    assert diff.sdks_removed == []
+
+
+def test_sdk_packages_no_change():
+    a = _snap(jadx_packages=["okhttp3"])
+    b = _snap(jadx_packages=["okhttp3"])
+    diff = diff_projects(a, b)
+    assert diff.sdks_added == []
+    assert diff.sdks_removed == []
