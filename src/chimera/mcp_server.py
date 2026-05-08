@@ -111,6 +111,19 @@ async def list_tools() -> list[Tool]:
         Tool(name="get_manifest_findings",
              description="AndroidManifest + network_security_config findings (debuggable, allowBackup, exported components, cleartext traffic, user-CA trust). Requires a prior analyze(path=...) call so the manifest XML is in cache.",
              inputSchema={"type": "object", "properties": {}}),
+        Tool(name="diff_projects",
+             description=(
+                 "Diff two cached chimera projects. Returns added/removed permissions, "
+                 "exported components, SDK packages, native libs, and manifest+NSC findings. "
+                 "Inputs are sha256 hashes or prefixes (>=8 chars). Both projects must be "
+                 "cached — call analyze(path=...) on each first."
+             ),
+             inputSchema={"type": "object",
+                          "properties": {
+                              "a": {"type": "string", "description": "sha256 or prefix of project A"},
+                              "b": {"type": "string", "description": "sha256 or prefix of project B"},
+                          },
+                          "required": ["a", "b"]}),
 
         # --- Detection ---
         Tool(name="get_info",
@@ -495,6 +508,23 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 nsc_model = _pn(np)
             findings = build_findings_from_models(manifest_model, nsc=nsc_model)
         return _json({"findings": [f.to_dict() for f in findings]})
+
+    # ── diff_projects ───────────────────────────────────────────────────
+    elif name == "diff_projects":
+        from chimera.diff import (
+            ProjectNotInCacheError, diff_projects as _diff,
+            load_project, render_json,
+        )
+        a_spec = arguments["a"]
+        b_spec = arguments["b"]
+        try:
+            snap_a = load_project(a_spec, engine.cache)
+            snap_b = load_project(b_spec, engine.cache)
+        except ProjectNotInCacheError as e:
+            return _json({"error": f"project not in cache: {e}"})
+        except ValueError as e:
+            return _json({"error": str(e)})
+        return _json(render_json(_diff(snap_a, snap_b)))
 
     # ── get_info ────────────────────────────────────────────────────────
     elif name == "get_info":
