@@ -13,6 +13,13 @@ from chimera.parsers.android_manifest import (
 
 
 @dataclass
+class NativeLibChange:
+    name: str
+    a_sha256: Optional[str] = None
+    b_sha256: Optional[str] = None
+
+
+@dataclass
 class ProjectDiff:
     a_sha256: str
     b_sha256: str
@@ -22,6 +29,9 @@ class ProjectDiff:
     exported_removed: list[ManifestComponent] = field(default_factory=list)
     sdks_added: list[str] = field(default_factory=list)
     sdks_removed: list[str] = field(default_factory=list)
+    native_libs_added: list[NativeLibChange] = field(default_factory=list)
+    native_libs_removed: list[NativeLibChange] = field(default_factory=list)
+    native_libs_changed: list[NativeLibChange] = field(default_factory=list)
 
 
 def _parse_manifest_or_none(xml: Optional[bytes]) -> Optional[ManifestModel]:
@@ -75,5 +85,23 @@ def diff_projects(a: ProjectSnapshot, b: ProjectSnapshot) -> ProjectDiff:
     b_pkgs = set(b.jadx_packages)
     diff.sdks_added = sorted(b_pkgs - a_pkgs)
     diff.sdks_removed = sorted(a_pkgs - b_pkgs)
+
+    a_libs = a.native_libs
+    b_libs = b.native_libs
+    for name in sorted(set(b_libs) - set(a_libs)):
+        diff.native_libs_added.append(NativeLibChange(
+            name=name, b_sha256=b_libs[name].get("sha256"),
+        ))
+    for name in sorted(set(a_libs) - set(b_libs)):
+        diff.native_libs_removed.append(NativeLibChange(
+            name=name, a_sha256=a_libs[name].get("sha256"),
+        ))
+    for name in sorted(set(a_libs) & set(b_libs)):
+        a_sha = a_libs[name].get("sha256")
+        b_sha = b_libs[name].get("sha256")
+        if a_sha and b_sha and a_sha != b_sha:
+            diff.native_libs_changed.append(NativeLibChange(
+                name=name, a_sha256=a_sha, b_sha256=b_sha,
+            ))
 
     return diff

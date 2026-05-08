@@ -89,3 +89,31 @@ def test_sdk_packages_no_change():
     diff = diff_projects(a, b)
     assert diff.sdks_added == []
     assert diff.sdks_removed == []
+
+
+def test_native_libs_added_and_removed():
+    a = _snap(native_libs={
+        "libfoo.so": {"sha256": "aaa", "size_bytes": 1024},
+        "libstable.so": {"sha256": "bbb", "size_bytes": 2048},
+    })
+    b = _snap(native_libs={
+        "libnew.so": {"sha256": "ccc", "size_bytes": 4096},
+        "libstable.so": {"sha256": "bbb", "size_bytes": 2048},  # unchanged
+    })
+    diff = diff_projects(a, b)
+    assert {n.name for n in diff.native_libs_added} == {"libnew.so"}
+    assert {n.name for n in diff.native_libs_removed} == {"libfoo.so"}
+    assert diff.native_libs_changed == []  # libstable.so unchanged → not flagged
+
+
+def test_native_libs_changed_when_sha_differs():
+    a = _snap(native_libs={
+        "libfoo.so": {"sha256": "aaa"},
+    })
+    b = _snap(native_libs={
+        "libfoo.so": {"sha256": "ddd"},
+    })
+    diff = diff_projects(a, b)
+    assert {n.name for n in diff.native_libs_changed} == {"libfoo.so"}
+    assert diff.native_libs_added == []
+    assert diff.native_libs_removed == []
