@@ -373,6 +373,20 @@ async def analyze_apk(
             jni_result = link_jni_static(model, exports)
             logger.info("jni-static: %d edges, %d unresolved",
                         jni_result.static_edges, jni_result.unresolved)
+            # Phase 6.6: scan Java sources for callers of native methods
+            if jadx_sources.exists() and not config.skip_jvm_methods:
+                from chimera.parsers.jvm_methods import (
+                    find_callsites, parse_jvm_methods,
+                )
+                from chimera.pipelines.cross_layer import link_jvm_callsites
+                methods = parse_jvm_methods(jadx_sources)
+                native_names = {
+                    m.name for m in methods if m.is_native
+                }
+                callsites = find_callsites(methods, native_names)
+                cs_edges = link_jvm_callsites(model, callsites)
+                jni_result.callsite_edges = cs_edges
+                logger.info("jvm callsites: %d edges", cs_edges)
     except Exception as exc:
         logger.warning("cross-layer linker failed: %s", exc)
 
