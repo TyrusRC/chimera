@@ -35,14 +35,16 @@ Java.perform(function () {
         "/dev/com.koushikdutta.superuser.daemon/",
         "/sbin/.magisk", "/cache/.magisk", "/data/adb/magisk",
     ];
-    File.exists.implementation = function () {
+    var existsOverload = File.exists.overload();
+    existsOverload.implementation = function () {
         var p = this.getAbsolutePath();
         for (var i = 0; i < blocked_paths.length; i++) {
             if (p.indexOf(blocked_paths[i]) === 0) {
+                console.log("[chimera] File.exists(" + p + ") -> false (blocked)");
                 return false;
             }
         }
-        return this.exists.call(this);
+        return existsOverload.call(this);
     };
 
     // 3. Build.TAGS — pretend it's "release-keys"

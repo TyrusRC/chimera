@@ -12,14 +12,13 @@ Java.perform(function () {
     var KS = Java.use("java.security.KeyStore");
 
     // 1. Log every alias() lookup
-    KS.aliases.implementation = function () {
-        var en = this.aliases();
-        var keys = [];
-        var iterator = Java.cast(en, Java.use("java.util.Enumeration"));
-        // Iterate but reset — we re-evaluate via getAliases for simplicity
+    var aliasesOverload = KS.aliases.overload();
+    aliasesOverload.implementation = function () {
+        var en = aliasesOverload.call(this);
         try {
             var allKeys = Java.use("java.util.Collections").list(en);
             var size = allKeys.size();
+            var keys = [];
             for (var i = 0; i < size; i++) {
                 keys.push(allKeys.get(i).toString());
             }
@@ -31,17 +30,19 @@ Java.perform(function () {
     };
 
     // 2. Log every getKey(alias, password)
-    KS.getKey.overload("java.lang.String", "[C").implementation = function (alias, pw) {
+    var getKeyOverload = KS.getKey.overload("java.lang.String", "[C");
+    getKeyOverload.implementation = function (alias, pw) {
         console.log("[chimera] KeyStore.getKey(" + alias + ")");
-        return this.getKey(alias, pw);
+        return getKeyOverload.call(this, alias, pw);
     };
 
     // 3. Log SharedPreferences read/write — common shadow keystore
     try {
         var SP = Java.use("android.app.SharedPreferencesImpl$EditorImpl");
-        SP.putString.implementation = function (k, v) {
+        var putStringOverload = SP.putString.overload("java.lang.String", "java.lang.String");
+        putStringOverload.implementation = function (k, v) {
             console.log("[chimera] SharedPreferences.putString(" + k + ", " + v + ")");
-            return this.putString(k, v);
+            return putStringOverload.call(this, k, v);
         };
     } catch (e) { /* fine */ }
 
