@@ -152,3 +152,35 @@ def test_memory_pipeline_falls_back_to_netstat_when_sockstat_unavailable(setup, 
     netstat = cache.get_json(model.binary.sha256, "vol_netstat")
     assert netstat is not None
     assert len(netstat.get("rows") or []) == 1
+
+
+def test_memory_pipeline_persistence_phase_runs(setup, tmp_path):
+    from chimera.pipelines.memory import analyze_memory
+    cfg, cache, rm, reg = setup
+    img = _build_minimal_lime(tmp_path)
+
+    canned = {
+        "linux.pagecache.Files": [
+            {"Inode": 100, "Path": "/etc/cron.d/evil", "Size": 100},
+            {"Inode": 200, "Path": "/etc/systemd/system/x.service", "Size": 256},
+            {"Inode": 300, "Path": "/usr/bin/ls", "Size": 130000},
+        ],
+    }
+
+    async def fake_analyze(self, binary_path, options):
+        plugin = options.get("plugin", "")
+        return {"available": True, "plugin": plugin, "rows": canned.get(plugin, [])}
+
+    with patch.object(VolatilityAdapter, "is_available", return_value=True), \
+         patch.object(VolatilityAdapter, "analyze", new=fake_analyze):
+        model = asyncio.run(analyze_memory(img, cfg, reg, rm, cache))
+
+    persistence = cache.get_json(model.binary.sha256, "memory_persistence")
+    assert persistence is not None
+    assert persistence["files_inspected"] >= 3
+    cats = {f["category"] for f in persistence["findings"]}
+    assert "cron" in cats
+    assert "systemd_unit" in cats
+
+    summary = cache.get_json(model.binary.sha256, "memory_protection")
+    assert summary["persistence_finding_count"] >= 2

@@ -300,6 +300,35 @@ async def analyze_memory(
         skipped_phases.append("kernel:error")
 
     # -----------------------------------------------------------------------
+    # Phase 8.5: persistence enumeration via cached file paths
+    # -----------------------------------------------------------------------
+    persistence_findings: list = []
+    try:
+        if vol:
+            from chimera.parsers.volatility_files import parse_pagecache_files
+            from chimera.detection_engineering.memory_persistence import (
+                find_memory_persistence, summarize as summarize_persistence,
+            )
+            files_result = await _run_plugin(vol, image_path, "linux.pagecache.Files")
+            files_rows = files_result.get("rows") or []
+            cached_files = parse_pagecache_files(files_rows)
+            persistence_findings = find_memory_persistence(cached_files)
+            cache.put_json(sha, "memory_persistence", {
+                "files_inspected": len(cached_files),
+                "findings": [f.to_dict() for f in persistence_findings],
+                "summary": summarize_persistence(persistence_findings),
+            })
+            logger.info(
+                "memory persistence: %d findings across %d cached files",
+                len(persistence_findings), len(cached_files),
+            )
+        else:
+            skipped_phases.append("persistence:no_adapter")
+    except Exception as exc:
+        logger.warning("persistence phase failed: %s", exc)
+        skipped_phases.append("persistence:error")
+
+    # -----------------------------------------------------------------------
     # Phase 9: Memory protection summary
     # -----------------------------------------------------------------------
     try:
@@ -313,6 +342,7 @@ async def analyze_memory(
             "kernel_module_count": len(kernel_modules),
             "hidden_module_count": len(module_anomalies),
             "hooked_syscall_count": len(hooked_syscalls),
+            "persistence_finding_count": len(persistence_findings),
             "kernel_banner": kernel_banner,
         }
         cache.put_json(sha, "memory_protection", summary)
