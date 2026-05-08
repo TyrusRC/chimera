@@ -20,6 +20,7 @@ from chimera.adapters.registry import AdapterRegistry
 from chimera.adapters.semgrep import SemgrepAdapter
 from chimera.adapters.hermes_dec import HermesDecAdapter
 from chimera.adapters.swift_demangle import SwiftDemangleAdapter
+from chimera.adapters.volatility import VolatilityAdapter
 from chimera.adapters.webcrack import WebcrackAdapter
 from chimera.adapters.yara_adapter import YaraAdapter
 from chimera.core.cache import AnalysisCache
@@ -59,6 +60,7 @@ class ChimeraEngine:
         self.registry.register(CapaAdapter())
         self.registry.register(FlossAdapter())
         self.registry.register(IlspyAdapter())
+        self.registry.register(VolatilityAdapter())
 
     async def analyze(self, path: str | Path) -> UnifiedProgramModel:
         path = Path(path)
