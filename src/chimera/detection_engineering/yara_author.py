@@ -60,8 +60,11 @@ class YaraRuleDraft:
         if self.string_entries or self.import_entries:
             lines.append("    strings:")
             for sid, value, modifiers in self.string_entries:
-                mods = " " + " ".join(modifiers) if modifiers else ""
-                lines.append(f"        ${sid} = {_yara_quote(value)}{mods}")
+                quoted = _yara_quote(value)
+                # Only apply modifiers to quoted strings, not to hex literals
+                is_hex_literal = quoted.startswith("{")
+                mods = "" if is_hex_literal else (" " + " ".join(modifiers) if modifiers else "")
+                lines.append(f"        ${sid} = {quoted}{mods}")
             for sid, name in self.import_entries:
                 lines.append(f'        ${sid} = "{name}" ascii')
             lines.append("")
