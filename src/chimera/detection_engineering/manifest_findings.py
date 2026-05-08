@@ -17,6 +17,8 @@ _VECTOR_DEBUGGABLE = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"  # 7.1 High
 _VECTOR_BACKUP = "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"      # 5.5 Medium
 _VECTOR_CLEARTEXT = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"   # 4.7 Medium
 _VECTOR_EXPORTED = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L"    # 5.3 Medium
+_VECTOR_NSC_CLEARTEXT = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"   # 4.7 Medium
+_VECTOR_NSC_USER_CA = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"     # 5.9 Medium
 
 
 def build_findings_from_models(
@@ -120,6 +122,66 @@ def build_findings_from_models(
                     "Set android:exported=\"false\", or define and require an "
                     "android:permission with a signature-level protectionLevel."
                 ),
+            ))
+
+    if nsc is not None:
+        bc = nsc.base_config
+        if bc.cleartext_traffic_permitted is True:
+            findings.append(Finding(
+                finding_id="NSC-CLEARTEXT-PERMITTED",
+                title="network_security_config permits cleartext traffic",
+                severity="High",
+                cvss_vector=_VECTOR_NSC_CLEARTEXT,
+                cvss_base_score=7.4,
+                masvs_id="MASVS-NETWORK",
+                cwe_id="CWE-319",
+                description=(
+                    "<base-config cleartextTrafficPermitted=\"true\"> overrides the "
+                    "manifest's usesCleartextTraffic, allowing plaintext HTTP."
+                ),
+                evidence=[
+                    f"network_security_config.xml:{bc.line} base-config cleartextTrafficPermitted=\"true\""
+                ],
+                recommendation="Set cleartextTrafficPermitted=\"false\" in <base-config>.",
+            ))
+        for dc in nsc.domain_configs:
+            if dc.cleartext_traffic_permitted is True:
+                findings.append(Finding(
+                    finding_id="NSC-CLEARTEXT-PERMITTED",
+                    title="network_security_config permits cleartext traffic for domains",
+                    severity="High",
+                    cvss_vector=_VECTOR_NSC_CLEARTEXT,
+                    cvss_base_score=7.4,
+                    masvs_id="MASVS-NETWORK",
+                    cwe_id="CWE-319",
+                    description=(
+                        f"<domain-config cleartextTrafficPermitted=\"true\"> for "
+                        f"{', '.join(dc.domains)} allows plaintext HTTP."
+                    ),
+                    evidence=[
+                        f"network_security_config.xml:{dc.line} domain-config "
+                        f"{', '.join(dc.domains)}"
+                    ],
+                    recommendation="Remove cleartextTrafficPermitted=\"true\" from <domain-config>.",
+                ))
+
+        if "user" in bc.trust_anchors:
+            findings.append(Finding(
+                finding_id="NSC-USER-CA-TRUSTED",
+                title="User-installed CAs are trusted",
+                severity="High",
+                cvss_vector=_VECTOR_NSC_USER_CA,
+                cvss_base_score=5.9,
+                masvs_id="MASVS-NETWORK",
+                cwe_id="CWE-295",
+                description=(
+                    "<trust-anchors><certificates src=\"user\"/></trust-anchors> trusts "
+                    "any CA the user installs, enabling MITM via attacker-supplied CAs."
+                ),
+                evidence=[
+                    f"network_security_config.xml:{bc.line} trust-anchors src=\"user\""
+                ],
+                recommendation="Remove src=\"user\" from <trust-anchors> in production configs.",
             ))
 
     return findings

@@ -5,8 +5,10 @@ from chimera.detection_engineering.manifest_findings import (
     build_findings_from_models,
 )
 from chimera.parsers.android_manifest import parse_manifest
+from chimera.parsers.network_security_config import parse_nsc
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "manifests"
+NSC_FIXTURES = Path(__file__).parent.parent / "fixtures" / "nsc"
 
 
 def _ids(findings):
@@ -61,3 +63,28 @@ def test_exported_component_without_permission_emits_finding():
     titles = {f.title for f in matches}
     assert any(".Pub" in e for f in matches for e in f.evidence)
     assert any(".Svc" in e for f in matches for e in f.evidence)
+
+
+def test_nsc_cleartext_permitted_finding():
+    manifest = parse_manifest(FIXTURES / "clean.xml")
+    nsc = parse_nsc(NSC_FIXTURES / "cleartext_permitted.xml")
+    findings = build_findings_from_models(manifest, nsc=nsc)
+    ids = _ids(findings)
+    assert "NSC-CLEARTEXT-PERMITTED" in ids
+    f = next(f for f in findings if f.finding_id == "NSC-CLEARTEXT-PERMITTED")
+    assert any("network_security_config.xml:" in e for e in f.evidence)
+
+
+def test_nsc_user_ca_trusted_finding():
+    manifest = parse_manifest(FIXTURES / "clean.xml")
+    nsc = parse_nsc(NSC_FIXTURES / "user_ca_trusted.xml")
+    findings = build_findings_from_models(manifest, nsc=nsc)
+    assert "NSC-USER-CA-TRUSTED" in _ids(findings)
+
+
+def test_nsc_clean_emits_no_nsc_findings():
+    manifest = parse_manifest(FIXTURES / "clean.xml")
+    nsc = parse_nsc(NSC_FIXTURES / "clean.xml")
+    findings = build_findings_from_models(manifest, nsc=nsc)
+    nsc_ids = [i for i in _ids(findings) if i.startswith("NSC-")]
+    assert nsc_ids == []
