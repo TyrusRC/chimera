@@ -257,6 +257,7 @@ def test_report_includes_cross_layer_section():
         cache_dir = Path("/tmp/no-such-cache-dir")
         def get_json(self, *_a): return None
         def get(self, *_a): return None
+        def list_keys(self, *_a): return []
 
     rep = build_report(m, _Cache())
     assert "cross_layer" in rep

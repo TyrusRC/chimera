@@ -63,6 +63,10 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
                 "jvm": f.address, "native": None, "type": "unbound",
             })
 
+    # Collect ilspy_ keys for .NET assemblies
+    ilspy_keys = [k for k in cache.list_keys(sha) if k.startswith("ilspy_")]
+    ilspy_payloads = [cache.get_json(sha, k) for k in ilspy_keys if cache.get_json(sha, k)]
+
     return {
         "schema": "chimera-report/1",
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -110,6 +114,17 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
         "manifest_present": manifest_bytes is not None,
         "native_protections": native_protections,
         "cross_layer": {"bindings": cross_layer_bindings},
+        "pe_header": cache.get_json(sha, "pe_header") or {},
+        "pe_imports": cache.get_json(sha, "pe_imports") or {},
+        "pe_flags": cache.get_json(sha, "pe_flags") or {},
+        "elf_persistence": cache.get_json(sha, "elf_persistence") or [],
+        "elf_syscalls": cache.get_json(sha, "elf_syscalls") or {},
+        "dotnet_assemblies": ilspy_payloads,
+        "native_protection": cache.get_json(sha, "native_protection") or {},
+        "imports": [
+            {"dll": e.dll, "name": e.name, "address": e.address, "ordinal": e.ordinal, "bucket": e.bucket}
+            for e in model.imports
+        ][:500],
     }
 
 
@@ -228,6 +243,60 @@ def render_html(report: dict) -> str:
         for b in cl_bindings
     ) or "<tr><td colspan=3><em>none</em></td></tr>"
 
+    # PE imports buckets table
+    pe_imports = report.get("pe_imports") or {}
+    pe_imports_rows = "".join(
+        f"<tr><td>{html.escape(b)}</td>"
+        f"<td>{info.get('score', 0)}</td>"
+        f"<td>{info.get('weight', 0):.1f}</td>"
+        f"<td><code>{html.escape(', '.join(info.get('imports', [])[:8]))}</code></td></tr>"
+        for b, info in pe_imports.items()
+    ) or "<tr><td colspan=4><em>none</em></td></tr>"
+
+    # ELF persistence findings table
+    elf_persistence = report.get("elf_persistence") or []
+    persistence_rows = "".join(
+        f"<tr><td>{html.escape(r.get('category', ''))}</td>"
+        f"<td><code>{html.escape(r.get('path', ''))}</code></td>"
+        f"<td><code>{html.escape((r.get('evidence') or '')[:120])}</code></td>"
+        f"<td>{html.escape(r.get('string_address') or '—')}</td></tr>"
+        for r in elf_persistence
+    ) or "<tr><td colspan=4><em>none</em></td></tr>"
+
+    # .NET assemblies (one outer table per assembly, types listed)
+    dotnet_blob = report.get("dotnet_assemblies") or []
+    dotnet_html_parts: list[str] = []
+    for asm in dotnet_blob:
+        asm_name = asm.get("assembly", "?")
+        types = asm.get("types") or []
+        type_rows = "".join(
+            f"<tr><td>{html.escape(t.get('namespace', ''))}</td>"
+            f"<td>{html.escape(t.get('name', ''))}</td>"
+            f"<td>{t.get('size_bytes', 0):,}</td></tr>"
+            for t in types[:200]
+        ) or "<tr><td colspan=3><em>no types</em></td></tr>"
+        dotnet_html_parts.append(
+            f"<h3>{html.escape(asm_name)} — {len(types)} type(s)</h3>"
+            f"<table><tr><th>Namespace</th><th>Type</th><th>Size</th></tr>{type_rows}</table>"
+        )
+    dotnet_html = "\n".join(dotnet_html_parts) or '<p class="meta">No managed assemblies decompiled.</p>'
+
+    # Native protection summary (PE/ELF profile)
+    native_prot = report.get("native_protection") or {}
+    np_rows: list[str] = []
+    if native_prot.get("packer"):
+        np_rows.append(f"<tr><th>Packer</th><td><strong>{html.escape(native_prot['packer'])}</strong></td></tr>")
+    np_rows.append(f"<tr><th>Anti-debug</th><td>{'yes' if native_prot.get('has_anti_debug') else 'no'}</td></tr>")
+    np_rows.append(f"<tr><th>Anti-VM</th><td>{'yes' if native_prot.get('has_anti_vm') else 'no'}</td></tr>")
+    np_rows.append(f"<tr><th>Self-injection</th><td>{'yes' if native_prot.get('has_self_inject') else 'no'}</td></tr>")
+    np_rows.append(f"<tr><th>Persistence strings</th><td>{'yes' if native_prot.get('has_persistence_strings') else 'no'}</td></tr>")
+    np_rows.append(f"<tr><th>High-entropy sections</th><td>{native_prot.get('high_entropy_section_count', 0)}</td></tr>")
+    native_prot_html = (
+        f'<table class="kv">{"".join(np_rows)}</table>'
+        if any(native_prot.values()) else
+        '<p class="meta">No native-side protection signals detected.</p>'
+    )
+
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -283,6 +352,24 @@ table.kv th {{ width: 200px; }}
   <tr><th>JVM method</th><th>Native fn</th><th>Type</th></tr>
   {cl_rows}
 </table>
+
+<h2>PE imports</h2>
+<table>
+<tr><th>Bucket</th><th>Score</th><th>Weight</th><th>Sample imports</th></tr>
+{pe_imports_rows}
+</table>
+
+<h2>ELF persistence</h2>
+<table>
+<tr><th>Category</th><th>Path</th><th>Evidence</th><th>Address</th></tr>
+{persistence_rows}
+</table>
+
+<h2>.NET assemblies</h2>
+{dotnet_html}
+
+<h2>Native protection profile</h2>
+{native_prot_html}
 
 <h2>Model — {model['function_count']:,} functions / {model['string_count']:,} strings</h2>
 <h3>Functions (first 200)</h3>
