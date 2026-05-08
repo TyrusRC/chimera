@@ -25,3 +25,23 @@ non-runnable binaries; integration tests only verify pipeline plumbing,
 not behavioral correctness.
 
 Keep each fixture under 200 KB.
+
+## Memory image fixtures
+
+`memory/sample.lime` — synthetic LiME-format memory image (~4 KB).
+
+Built by `build_lime_fixture.py`. The file starts with a well-formed LiME
+header (magic `EMiL` / `0x4C694D45` little-endian, version 1, 4 KB address
+range) followed by 4096 zero bytes. It is parseable by Chimera's
+`_detect_format` / `detect_binary_format` functions and will be classified as
+`MEMORY_LIME` / `linux_memory`.
+
+Volatility plugins will not extract meaningful kernel data from it — the
+integration tests gate on classification and triage-cache writes, not on
+Volatility plugin output.
+
+### Rebuild
+
+```sh
+python tests/fixtures/build_lime_fixture.py
+```
