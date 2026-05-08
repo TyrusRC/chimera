@@ -63,3 +63,21 @@ def test_parses_kotlin_regular_fun():
     assert "staticHelper" in names
     greet = _by_name(methods, "greet")[0]
     assert greet.is_native is False
+
+
+def test_find_callsites_attributes_to_enclosing_method(tmp_path):
+    from chimera.parsers.jvm_methods import find_callsites
+    src = tmp_path / "X.java"
+    src.write_text(
+        "package p;\n"
+        "public class X {\n"
+        "  public native int doit(int a);\n"
+        "  public int caller() { return doit(1); }\n"
+        "  public int other() { return 0; }\n"
+        "}\n"
+    )
+    methods = parse_java_file(src, "p")
+    sites = find_callsites(methods, native_method_names={"doit"})
+    callers = [s for s in sites if s.callee_name == "doit"]
+    assert len(callers) == 1
+    assert callers[0].caller.name == "caller"

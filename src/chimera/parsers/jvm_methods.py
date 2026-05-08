@@ -179,3 +179,70 @@ def parse_jvm_methods(sources_dir: Path, *, max_methods: int = 50000) -> list[Jv
     if len(out) > max_methods:
         out = out[:max_methods]
     return out
+
+
+@dataclass
+class Callsite:
+    caller: JvmMethod
+    callee_name: str
+    line: int
+
+
+def _index_method_starts(text: str, methods: list[JvmMethod]) -> list[tuple[int, JvmMethod]]:
+    """Return [(start_offset_in_text, method), ...] sorted by offset.
+
+    Used to attribute a callsite line to the closest preceding method
+    declaration in the same file.
+    """
+    out: list[tuple[int, JvmMethod]] = []
+    pos = 0
+    for m in methods:
+        idx = text.find(f" {m.name}(", pos)
+        if idx == -1:
+            idx = text.find(f"\t{m.name}(", pos)
+        if idx == -1:
+            idx = text.find(f"{m.name}(", pos)
+        if idx == -1:
+            continue
+        out.append((idx, m))
+        pos = idx + 1
+    out.sort()
+    return out
+
+
+def find_callsites(
+    methods: list[JvmMethod],
+    native_method_names: set[str],
+) -> list[Callsite]:
+    """Find calls to any name in `native_method_names` and attribute
+    each to its enclosing method (the closest method whose start offset
+    precedes the call).
+
+    File-grouping: methods from the same file share one re-read. This
+    is O(files × native_names); native_names is small in practice.
+    """
+    if not native_method_names:
+        return []
+    by_file: dict[str, list[JvmMethod]] = {}
+    for m in methods:
+        by_file.setdefault(m.file, []).append(m)
+    out: list[Callsite] = []
+    for file, ms in by_file.items():
+        try:
+            text = Path(file).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        starts = _index_method_starts(text, ms)
+        for callee in native_method_names:
+            for hit in re.finditer(rf"\b{re.escape(callee)}\s*\(", text):
+                line = text.count("\n", 0, hit.start()) + 1
+                # find enclosing method: largest start <= hit.start()
+                enclosing: JvmMethod | None = None
+                for off, mm in starts:
+                    if off > hit.start():
+                        break
+                    enclosing = mm
+                if enclosing is None or enclosing.name == callee:
+                    continue
+                out.append(Callsite(caller=enclosing, callee_name=callee, line=line))
+    return out
