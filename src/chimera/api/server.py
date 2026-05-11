@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from chimera import __version__
 from chimera.api.routes import system, projects, functions, strings, callgraph, devices, frida
-from chimera.api.websocket import analysis as ws_analysis
+from chimera.api.websocket import analysis as ws_analysis, frida as ws_frida
 
 
 def create_app() -> FastAPI:
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(devices.router)
     app.include_router(frida.router)
     app.include_router(ws_analysis.router)
+    app.include_router(ws_frida.router)
 
     # Serve React static build if it exists
     static_dir = Path(__file__).parent.parent.parent.parent / "web" / "dist"
