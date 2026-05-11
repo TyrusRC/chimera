@@ -7,6 +7,7 @@ real frida binding installed.
 from __future__ import annotations
 
 import asyncio
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -123,8 +124,8 @@ async def test_load_script_runs_source(mgr):
     rec = mgr.get(sid)
     # The REPL bootstrap (loaded by create_session) is script #1; the user-loaded
     # script is #2. Both must be marked loaded.
-    assert len(rec._session.created_scripts) == 2
-    assert all(s.loaded for s in rec._session.created_scripts)
+    assert len(rec._scripts) == 2
+    assert all(s.loaded for s in rec._scripts)
 
 
 @pytest.mark.asyncio
@@ -141,7 +142,7 @@ async def test_load_bundled_script_by_id(mgr):
     await mgr.load_bundled_script(sid, target_id)
     rec = mgr.get(sid)
     # The REPL is script #1; bundled script is #2.
-    assert len(rec._session.created_scripts) == 2
+    assert len(rec._scripts) == 2
 
 
 @pytest.mark.asyncio
@@ -157,7 +158,8 @@ async def test_close_session_detaches_and_unloads(mgr):
     rec = mgr.get(sid)
     await mgr.close_session(sid)
     assert rec._session.detached is True
-    assert all(s.unloaded for s in rec._session.created_scripts)
+    assert all(s.unloaded for s in rec._scripts)
+    assert len(rec._scripts) >= 1  # at least the REPL bootstrap
     assert sid not in mgr.list_session_ids()
 
 
@@ -177,3 +179,18 @@ def test_singleton_returns_same_instance():
     a = get_session_manager()
     b = get_session_manager()
     assert a is b
+
+
+@pytest.mark.asyncio
+async def test_enqueue_from_other_thread_reaches_queue(mgr):
+    sid = await mgr.create_session(device_id=None, target="com.example.app", mode="attach")
+    rec = mgr.get(sid)
+
+    def push_from_thread():
+        mgr._enqueue(rec, {"type": "send", "payload": "from-other-thread"})
+
+    t = threading.Thread(target=push_from_thread)
+    t.start()
+    t.join()
+    msg = await asyncio.wait_for(rec._queue.get(), timeout=1.0)
+    assert msg["payload"] == "from-other-thread"

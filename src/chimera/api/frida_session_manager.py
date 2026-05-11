@@ -26,6 +26,8 @@ class FridaSessionRecord:
     _session: Any = None         # frida.core.Session
     _repl_script: Any = None     # the bootstrap script (rpc.exports.eval)
     _queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    _loop: Any = None  # asyncio loop captured at create_session time
+    _scripts: list = field(default_factory=list)
 
 
 class FridaSessionManager:
@@ -76,6 +78,7 @@ class FridaSessionManager:
                 session = device.attach(target)
 
             sid = uuid.uuid4().hex
+            loop = asyncio.get_running_loop()
             rec = FridaSessionRecord(
                 id=sid,
                 device_id=device_id,
@@ -84,6 +87,7 @@ class FridaSessionManager:
                 pid=pid,
                 _device=device,
                 _session=session,
+                _loop=loop,
             )
             # Bootstrap REPL script
             repl_source = _REPL_PATH.read_text(encoding="utf-8")
@@ -91,6 +95,7 @@ class FridaSessionManager:
             repl_script.on("message", lambda message, data: self._enqueue(rec, message))
             repl_script.load()
             rec._repl_script = repl_script
+            rec._scripts.append(repl_script)
 
             if mode == "spawn" and pid is not None:
                 device.resume(pid)
@@ -113,6 +118,7 @@ class FridaSessionManager:
         script = rec._session.create_script(source)
         script.on("message", lambda message, data: self._enqueue(rec, message))
         script.load()
+        rec._scripts.append(script)
 
     async def load_bundled_script(self, session_id: str, script_id: str) -> None:
         from chimera.frida_scripts import read_source
@@ -126,7 +132,7 @@ class FridaSessionManager:
         if rec is None:
             return
         # Unload all scripts the session created (best-effort)
-        for script in getattr(rec._session, "created_scripts", []):
+        for script in rec._scripts:
             try:
                 script.unload()
             except Exception as e:  # pragma: no cover — frida raises various
@@ -140,12 +146,20 @@ class FridaSessionManager:
 
     def _enqueue(self, rec: FridaSessionRecord, message: dict) -> None:
         """Frida fires message callbacks on its own thread; bridge to the
-        asyncio queue using put_nowait. If the queue is full or closed, drop.
+        asyncio queue via call_soon_threadsafe so we don't race the event loop.
         """
+        loop = rec._loop
+        if loop is None:
+            # No loop captured (test path that didn't go through create_session)
+            try:
+                rec._queue.put_nowait(message)
+            except Exception as e:  # pragma: no cover
+                logger.debug("queue push failed for %s: %s", rec.id, e)
+            return
         try:
-            rec._queue.put_nowait(message)
-        except Exception as e:  # pragma: no cover
-            logger.debug("queue push failed for %s: %s", rec.id, e)
+            loop.call_soon_threadsafe(rec._queue.put_nowait, message)
+        except RuntimeError as e:  # loop closed
+            logger.debug("loop closed for %s: %s", rec.id, e)
 
 
 _INSTANCE: Optional[FridaSessionManager] = None
