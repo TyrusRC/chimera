@@ -74,6 +74,9 @@ async def exec_in_session(session_id: str, body: ExecBody):
         result = await mgr.eval_code(session_id, body.code)
     except KeyError:
         raise HTTPException(status_code=404, detail="session not found")
+    except Exception as e:
+        logger.warning("frida exec failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
     return {"result": result}
 
 
@@ -91,6 +94,9 @@ async def load_in_session(session_id: str, body: LoadBody):
             await mgr.load_script(session_id, body.source or "")
     except KeyError:
         raise HTTPException(status_code=404, detail="unknown script_id")
+    except Exception as e:
+        logger.warning("frida load failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
     return {"ok": True}
 
 

@@ -178,3 +178,33 @@ def test_close_session(client):
     # subsequent exec should 404
     r = client.post(f"/api/frida/sessions/{sid}/exec", json={"code": "1"})
     assert r.status_code == 404
+
+
+def test_exec_502_on_underlying_error(client, monkeypatch):
+    sid = client.post("/api/frida/sessions", json={
+        "target": "com.example.app", "mode": "attach",
+    }).json()["session_id"]
+    mgr = get_session_manager()
+
+    async def boom(sid, code):
+        raise RuntimeError("frida-server gone")
+
+    monkeypatch.setattr(mgr, "eval_code", boom)
+    r = client.post(f"/api/frida/sessions/{sid}/exec", json={"code": "1"})
+    assert r.status_code == 502
+    assert "frida-server gone" in r.json()["detail"]
+
+
+def test_load_502_on_underlying_error(client, monkeypatch):
+    sid = client.post("/api/frida/sessions", json={
+        "target": "com.example.app", "mode": "attach",
+    }).json()["session_id"]
+    mgr = get_session_manager()
+
+    async def boom(sid, src):
+        raise RuntimeError("script parse failed")
+
+    monkeypatch.setattr(mgr, "load_script", boom)
+    r = client.post(f"/api/frida/sessions/{sid}/load", json={"source": "garbage"})
+    assert r.status_code == 502
+    assert "script parse failed" in r.json()["detail"]
