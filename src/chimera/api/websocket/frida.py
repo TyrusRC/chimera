@@ -28,6 +28,7 @@ async def frida_ws(websocket: WebSocket, session_id: str):
             try:
                 await websocket.send_json(msg)
             except Exception:
+                logger.debug("drain ended for session %s", session_id, exc_info=True)
                 return
 
     drain_task = asyncio.create_task(drain())
