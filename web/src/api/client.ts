@@ -115,6 +115,24 @@ export interface BackendEntry {
   formats: string[]
 }
 
+export interface FridaScriptMeta {
+  id: string
+  name: string
+  description: string
+  platform: string
+  requires: string[]
+  risk: string
+  file: string
+}
+
+export interface FridaSessionInfo {
+  id: string
+  device_id: string | null
+  target: string
+  mode: string
+  pid: number | null
+}
+
 // ---------- API methods ----------
 
 export const api = {
@@ -167,6 +185,31 @@ export const api = {
 
   // Devices
   listDevices: () => request<DeviceEntry[]>('/devices'),
+  listPackages: (deviceId: string) =>
+    request<{ packages: string[] }>(`/devices/${deviceId}/packages`),
+
+  // Frida
+  listFridaScripts: () =>
+    request<{ scripts: FridaScriptMeta[] }>('/frida/scripts'),
+  listFridaSessions: () =>
+    request<{ sessions: FridaSessionInfo[] }>('/frida/sessions'),
+  createFridaSession: (body: { device_id?: string; target: string; mode: 'attach' | 'spawn' }) =>
+    request<{ session_id: string }>('/frida/sessions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  execFrida: (sessionId: string, code: string) =>
+    request<{ result: string }>(`/frida/sessions/${sessionId}/exec`, {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  loadFridaScript: (sessionId: string, body: { script_id?: string; source?: string }) =>
+    request<{ ok: boolean }>(`/frida/sessions/${sessionId}/load`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  closeFridaSession: (sessionId: string) =>
+    request<{ ok: boolean }>(`/frida/sessions/${sessionId}`, { method: 'DELETE' }),
 
   // Export
   exportReport: (projectId: string, format: string) =>
