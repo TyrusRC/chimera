@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from chimera import __version__
-from chimera.api.routes import system, projects, functions, strings, callgraph, devices
+from chimera.api.routes import system, projects, functions, strings, callgraph, devices, frida
 from chimera.api.websocket import analysis as ws_analysis
 
 
@@ -44,6 +44,7 @@ def create_app() -> FastAPI:
     app.include_router(strings.router)
     app.include_router(callgraph.router)
     app.include_router(devices.router)
+    app.include_router(frida.router)
     app.include_router(ws_analysis.router)
 
     # Serve React static build if it exists
