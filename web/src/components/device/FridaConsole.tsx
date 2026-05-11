@@ -29,6 +29,14 @@ export function FridaConsole({ deviceId, platform }: Props) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [lines])
 
+  // Close WS on unmount so Frida sessions don't leak
+  useEffect(() => {
+    return () => {
+      ws.current?.close()
+      ws.current = null
+    }
+  }, [])
+
   // Load bundled scripts once
   useEffect(() => {
     api.listFridaScripts()
@@ -92,7 +100,11 @@ export function FridaConsole({ deviceId, platform }: Props) {
         // ignore non-json frames (e.g. pong)
       }
     }
-    socket.onclose = () => log({ kind: 'sys', text: '// ws closed' })
+    socket.onclose = () => {
+      log({ kind: 'sys', text: '// ws closed' })
+      setSessionId(null)
+      ws.current = null
+    }
     socket.onerror = () => log({ kind: 'error', text: '// ws error' })
     ws.current = socket
   }
