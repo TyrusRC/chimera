@@ -416,18 +416,24 @@ async def analyze_apk(
                 from chimera.parsers.jni_register_natives import (
                     find_register_natives_calls,
                 )
-                dynamic_total = 0
+                dynamic_unresolved = 0
                 for key in lib_keys:
                     blob = cache.get_json(binary.sha256, key) or {}
                     pfd = blob.get("per_function_disasm") or {}
                     calls = find_register_natives_calls(pfd)
-                    # Without symbolic class context (only available from
-                    # JNI_OnLoad's first arg), we cannot reliably recover
-                    # the FQCN. Skip dynamic recovery unless a class
-                    # heuristic is added; record `unresolved` instead.
                     if calls:
                         jni_result.unresolved += len(calls)
-                jni_result.dynamic_edges = dynamic_total
+                        dynamic_unresolved += len(calls)
+                # No FQCN heuristic yet, so dynamic_edges stays 0 — every site
+                # counts as unresolved. Surface the count so the missing feature
+                # is visible in logs.
+                jni_result.dynamic_edges = 0
+                if dynamic_unresolved:
+                    logger.info(
+                        "dynamic JNI: %d RegisterNatives callsites detected, "
+                        "all unresolved (FQCN recovery not implemented)",
+                        dynamic_unresolved,
+                    )
             except Exception as exc:
                 logger.warning("dynamic JNI linker failed: %s", exc)
     except Exception as exc:
