@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from chimera.core.cache import AnalysisCache
+from chimera.detection_engineering.masvs import build_masvs_matrix
 from chimera.model.program import UnifiedProgramModel
 
 
@@ -200,6 +201,7 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
         "native_protection": native_protection,
         "behavior": _behavior_section(sha, cache, native_protection, protection_profile),
         "attack_surface": _attack_surface_section(model, sha, cache),
+        "masvs": build_masvs_matrix(model, cache),
         "imports": [
             {"dll": e.dll, "name": e.name, "address": e.address, "ordinal": e.ordinal, "bucket": e.bucket}
             for e in model.imports
