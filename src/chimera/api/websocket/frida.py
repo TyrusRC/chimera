@@ -41,3 +41,4 @@ async def frida_ws(websocket: WebSocket, session_id: str):
         pass
     finally:
         drain_task.cancel()
+        mgr.unsubscribe(session_id, queue)

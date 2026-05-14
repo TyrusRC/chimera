@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 # rpc.exports.eval(code).
 _REPL_PATH = Path(__file__).parent.parent / "frida_scripts" / "_repl.js"
 
+# Per-subscriber queue cap. When a subscriber falls behind, oldest message is
+# dropped. Prevents unbounded growth from a slow or disappeared WS client.
+_QUEUE_MAXSIZE = 1024
+
 
 @dataclass
 class FridaSessionRecord:
@@ -25,7 +29,7 @@ class FridaSessionRecord:
     _device: Any = None          # frida.core.Device
     _session: Any = None         # frida.core.Session
     _repl_script: Any = None     # the bootstrap script (rpc.exports.eval)
-    _queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    _subscribers: list = field(default_factory=list)  # list[asyncio.Queue]
     _loop: Any = None  # asyncio loop captured at create_session time
     _scripts: list = field(default_factory=list)
 
@@ -54,15 +58,34 @@ class FridaSessionManager:
         return self._sessions.get(session_id)
 
     def subscribe(self, session_id: str) -> asyncio.Queue:
-        """Return the live message queue for a session.
+        """Register a new subscriber and return its dedicated bounded queue.
 
-        Subscribers consume by `await queue.get()`. The queue is shared by all
-        WS subscribers for this session; if you need fanout, drain into a copy.
+        Each call returns a fresh per-subscriber queue. Frida messages are
+        fanned out to every subscribed queue, so a second WS client does not
+        steal messages from the first. The queue is bounded; if a subscriber
+        falls behind, the oldest message is dropped to make room.
         """
         rec = self._sessions.get(session_id)
         if rec is None:
             raise KeyError(session_id)
-        return rec._queue
+        q: asyncio.Queue = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
+        rec._subscribers.append(q)
+        return q
+
+    def unsubscribe(self, session_id: str, queue: asyncio.Queue) -> None:
+        """Remove a previously-subscribed queue from the fanout list.
+
+        Safe to call with an unknown session_id or a queue that is not (or no
+        longer) registered. Once unsubscribed, no further messages are
+        delivered to ``queue``.
+        """
+        rec = self._sessions.get(session_id)
+        if rec is None:
+            return
+        try:
+            rec._subscribers.remove(queue)
+        except ValueError:
+            pass
 
     async def create_session(self, device_id: Optional[str], target: str, mode: str) -> str:
         if mode not in ("attach", "spawn"):
@@ -158,21 +181,36 @@ class FridaSessionManager:
     # -- internals -------------------------------------------------------
 
     def _enqueue(self, rec: FridaSessionRecord, message: dict) -> None:
-        """Frida fires message callbacks on its own thread; bridge to the
-        asyncio queue via call_soon_threadsafe so we don't race the event loop.
+        """Fan out a Frida message to every subscriber.
+
+        Frida fires message callbacks on its own thread, so we bridge to the
+        asyncio loop via call_soon_threadsafe. Each subscriber has a bounded
+        queue; on overflow we drop the oldest message rather than block or
+        grow without bound. With zero subscribers this is effectively a no-op.
         """
         loop = rec._loop
-        if loop is None:
-            # No loop captured (test path that didn't go through create_session)
+
+        def _deliver(sub: asyncio.Queue, msg: dict) -> None:
+            if sub.full():
+                try:
+                    sub.get_nowait()  # drop oldest
+                except asyncio.QueueEmpty:
+                    pass
             try:
-                rec._queue.put_nowait(message)
-            except Exception as e:  # pragma: no cover
-                logger.debug("queue push failed for %s: %s", rec.id, e)
-            return
-        try:
-            loop.call_soon_threadsafe(rec._queue.put_nowait, message)
-        except RuntimeError as e:  # loop closed
-            logger.debug("loop closed for %s: %s", rec.id, e)
+                sub.put_nowait(msg)
+            except Exception as e:  # pragma: no cover — defensive
+                logger.debug("subscriber put failed for %s: %s", rec.id, e)
+
+        # Snapshot — list may mutate concurrently as subscribers come and go.
+        for sub in list(rec._subscribers):
+            if loop is None:
+                # No loop captured (test path that didn't go through create_session)
+                _deliver(sub, message)
+            else:
+                try:
+                    loop.call_soon_threadsafe(_deliver, sub, message)
+                except RuntimeError as e:  # loop closed
+                    logger.debug("loop closed for %s: %s", rec.id, e)
 
 
 _INSTANCE: Optional[FridaSessionManager] = None

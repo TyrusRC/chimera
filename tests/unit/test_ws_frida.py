@@ -62,9 +62,15 @@ def test_ws_streams_messages_after_eval(client):
         "target": "com.example.app", "mode": "attach",
     }).json()["session_id"]
     mgr = get_session_manager()
-    # Push a message into the queue as if it came from frida
-    mgr.get(sid)._queue.put_nowait({"type": "send", "payload": "hello"})
     with client.websocket_connect(f"/ws/frida/{sid}") as ws:
+        # The WS is already connected and therefore subscribed. Push a message
+        # directly into the per-subscriber queue created by that subscribe()
+        # call (TestClient runs each request in its own ephemeral loop, so the
+        # _enqueue path can't bridge here — but the queue itself lives on the
+        # WS endpoint's loop and is awaited by its drain task).
+        rec = mgr.get(sid)
+        assert rec._subscribers, "WS should have registered a subscriber"
+        rec._subscribers[0].put_nowait({"type": "send", "payload": "hello"})
         msg = ws.receive_json()
         assert msg == {"type": "send", "payload": "hello"}
 

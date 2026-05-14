@@ -185,6 +185,7 @@ def test_singleton_returns_same_instance():
 async def test_enqueue_from_other_thread_reaches_queue(mgr):
     sid = await mgr.create_session(device_id=None, target="com.example.app", mode="attach")
     rec = mgr.get(sid)
+    queue = mgr.subscribe(sid)
 
     def push_from_thread():
         mgr._enqueue(rec, {"type": "send", "payload": "from-other-thread"})
@@ -192,7 +193,7 @@ async def test_enqueue_from_other_thread_reaches_queue(mgr):
     t = threading.Thread(target=push_from_thread)
     t.start()
     t.join()
-    msg = await asyncio.wait_for(rec._queue.get(), timeout=1.0)
+    msg = await asyncio.wait_for(queue.get(), timeout=1.0)
     assert msg["payload"] == "from-other-thread"
 
 
@@ -223,3 +224,41 @@ async def test_eval_does_not_block_event_loop(mgr, monkeypatch):
     assert marker_task in done
     assert marker_task.result() == "fast-path-ran"
     await eval_task  # drain
+
+
+@pytest.mark.asyncio
+async def test_subscribe_fanout_two_subscribers_both_see_messages(mgr):
+    sid = await mgr.create_session(device_id=None, target="com.example.app", mode="attach")
+    rec = mgr.get(sid)
+    q1 = mgr.subscribe(sid)
+    q2 = mgr.subscribe(sid)
+    mgr._enqueue(rec, {"type": "send", "payload": "hello"})
+    m1 = await asyncio.wait_for(q1.get(), timeout=1.0)
+    m2 = await asyncio.wait_for(q2.get(), timeout=1.0)
+    assert m1["payload"] == "hello"
+    assert m2["payload"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_removes_queue_from_fanout(mgr):
+    sid = await mgr.create_session(device_id=None, target="com.example.app", mode="attach")
+    rec = mgr.get(sid)
+    q1 = mgr.subscribe(sid)
+    q2 = mgr.subscribe(sid)
+    mgr.unsubscribe(sid, q2)
+    mgr._enqueue(rec, {"type": "send", "payload": "after"})
+    m1 = await asyncio.wait_for(q1.get(), timeout=1.0)
+    assert m1["payload"] == "after"
+    assert q2.qsize() == 0  # q2 was unsubscribed before _enqueue
+
+
+@pytest.mark.asyncio
+async def test_enqueue_with_no_subscribers_does_not_grow_unbounded(mgr):
+    """When no subscriber is attached, _enqueue must be a no-op (or bounded)."""
+    sid = await mgr.create_session(device_id=None, target="com.example.app", mode="attach")
+    rec = mgr.get(sid)
+    for _ in range(5000):
+        mgr._enqueue(rec, {"type": "send", "payload": "drop"})
+    # No subscribers, so no queue should be growing. The record itself shouldn't
+    # hold an unbounded buffer either.
+    assert getattr(rec, "_subscribers", []) == []
