@@ -11,6 +11,8 @@ interface LogLine {
   text: string
 }
 
+const MAX_LINES = 10_000
+
 export function FridaConsole({ deviceId, platform }: Props) {
   const [packages, setPackages] = useState<string[]>([])
   const [scripts, setScripts] = useState<FridaScriptMeta[]>([])
@@ -21,15 +23,17 @@ export function FridaConsole({ deviceId, platform }: Props) {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
   const ws = useRef<WebSocket | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  // Auto-scroll on new lines
+  // Auto-scroll on new lines (gated by toggle)
   useEffect(() => {
+    if (!autoScroll) return
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
-  }, [lines])
+  }, [lines, autoScroll])
 
   // On unmount: close WS and tell backend to release the Frida session.
   useEffect(() => {
@@ -70,7 +74,27 @@ export function FridaConsole({ deviceId, platform }: Props) {
   }, [deviceId])
 
   function log(line: LogLine) {
-    setLines((prev) => [...prev, line])
+    setLines((prev) => {
+      if (prev.length < MAX_LINES) return [...prev, line]
+      // Drop oldest to keep the buffer bounded.
+      return [...prev.slice(prev.length - MAX_LINES + 1), line]
+    })
+  }
+
+  function clearBuffer() {
+    setLines([{ kind: 'sys', text: '// buffer cleared' }])
+  }
+
+  function saveSession() {
+    const sid = sessionIdRef.current || 'unknown'
+    const text = lines.map((l) => JSON.stringify(l)).join('\n')
+    const blob = new Blob([text], { type: 'application/x-ndjson' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `frida-session-${sid}-${Date.now()}.jsonl`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function connect() {
@@ -228,6 +252,30 @@ export function FridaConsole({ deviceId, platform }: Props) {
           </>
         )}
         {error && <span className="text-chimera-critical">{error}</span>}
+        <div className="ml-auto flex items-center gap-2 text-[10px] text-chimera-muted">
+          <label className="flex items-center gap-1 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(e) => setAutoScroll(e.target.checked)}
+            />
+            auto-scroll
+          </label>
+          <span>{lines.length}/{MAX_LINES}</span>
+          <button
+            onClick={saveSession}
+            className="px-2 py-0.5 border border-chimera-border rounded hover:text-chimera-text"
+            title="Download buffer as .jsonl"
+          >
+            Save
+          </button>
+          <button
+            onClick={clearBuffer}
+            className="px-2 py-0.5 border border-chimera-border rounded hover:text-chimera-text"
+          >
+            Clear
+          </button>
+        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto bg-chimera-bg p-2 font-mono text-xs">
