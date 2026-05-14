@@ -74,8 +74,18 @@ class ChimeraEngine:
                 path, self.config, self.registry, self.resource_mgr, self.cache,
             )
         elif platform == "ios":
-            from chimera.pipelines.ios import analyze_ipa
-            return await analyze_ipa(
+            # Bare Mach-O / FAT / DYLIB inputs must NOT go through analyze_ipa
+            # — that pipeline expects a zip archive and crashes on raw
+            # binaries. Branch on BinaryInfo.format to pick the right route.
+            from chimera.model.binary import BinaryFormat, BinaryInfo
+            fmt = BinaryInfo.from_path(path).format
+            if fmt == BinaryFormat.IPA:
+                from chimera.pipelines.ios import analyze_ipa
+                return await analyze_ipa(
+                    path, self.config, self.registry, self.resource_mgr, self.cache,
+                )
+            from chimera.pipelines.macho import analyze_macho
+            return await analyze_macho(
                 path, self.config, self.registry, self.resource_mgr, self.cache,
             )
         elif platform == "windows":
