@@ -62,6 +62,32 @@ def _behavior_section(sha: str, cache, native_protection: dict, protection_profi
     }
 
 
+def _attack_surface_section(model: UnifiedProgramModel, sha: str, cache) -> dict:
+    """Format-appropriate entry points an attacker could reach."""
+    out: dict = {"format": model.binary.format.value}
+
+    if model.imports:
+        by_bucket: dict[str, list[str]] = {}
+        for imp in model.imports:
+            key = f"{imp.dll}!{imp.name}" if imp.dll else (imp.name or "?")
+            by_bucket.setdefault(imp.bucket or "other", []).append(key)
+        out["imports_by_bucket"] = {k: sorted(set(v))[:200] for k, v in by_bucket.items()}
+
+    components = cache.get_json(sha, "manifest_components") or []
+    if components:
+        out["exported_components"] = [
+            {"kind": c.get("kind"), "name": c.get("name"), "has_intent_filter": c.get("has_intent_filter", False)}
+            for c in components
+            if c.get("exported")
+        ]
+
+    url_schemes = cache.get_json(sha, "url_schemes") or []
+    if url_schemes:
+        out["url_schemes"] = list(url_schemes)[:100]
+
+    return out
+
+
 def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
     """Aggregate model + cache state into one analyst-ready report payload."""
     sha = model.binary.sha256
@@ -173,6 +199,7 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
         "dotnet_assemblies": ilspy_payloads,
         "native_protection": native_protection,
         "behavior": _behavior_section(sha, cache, native_protection, protection_profile),
+        "attack_surface": _attack_surface_section(model, sha, cache),
         "imports": [
             {"dll": e.dll, "name": e.name, "address": e.address, "ordinal": e.ordinal, "bucket": e.bucket}
             for e in model.imports
