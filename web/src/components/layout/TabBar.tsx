@@ -20,6 +20,7 @@ const TABS: TabDef[] = [
   { id: 'findings', label: 'Findings' },
   { id: 'callgraph', label: 'Call Graph' },
   { id: 'disassembly', label: 'Disassembly' },
+  { id: 'hex', label: 'Hex' },
   { id: 'protection', label: 'Protection Report', requires: 'masvs' },
   { id: 'devices', label: 'Devices', requires: 'frida' },
   { id: 'network', label: 'Network', requires: 'network_security_config' },

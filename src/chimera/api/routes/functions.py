@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import mmap
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
@@ -99,3 +101,35 @@ async def get_disassembly(project_id: str, address: str) -> dict:
     # If the model stores disassembly per-function, use it
     instructions = getattr(func, "disassembly", None) or []
     return {"address": address, "name": func.name, "instructions": instructions}
+
+
+@router.get("/bytes")
+async def get_bytes(
+    project_id: str,
+    offset: int = Query(0, ge=0),
+    length: int = Query(256, ge=1, le=65536),
+) -> dict:
+    """Return a byte slice as a hex string.
+
+    Uses mmap so multi-MB binaries don't load fully into RAM. Clamps the
+    requested range to the file's actual size.
+    """
+    from chimera.api.routes.projects import _store
+    project = await _store.get(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    path = Path(project.get("path", ""))
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Binary file missing")
+    size = path.stat().st_size
+    if size == 0 or offset >= size:
+        return {"offset": offset, "length": 0, "hex": "", "total_size": size}
+    end = min(offset + length, size)
+    with open(path, "rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+        chunk = bytes(mm[offset:end])
+    return {
+        "offset": offset,
+        "length": len(chunk),
+        "hex": chunk.hex(),
+        "total_size": size,
+    }

@@ -184,6 +184,13 @@ export const api = {
       { signal },
     ),
 
+  // Raw bytes (hex view)
+  getBytes: (projectId: string, offset: number, length: number, signal?: AbortSignal) =>
+    request<{ offset: number; length: number; hex: string; total_size: number }>(
+      `/projects/${projectId}/bytes?offset=${offset}&length=${length}`,
+      { signal },
+    ),
+
   // Strings
   listStrings: (projectId: string, params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''

@@ -7,6 +7,7 @@ import { CodeView } from '../CodeView'
 import { FindingsPanel } from '../FindingsPanel'
 import { CallGraph } from '../CallGraph'
 import { DisassemblyView } from '../DisassemblyView'
+import { HexView } from '../HexView'
 import { XrefsPanel } from '../XrefsPanel'
 import { ProtectionReport } from '../ProtectionReport'
 import { DevicePanel } from '../device/DevicePanel'
@@ -79,6 +80,9 @@ export function MainLayout({ projectId }: Props) {
               {activeTab === 'disassembly' && (
                 <DisassemblyView projectId={projectId} address={selectedFunction} />
               )}
+              {activeTab === 'hex' && (
+                <HexView projectId={projectId} />
+              )}
               {activeTab === 'protection' && (
                 <ProtectionReport projectId={projectId} />
               )}
@@ -91,7 +95,7 @@ export function MainLayout({ projectId }: Props) {
             </div>
 
             {/* Right panel — cross-references */}
-            {selectedFunction && activeTab !== 'findings' && activeTab !== 'protection' && activeTab !== 'devices' && activeTab !== 'network' && (
+            {selectedFunction && activeTab !== 'findings' && activeTab !== 'protection' && activeTab !== 'devices' && activeTab !== 'network' && activeTab !== 'hex' && (
               <>
                 <div className="w-px bg-chimera-border" />
                 <div className="w-56 flex flex-col overflow-hidden bg-chimera-surface border-l border-chimera-border">

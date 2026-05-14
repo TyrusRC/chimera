@@ -1,76 +1,111 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { api } from '../api/client'
 
 interface Props {
-  data?: Uint8Array
+  projectId: string
 }
 
-export function HexView({ data }: Props) {
+const PAGE_SIZE = 4096 // bytes per page (256 rows × 16 bytes)
+const ROW_WIDTH = 16
+
+export function HexView({ projectId }: Props) {
   const [offset, setOffset] = useState(0)
-  const PAGE = 256 // rows × 16 bytes
+  const [hex, setHex] = useState<string>('')
+  const [totalSize, setTotalSize] = useState<number>(0)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  if (!data || data.length === 0) {
-    return (
-      <div className="p-4 text-chimera-muted text-xs">
-        No binary data loaded
-      </div>
-    )
-  }
+  useEffect(() => {
+    const ac = new AbortController()
+    setLoading(true)
+    setError(null)
+    api.getBytes(projectId, offset, PAGE_SIZE, ac.signal)
+      .then((r) => {
+        if (ac.signal.aborted) return
+        setHex(r.hex)
+        setTotalSize(r.total_size)
+      })
+      .catch((e) => {
+        if (ac.signal.aborted) return
+        setError(e?.message || 'Failed to load bytes')
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setLoading(false)
+      })
+    return () => ac.abort()
+  }, [projectId, offset])
 
-  const start = offset * 16
-  const end = Math.min(start + PAGE * 16, data.length)
+  // Convert hex string ("0a1b2c…") into Uint8Array for rendering.
+  const bytes = hexToBytes(hex)
+
   const rows: string[] = []
-
-  for (let i = start; i < end; i += 16) {
-    const addr = i.toString(16).padStart(8, '0')
-    const hex: string[] = []
+  for (let i = 0; i < bytes.length; i += ROW_WIDTH) {
+    const addr = (offset + i).toString(16).padStart(8, '0')
+    const hexCols: string[] = []
     const ascii: string[] = []
-    for (let j = 0; j < 16; j++) {
-      if (i + j < data.length) {
-        hex.push(data[i + j].toString(16).padStart(2, '0'))
-        const ch = data[i + j]
+    for (let j = 0; j < ROW_WIDTH; j++) {
+      if (i + j < bytes.length) {
+        hexCols.push(bytes[i + j].toString(16).padStart(2, '0'))
+        const ch = bytes[i + j]
         ascii.push(ch >= 32 && ch < 127 ? String.fromCharCode(ch) : '.')
       } else {
-        hex.push('  ')
+        hexCols.push('  ')
         ascii.push(' ')
       }
     }
     rows.push(
-      `${addr}  ${hex.slice(0, 8).join(' ')}  ${hex.slice(8).join(' ')}  |${ascii.join('')}|`
+      `${addr}  ${hexCols.slice(0, 8).join(' ')}  ${hexCols.slice(8).join(' ')}  |${ascii.join('')}|`,
     )
   }
 
-  const totalPages = Math.ceil(data.length / (PAGE * 16))
-  const currentPage = Math.floor(offset / PAGE)
+  const canPrev = offset > 0
+  const canNext = offset + PAGE_SIZE < totalSize
+  const pageNum = Math.floor(offset / PAGE_SIZE) + 1
+  const totalPages = Math.max(1, Math.ceil(totalSize / PAGE_SIZE))
 
   return (
     <div className="flex flex-col h-full bg-chimera-bg">
       <div className="flex items-center px-2 py-1 bg-chimera-surface border-b border-chimera-border text-xs text-chimera-muted gap-4">
-        <span>
-          {data.length.toLocaleString()} bytes
-        </span>
-        {totalPages > 1 && (
-          <span className="flex items-center gap-2">
-            <button
-              disabled={currentPage === 0}
-              onClick={() => setOffset(Math.max(0, offset - PAGE))}
-              className="px-1 hover:text-chimera-text disabled:opacity-30"
-            >
-              ◀
-            </button>
-            page {currentPage + 1} / {totalPages}
-            <button
-              disabled={currentPage >= totalPages - 1}
-              onClick={() => setOffset(offset + PAGE)}
-              className="px-1 hover:text-chimera-text disabled:opacity-30"
-            >
-              ▶
-            </button>
+        <span>{totalSize.toLocaleString()} bytes</span>
+        <span className="flex items-center gap-2">
+          <button
+            disabled={!canPrev}
+            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+            className="px-1 hover:text-chimera-text disabled:opacity-30"
+            title="Previous page"
+          >
+            ◀
+          </button>
+          <span>
+            page {pageNum} / {totalPages}
           </span>
-        )}
+          <button
+            disabled={!canNext}
+            onClick={() => setOffset(offset + PAGE_SIZE)}
+            className="px-1 hover:text-chimera-text disabled:opacity-30"
+            title="Next page"
+          >
+            ▶
+          </button>
+        </span>
+        <span className="ml-auto">
+          {loading && <span className="text-chimera-muted">loading…</span>}
+          {error && <span className="text-red-500">{error}</span>}
+        </span>
       </div>
       <pre className="flex-1 p-2 text-xs font-mono text-chimera-text overflow-auto leading-5">
-        {rows.join('\n')}
+        {rows.length > 0 ? rows.join('\n') : (loading ? '' : 'No data')}
       </pre>
     </div>
   )
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  if (!hex) return new Uint8Array(0)
+  const n = Math.floor(hex.length / 2)
+  const out = new Uint8Array(n)
+  for (let i = 0; i < n; i++) {
+    out[i] = parseInt(hex.substr(i * 2, 2), 16)
+  }
+  return out
 }
