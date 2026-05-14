@@ -5,17 +5,21 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from chimera.device.manager import get_android_manager, get_ios_manager
+
 router = APIRouter(prefix="/api", tags=["devices"])
 logger = logging.getLogger(__name__)
 
 
+def _iter_managers():
+    yield get_android_manager()
+    yield get_ios_manager()
+
+
 @router.get("/devices")
 async def list_devices():
-    from chimera.device.android import AndroidDeviceManager
-    from chimera.device.ios import IOSDeviceManager
-
     devices = []
-    for mgr in [AndroidDeviceManager(), IOSDeviceManager()]:
+    for mgr in _iter_managers():
         if not mgr.is_available:
             continue
         try:
@@ -30,8 +34,6 @@ async def list_devices():
                 })
         except (OSError, RuntimeError) as e:
             logger.warning("Failed to list devices for %s: %s", type(mgr).__name__, e)
-        finally:
-            await mgr.cleanup()
     return devices
 
 
@@ -41,19 +43,14 @@ async def list_device_packages(device_id: str):
 
     Tries Android first, then iOS. 404 if no device manager is available.
     """
-    from chimera.device.android import AndroidDeviceManager
-    from chimera.device.ios import IOSDeviceManager
-
-    for mgr in [AndroidDeviceManager(), IOSDeviceManager()]:
+    for mgr in _iter_managers():
         if not mgr.is_available:
             continue
         try:
             pkgs = await mgr.list_packages(device_id)
-            await mgr.cleanup()
             return {"packages": list(pkgs)}
         except Exception as e:
             logger.warning("list_packages failed for %s on %s: %s",
                            device_id, type(mgr).__name__, e)
-            await mgr.cleanup()
             continue
     raise HTTPException(status_code=404, detail="No device manager available")

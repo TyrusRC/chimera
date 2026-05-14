@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -11,6 +12,13 @@ from fastapi.staticfiles import StaticFiles
 from chimera import __version__
 from chimera.api.routes import system, projects, functions, strings, callgraph, devices, frida
 from chimera.api.websocket import analysis as ws_analysis, frida as ws_frida
+from chimera.device.manager import shutdown_all
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    yield
+    await shutdown_all()
 
 
 def create_app() -> FastAPI:
@@ -18,6 +26,7 @@ def create_app() -> FastAPI:
         title="Chimera",
         description="Mobile reverse engineering platform API",
         version=__version__,
+        lifespan=_lifespan,
     )
 
     import os
