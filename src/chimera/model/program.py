@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import re as _re
+from collections import OrderedDict, defaultdict
 
 from chimera.model.binary import BinaryInfo
 from chimera.model.function import FunctionInfo, StringEntry, CallEdge, ImportEntry
 from chimera.model.objc import ObjCCallSite, ObjCCategory, ObjCClass, ObjCMethod, ObjCProtocol
+
+
+_REGEX_CACHE_MAX = 256
 
 
 class UnifiedProgramModel:
@@ -14,6 +18,9 @@ class UnifiedProgramModel:
         self.binary = binary
         self._functions: dict[str, FunctionInfo] = {}
         self._call_edges: list[CallEdge] = []
+        # Adjacency indexes keyed by source/target address for O(degree) lookups.
+        self._by_caller: dict[str, list[str]] = defaultdict(list)
+        self._by_callee: dict[str, list[str]] = defaultdict(list)
         self._strings: list[StringEntry] = []
         self._imports: list[ImportEntry] = []
         self._objc_methods: list[ObjCMethod] = []
@@ -21,7 +28,9 @@ class UnifiedProgramModel:
         self._objc_classes: dict[str, ObjCClass] = {}
         self._objc_categories: dict[str, ObjCCategory] = {}
         self._objc_protocols: dict[str, ObjCProtocol] = {}
-        self._regex_cache: dict[str, _re.Pattern[str]] = {}
+        # Bounded LRU — distinct search patterns are rare but unbounded growth
+        # would leak under adversarial inputs.
+        self._regex_cache: "OrderedDict[str, _re.Pattern[str]]" = OrderedDict()
 
     @property
     def functions(self) -> list[FunctionInfo]:
@@ -52,14 +61,14 @@ class UnifiedProgramModel:
         """Record a call edge. Addresses need not exist yet - unresolved edges are
         silently dropped by `get_callees`/`get_callers` at query time."""
         self._call_edges.append(CallEdge(caller_addr, callee_addr, call_type))
+        self._by_caller[caller_addr].append(callee_addr)
+        self._by_callee[callee_addr].append(caller_addr)
 
     def get_callees(self, address: str) -> list[FunctionInfo]:
-        callee_addrs = [e.callee_addr for e in self._call_edges if e.caller_addr == address]
-        return [self._functions[a] for a in callee_addrs if a in self._functions]
+        return [self._functions[a] for a in self._by_caller.get(address, ()) if a in self._functions]
 
     def get_callers(self, address: str) -> list[FunctionInfo]:
-        caller_addrs = [e.caller_addr for e in self._call_edges if e.callee_addr == address]
-        return [self._functions[a] for a in caller_addrs if a in self._functions]
+        return [self._functions[a] for a in self._by_callee.get(address, ()) if a in self._functions]
 
     def add_string(self, address: str, value: str, section: str | None = None,
                    decrypted_from: str | None = None) -> None:
@@ -69,11 +78,19 @@ class UnifiedProgramModel:
     def get_strings(self, pattern: str | None = None) -> list[StringEntry]:
         if pattern is None:
             return list(self._strings)
-        regex = self._regex_cache.get(pattern)
-        if regex is None:
-            regex = _re.compile(pattern, _re.IGNORECASE)
-            self._regex_cache[pattern] = regex
+        regex = self._get_regex(pattern)
         return [s for s in self._strings if regex.search(s.value)]
+
+    def _get_regex(self, pattern: str) -> _re.Pattern[str]:
+        cached = self._regex_cache.get(pattern)
+        if cached is not None:
+            self._regex_cache.move_to_end(pattern)
+            return cached
+        regex = _re.compile(pattern, _re.IGNORECASE)
+        self._regex_cache[pattern] = regex
+        if len(self._regex_cache) > _REGEX_CACHE_MAX:
+            self._regex_cache.popitem(last=False)
+        return regex
 
     @property
     def imports(self) -> list[ImportEntry]:
