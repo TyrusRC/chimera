@@ -7,6 +7,7 @@ correlation with the call graph and class-dump enrichment.
 from __future__ import annotations
 
 import logging
+import mmap
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,11 +45,19 @@ class ObjCMetadata:
     skipped_pointers: int = 0
 
 
+# Bounds for individual Mach-O load commands. A real load command must be at
+# least the 8-byte (cmd, cmdsize) pair; anything bigger than 16 KiB is
+# pathological (real commands are well under 4 KiB). Used to reject malformed
+# binaries that would otherwise walk past EOF or spin re-reading offset 0.
+_MIN_LOAD_CMD_SIZE = 8  # cmd (u32) + cmdsize (u32)
+_MAX_LOAD_CMD_SIZE = 16 * 1024
+
+
 # ---------------------------------------------------------------------------
 # Section locator
 # ---------------------------------------------------------------------------
 
-def _read_section_bytes(raw: bytes, segname: str, sectname: str) -> bytes:
+def _read_section_bytes(raw, segname: str, sectname: str) -> bytes:
     """Locate a (segment, section) pair and return its file bytes.
     Returns empty bytes if not found."""
     if len(raw) < MACH_HEADER_64.size:
@@ -58,13 +67,24 @@ def _read_section_bytes(raw: bytes, segname: str, sectname: str) -> bytes:
         raise ObjCParseError(f"bad magic 0x{magic:08x}")
     cur = MACH_HEADER_64.size
     for _ in range(ncmds):
+        if cur + LOAD_COMMAND.size > len(raw):
+            logger.debug("load-command header at offset %d exceeds file size %d; aborting walk", cur, len(raw))
+            break
         cmd, cmdsize = LOAD_COMMAND.unpack_from(raw, cur)
-        if cmd == LC_SEGMENT_64:
+        if cmdsize < _MIN_LOAD_CMD_SIZE or cmdsize > _MAX_LOAD_CMD_SIZE:
+            logger.debug("malformed cmdsize %d at offset %d; aborting walk", cmdsize, cur)
+            break
+        if cur + cmdsize > len(raw):
+            logger.debug("cmdsize %d at offset %d exceeds file size %d; aborting", cmdsize, cur, len(raw))
+            break
+        if cmd == LC_SEGMENT_64 and cur + SEGMENT_COMMAND_64.size <= len(raw):
             (_c, _cs, segname_b, _vma, _vms, _fo, _fs, _mp, _ip,
              nsects, _flg) = SEGMENT_COMMAND_64.unpack_from(raw, cur)
             seg = segname_b.rstrip(b"\0").decode()
             sect_off = cur + SEGMENT_COMMAND_64.size
             for _ in range(nsects):
+                if sect_off + SECTION_64.size > len(raw):
+                    break
                 (s_name, s_seg, s_addr, s_size, s_off,
                  _a, _r1, _n, _f, _r2, _r3, _r4) = SECTION_64.unpack_from(
                     raw, sect_off,
@@ -72,13 +92,13 @@ def _read_section_bytes(raw: bytes, segname: str, sectname: str) -> bytes:
                 sect_off += SECTION_64.size
                 name = s_name.rstrip(b"\0").decode()
                 if seg == segname and name == sectname:
-                    return raw[s_off:s_off + s_size]
+                    return bytes(raw[s_off:s_off + s_size])
         cur += cmdsize
     return b""
 
 
 def _locate_section_in_segments(
-    raw: bytes, sectname: str,
+    raw, sectname: str,
 ) -> bytes:
     """Search both __DATA and __DATA_CONST for an ObjC section."""
     for segname in ("__DATA_CONST", "__DATA"):
@@ -93,7 +113,7 @@ def _locate_section_in_segments(
 # practice for the synthetic builder; real binaries need a vmaddr→fileoff map)
 # ---------------------------------------------------------------------------
 
-def _build_vm_to_file_map(raw: bytes) -> list[tuple[int, int, int]]:
+def _build_vm_to_file_map(raw) -> list[tuple[int, int, int]]:
     """Return list of (vmaddr, vmaddr+size, fileoff) tuples covering the binary."""
     out: list[tuple[int, int, int]] = []
     if len(raw) < MACH_HEADER_64.size:
@@ -101,8 +121,14 @@ def _build_vm_to_file_map(raw: bytes) -> list[tuple[int, int, int]]:
     _m, _ct, _st, _ft, ncmds, _sz, _fl, _r = MACH_HEADER_64.unpack_from(raw, 0)
     cur = MACH_HEADER_64.size
     for _ in range(ncmds):
+        if cur + LOAD_COMMAND.size > len(raw):
+            break
         cmd, cmdsize = LOAD_COMMAND.unpack_from(raw, cur)
-        if cmd == LC_SEGMENT_64:
+        if cmdsize < _MIN_LOAD_CMD_SIZE or cmdsize > _MAX_LOAD_CMD_SIZE:
+            break
+        if cur + cmdsize > len(raw):
+            break
+        if cmd == LC_SEGMENT_64 and cur + SEGMENT_COMMAND_64.size <= len(raw):
             (_c, _cs, _seg, vma, vms, fo, _fs, _mp, _ip,
              _ns, _flg) = SEGMENT_COMMAND_64.unpack_from(raw, cur)
             if vms > 0:
@@ -182,9 +208,20 @@ def parse_objc_metadata(macho_path: Path) -> ObjCMetadata:
         raise ValueError(
             f"Mach-O too large for in-memory parse: {size} bytes (cap {_MAX_MACHO_SIZE})"
         )
-    raw = macho_path.read_bytes()
     md = ObjCMetadata()
+    if size == 0:
+        return md
 
+    # mmap the binary instead of read_bytes() so parallel parses of fat IPAs
+    # share the kernel page cache rather than each blowing a private heap
+    # copy. mmap supports len(), slicing, struct.unpack_from, and find() —
+    # all the operations the downstream helpers use.
+    with open(macho_path, "rb") as fh:
+        with mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as raw:
+            return _parse_objc_metadata_from_raw(raw, md)
+
+
+def _parse_objc_metadata_from_raw(raw, md: ObjCMetadata) -> ObjCMetadata:
     classlist_bytes = _locate_section_in_segments(raw, "__objc_classlist")
     catlist_bytes = _locate_section_in_segments(raw, "__objc_catlist")
     protolist_bytes = _locate_section_in_segments(raw, "__objc_protolist")
@@ -451,13 +488,19 @@ def link_callsites(
     return out
 
 
-def _has_chained_fixups(raw: bytes) -> bool:
+def _has_chained_fixups(raw) -> bool:
     if len(raw) < MACH_HEADER_64.size:
         return False
     _m, _ct, _st, _ft, ncmds, _sz, _fl, _r = MACH_HEADER_64.unpack_from(raw, 0)
     cur = MACH_HEADER_64.size
     for _ in range(ncmds):
+        if cur + LOAD_COMMAND.size > len(raw):
+            break
         cmd, cmdsize = LOAD_COMMAND.unpack_from(raw, cur)
+        if cmdsize < _MIN_LOAD_CMD_SIZE or cmdsize > _MAX_LOAD_CMD_SIZE:
+            break
+        if cur + cmdsize > len(raw):
+            break
         if cmd == LC_DYLD_CHAINED_FIXUPS:
             return True
         cur += cmdsize
