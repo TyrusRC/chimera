@@ -68,7 +68,10 @@ class FridaSessionManager:
         if mode not in ("attach", "spawn"):
             raise ValueError(f"mode must be 'attach' or 'spawn', got {mode!r}")
 
-        async with self._lock:
+        loop = asyncio.get_running_loop()
+        sid = uuid.uuid4().hex
+
+        def _do() -> FridaSessionRecord:
             device = self._get_device_real(device_id)
             pid: Optional[int] = None
             if mode == "spawn":
@@ -77,8 +80,6 @@ class FridaSessionManager:
             else:
                 session = device.attach(target)
 
-            sid = uuid.uuid4().hex
-            loop = asyncio.get_running_loop()
             rec = FridaSessionRecord(
                 id=sid,
                 device_id=device_id,
@@ -99,25 +100,33 @@ class FridaSessionManager:
 
             if mode == "spawn" and pid is not None:
                 device.resume(pid)
+            return rec
 
+        rec = await asyncio.to_thread(_do)
+        async with self._lock:
             self._sessions[sid] = rec
-            logger.info("Frida session %s created (mode=%s target=%s)", sid, mode, target)
-            return sid
+        logger.info("Frida session %s created (mode=%s target=%s)", sid, mode, target)
+        return sid
 
     async def eval_code(self, session_id: str, code: str) -> str:
         rec = self._sessions.get(session_id)
         if rec is None:
             raise KeyError(session_id)
         # exports_sync.eval matches rpc.exports.eval in _repl.js
-        return rec._repl_script.exports_sync.eval(code)
+        return await asyncio.to_thread(rec._repl_script.exports_sync.eval, code)
 
     async def load_script(self, session_id: str, source: str) -> None:
         rec = self._sessions.get(session_id)
         if rec is None:
             raise KeyError(session_id)
-        script = rec._session.create_script(source)
-        script.on("message", lambda message, data: self._enqueue(rec, message))
-        script.load()
+
+        def _do():
+            script = rec._session.create_script(source)
+            script.on("message", lambda message, data: self._enqueue(rec, message))
+            script.load()
+            return script
+
+        script = await asyncio.to_thread(_do)
         rec._scripts.append(script)
 
     async def load_bundled_script(self, session_id: str, script_id: str) -> None:
@@ -128,19 +137,23 @@ class FridaSessionManager:
         await self.load_script(session_id, source)
 
     async def close_session(self, session_id: str) -> None:
-        rec = self._sessions.pop(session_id, None)
+        async with self._lock:
+            rec = self._sessions.pop(session_id, None)
         if rec is None:
             return
-        # Unload all scripts the session created (best-effort)
-        for script in rec._scripts:
+
+        def _do():
+            for script in rec._scripts:
+                try:
+                    script.unload()
+                except Exception as e:  # pragma: no cover — frida raises various
+                    logger.debug("unload failed for session %s: %s", session_id, e)
             try:
-                script.unload()
-            except Exception as e:  # pragma: no cover — frida raises various
-                logger.debug("unload failed for session %s: %s", session_id, e)
-        try:
-            rec._session.detach()
-        except Exception as e:  # pragma: no cover
-            logger.debug("detach failed for session %s: %s", session_id, e)
+                rec._session.detach()
+            except Exception as e:  # pragma: no cover
+                logger.debug("detach failed for session %s: %s", session_id, e)
+
+        await asyncio.to_thread(_do)
 
     # -- internals -------------------------------------------------------
 

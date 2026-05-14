@@ -194,3 +194,32 @@ async def test_enqueue_from_other_thread_reaches_queue(mgr):
     t.join()
     msg = await asyncio.wait_for(rec._queue.get(), timeout=1.0)
     assert msg["payload"] == "from-other-thread"
+
+
+@pytest.mark.asyncio
+async def test_eval_does_not_block_event_loop(mgr, monkeypatch):
+    """A slow rpc.exports.eval must not stall the event loop."""
+    sid = await mgr.create_session(device_id=None, target="com.example.app", mode="attach")
+    rec = mgr.get(sid)
+
+    # Make eval block for 0.4s of real time (simulating a frozen target).
+    import time
+    rec._repl_script._eval_return = "slow"
+    original_eval = rec._repl_script.eval
+    def slow_eval(code):
+        time.sleep(0.4)
+        return original_eval(code)
+    rec._repl_script.eval = slow_eval
+
+    # While eval runs, a parallel asyncio.sleep(0.05) must finish well before eval does.
+    async def parallel_marker():
+        await asyncio.sleep(0.05)
+        return "fast-path-ran"
+
+    eval_task = asyncio.create_task(mgr.eval_code(sid, "1+1"))
+    marker_task = asyncio.create_task(parallel_marker())
+    done, _ = await asyncio.wait({eval_task, marker_task}, return_when=asyncio.FIRST_COMPLETED)
+    # The marker must finish first; if the loop is blocked, eval finishes first.
+    assert marker_task in done
+    assert marker_task.result() == "fast-path-ran"
+    await eval_task  # drain
