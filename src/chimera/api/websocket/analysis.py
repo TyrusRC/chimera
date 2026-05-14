@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 _progress: dict[str, dict] = {}
 _subscribers: dict[str, list] = {}
 
+# Hold strong references to scheduled broadcast tasks so the event loop's
+# WeakSet doesn't GC them mid-flight (see asyncio.create_task docs).
+_BROADCAST_TASKS: set[asyncio.Task] = set()
+
 
 async def broadcast_progress(project_id: str) -> None:
     """Send current progress to every subscriber. Drops subscribers that fail to receive."""
@@ -46,7 +50,9 @@ def update_progress(project_id: str, phase: str, detail: str, percent: int) -> N
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    loop.create_task(broadcast_progress(project_id))
+    task = loop.create_task(broadcast_progress(project_id))
+    _BROADCAST_TASKS.add(task)
+    task.add_done_callback(_BROADCAST_TASKS.discard)
 
 
 @router.websocket("/ws/analysis/{project_id}")
