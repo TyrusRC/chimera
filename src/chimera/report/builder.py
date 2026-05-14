@@ -287,6 +287,118 @@ def _summarize_lib_blob(tag: str, blob: dict) -> dict:
     return {}
 
 
+def _render_behavior_html(b: dict) -> str:
+    if not b:
+        return ""
+    aa = b.get("anti_analysis") or {}
+    flag_rows = "".join(
+        f"<tr><td>{html.escape(k)}</td><td>{'✓' if v else '·'}</td></tr>"
+        for k, v in aa.items() if k != "evidence" and isinstance(v, bool)
+    )
+    evidence = aa.get("evidence") or []
+    ev_html = ""
+    if evidence:
+        items = "".join(f"<li><code>{html.escape(str(e))}</code></li>" for e in evidence[:20])
+        ev_html = f"<details><summary>Evidence ({len(evidence)})</summary><ul>{items}</ul></details>"
+
+    net = b.get("network") or {}
+    net_rows = "".join(
+        f"<tr><td>{html.escape(k)}</td><td>{'✓' if v else '·'}</td></tr>"
+        for k, v in net.items() if isinstance(v, bool)
+    )
+
+    persistence = b.get("persistence") or {}
+    pers_html = (
+        f"<tr><td>indicators_present</td><td>{'✓' if persistence.get('indicators_present') else '·'}</td></tr>"
+        f"<tr><td>elf_persistence_count</td><td>{int(persistence.get('elf_persistence_count') or 0)}</td></tr>"
+    )
+
+    packer = b.get("packer") or {}
+    packer_html = ""
+    if packer.get("detected") or packer.get("name"):
+        packer_html = (
+            f"<p>Packer: <strong>{html.escape(str(packer.get('name') or 'detected'))}</strong></p>"
+        )
+
+    iocs = b.get("iocs") or {}
+    ioc_html = ""
+    if isinstance(iocs, dict) and iocs:
+        rows = "".join(
+            f"<tr><td>{html.escape(cat)}</td><td>{len(vals) if isinstance(vals, list) else '?'}</td>"
+            f"<td>{html.escape(', '.join(map(str, (vals or [])[:5])))}</td></tr>"
+            for cat, vals in iocs.items()
+        )
+        ioc_html = (
+            "<h3>IOCs</h3><table><tr><th>Category</th><th>Count</th>"
+            f"<th>Sample</th></tr>{rows}</table>"
+        )
+
+    return (
+        "<h2>Behavior</h2>"
+        f"<h3>Anti-analysis</h3><table class='kv'>{flag_rows or '<tr><td><em>no flags</em></td><td></td></tr>'}</table>"
+        f"{ev_html}"
+        f"<h3>Network</h3><table class='kv'>{net_rows or '<tr><td><em>no signals</em></td><td></td></tr>'}</table>"
+        f"<h3>Persistence</h3><table class='kv'>{pers_html}</table>"
+        f"{packer_html}{ioc_html}"
+    )
+
+
+def _render_attack_surface_html(s: dict) -> str:
+    if not s:
+        return ""
+    parts = [f"<h2>Attack Surface ({html.escape(s.get('format', '?'))})</h2>"]
+
+    comps = s.get("exported_components") or []
+    if comps:
+        rows = "".join(
+            f"<tr><td>{html.escape(c.get('kind') or '?')}</td>"
+            f"<td><code>{html.escape(c.get('name') or '?')}</code></td>"
+            f"<td>{'✓' if c.get('has_intent_filter') else '·'}</td></tr>"
+            for c in comps
+        )
+        parts.append(
+            "<h3>Exported components</h3>"
+            f"<table><tr><th>Kind</th><th>Name</th><th>Intent-filter</th></tr>{rows}</table>"
+        )
+
+    by_bucket = s.get("imports_by_bucket") or {}
+    if by_bucket:
+        parts.append("<h3>Imports by bucket</h3>")
+        for bucket, names in sorted(by_bucket.items()):
+            items = "".join(f"<li><code>{html.escape(str(n))}</code></li>" for n in names[:30])
+            parts.append(
+                f"<details><summary>{html.escape(bucket)} ({len(names)})</summary>"
+                f"<ul>{items}</ul></details>"
+            )
+
+    schemes = s.get("url_schemes") or []
+    if schemes:
+        chips = "".join(f"<span class='chip'>{html.escape(str(u))}</span>" for u in schemes)
+        parts.append(f"<h3>URL schemes</h3><p>{chips}</p>")
+
+    return "".join(parts)
+
+
+def _render_masvs_html(matrix: dict) -> str:
+    if not matrix or not matrix.get("applicable"):
+        return ""
+    rows = matrix.get("rows") or []
+    if not rows:
+        return ""
+    body = "".join(
+        f"<tr><td><code>{html.escape(r.get('control_id') or '')}</code></td>"
+        f"<td>{html.escape(r.get('name') or '')}</td>"
+        f"<td>{html.escape(r.get('status') or '')}</td>"
+        f"<td>{html.escape(r.get('notes') or '')}</td></tr>"
+        for r in rows
+    )
+    return (
+        "<h2>MASVS Matrix</h2>"
+        "<table><tr><th>Control</th><th>Name</th><th>Status</th><th>Notes</th></tr>"
+        f"{body}</table>"
+    )
+
+
 def render_html(report: dict) -> str:
     """Render the report dict as a single self-contained HTML page."""
     binary = report["binary"]
@@ -325,6 +437,9 @@ def render_html(report: dict) -> str:
 
     nprot = report.get("native_protections") or {}
     nprot_html = _render_native_protections_html(nprot)
+    behavior_html = _render_behavior_html(report.get("behavior") or {})
+    attack_surface_html = _render_attack_surface_html(report.get("attack_surface") or {})
+    masvs_html = _render_masvs_html(report.get("masvs") or {})
 
     cl_bindings = (report.get("cross_layer") or {}).get("bindings") or []
     cl_rows = "".join(
@@ -497,6 +612,12 @@ table.kv th {{ width: 200px; }}
 <tr><th>Package</th><td>{html.escape(binary.get('package_name') or '—')}</td></tr>
 <tr><th>Version</th><td>{html.escape(binary.get('version') or '—')}</td></tr>
 </table>
+
+{behavior_html}
+
+{attack_surface_html}
+
+{masvs_html}
 
 <h2>Triage</h2>
 <pre><code>{html.escape(json.dumps(triage, indent=2))}</code></pre>
