@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from chimera.core.config import ChimeraConfig
@@ -53,6 +53,7 @@ class _ProjectStore:
     def register_task(self, pid: str, task: asyncio.Task) -> None:
         # Tasks are immutable references; no lock needed.
         self._tasks[pid] = task
+        task.add_done_callback(lambda _t, pid=pid: self._tasks.pop(pid, None))
 
     def get_task(self, pid: str) -> asyncio.Task | None:
         return self._tasks.get(pid)
@@ -91,7 +92,7 @@ async def list_projects() -> list[dict]:
 
 
 @router.post("")
-async def create_project(req: AnalyzeRequest, background_tasks: BackgroundTasks) -> dict:
+async def create_project(req: AnalyzeRequest) -> dict:
     path = Path(req.path)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
@@ -107,8 +108,19 @@ async def create_project(req: AnalyzeRequest, background_tasks: BackgroundTasks)
         "status": "analyzing",
     })
 
-    background_tasks.add_task(_run_analysis, project_id, req)
+    task = asyncio.create_task(_run_analysis(project_id, req))
+    _store.register_task(project_id, task)
     return {"id": project_id, "status": "analyzing"}
+
+
+@router.delete("/{project_id}")
+async def cancel_project(project_id: str) -> dict:
+    """Cancel the in-flight analysis task for a project, if any."""
+    task = _store.get_task(project_id)
+    if task is None or task.done():
+        return {"ok": False, "reason": "no_active_task"}
+    task.cancel()
+    return {"ok": True}
 
 
 async def _run_analysis(project_id: str, req: AnalyzeRequest) -> None:
