@@ -8,6 +8,7 @@ import { FindingsPanel } from '../FindingsPanel'
 import { CallGraph } from '../CallGraph'
 import { DisassemblyView } from '../DisassemblyView'
 import { HexView } from '../HexView'
+import { DiffPanel } from '../DiffPanel'
 import { XrefsPanel } from '../XrefsPanel'
 import { ProtectionReport } from '../ProtectionReport'
 import { DevicePanel } from '../device/DevicePanel'
@@ -92,10 +93,13 @@ export function MainLayout({ projectId }: Props) {
               {activeTab === 'network' && (
                 <NetworkPanel projectId={projectId} />
               )}
+              {activeTab === 'diff' && (
+                <DiffPanel currentProjectId={projectId} />
+              )}
             </div>
 
             {/* Right panel — cross-references */}
-            {selectedFunction && activeTab !== 'findings' && activeTab !== 'protection' && activeTab !== 'devices' && activeTab !== 'network' && activeTab !== 'hex' && (
+            {selectedFunction && activeTab !== 'findings' && activeTab !== 'protection' && activeTab !== 'devices' && activeTab !== 'network' && activeTab !== 'hex' && activeTab !== 'diff' && (
               <>
                 <div className="w-px bg-chimera-border" />
                 <div className="w-56 flex flex-col overflow-hidden bg-chimera-surface border-l border-chimera-border">

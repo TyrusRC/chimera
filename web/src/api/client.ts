@@ -96,6 +96,44 @@ export interface Paginated<T> {
   limit: number
 }
 
+export interface DiffFinding {
+  finding_id: string | null
+  title: string | null
+  severity: string | null
+  cvss_vector: string | null
+  cvss_base_score: number | null
+  evidence: string[]
+}
+
+export interface DiffComponent {
+  kind: string | null
+  name: string | null
+  exported: boolean | null
+  has_intent_filter: boolean | null
+}
+
+export interface DiffNativeLib {
+  lib: string | null
+  kind: string | null
+  detail: string | null
+}
+
+export interface DiffResult {
+  a_sha256: string
+  b_sha256: string
+  permissions_added: string[]
+  permissions_removed: string[]
+  exported_added: DiffComponent[]
+  exported_removed: DiffComponent[]
+  sdks_added: string[]
+  sdks_removed: string[]
+  native_libs_added: DiffNativeLib[]
+  native_libs_removed: DiffNativeLib[]
+  native_libs_changed: DiffNativeLib[]
+  findings_added: DiffFinding[]
+  findings_resolved: DiffFinding[]
+}
+
 export interface CallGraphData {
   nodes: { id: string; name: string; classification: string; layer: string }[]
   edges: { source: string; target: string; type: string }[]
@@ -210,6 +248,14 @@ export const api = {
   // Call graph
   getCallGraph: (projectId: string, address: string, depth = 2) =>
     request<CallGraphData>(`/projects/${projectId}/callgraph/${address}?depth=${depth}`),
+
+  // Diff
+  diffProjects: (a: string, b: string, signal?: AbortSignal) =>
+    request<DiffResult>('/diff', {
+      method: 'POST',
+      body: JSON.stringify({ a, b }),
+      signal,
+    }),
 
   // Devices
   listDevices: () => request<DeviceEntry[]>('/devices'),

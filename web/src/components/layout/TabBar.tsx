@@ -1,6 +1,6 @@
 import { ProjectCapabilities } from '../../api/client'
 
-export type TabId = 'code' | 'findings' | 'callgraph' | 'hex' | 'disassembly' | 'protection' | 'devices' | 'network'
+export type TabId = 'code' | 'findings' | 'callgraph' | 'hex' | 'disassembly' | 'protection' | 'devices' | 'network' | 'diff'
 
 interface Props {
   activeTab: TabId
@@ -24,6 +24,7 @@ const TABS: TabDef[] = [
   { id: 'protection', label: 'Protection Report', requires: 'masvs' },
   { id: 'devices', label: 'Devices', requires: 'frida' },
   { id: 'network', label: 'Network', requires: 'network_security_config' },
+  { id: 'diff', label: 'Diff' },
 ]
 
 function isVisible(tab: TabDef, caps?: ProjectCapabilities): boolean {
