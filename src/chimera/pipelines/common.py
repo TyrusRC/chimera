@@ -9,6 +9,8 @@ import struct
 import zipfile
 from pathlib import Path
 
+from chimera.pipelines.safe_extract import safe_extract_zip
+
 logger = logging.getLogger(__name__)
 
 
@@ -191,8 +193,7 @@ def _find_base_apk_in_bundle(bundle_path: Path, output_dir: Path) -> Path:
 
     extraction_succeeded = False
     try:
-        with zipfile.ZipFile(bundle_path, "r") as zf:
-            zf.extractall(bundle_dir)
+        safe_extract_zip(bundle_path, bundle_dir)
 
         base_apk = bundle_dir / "base.apk"
         if base_apk.exists():
@@ -283,8 +284,7 @@ def unpack_apk(apk_path: Path, output_dir: Path) -> dict:
         # Unpack the base APK
         base_output = output_dir / "base"
         base_output.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(base_apk, "r") as zf:
-            zf.extractall(base_output)
+        safe_extract_zip(base_apk, base_output)
 
         manifest_path = base_output / "AndroidManifest.xml"
         dex_files = sorted(base_output.glob("classes*.dex"))
@@ -334,8 +334,7 @@ def unpack_apk(apk_path: Path, output_dir: Path) -> dict:
 
     # Standard APK
     output_dir.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(apk_path, "r") as zf:
-        zf.extractall(output_dir)
+    safe_extract_zip(apk_path, output_dir)
     manifest_path = output_dir / "AndroidManifest.xml"
     dex_files = sorted(output_dir.glob("classes*.dex"))
     native_libs = []
@@ -367,8 +366,7 @@ def unpack_ipa(ipa_path: Path, output_dir: Path) -> dict:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with zipfile.ZipFile(ipa_path, "r") as zf:
-        zf.extractall(output_dir)
+    safe_extract_zip(ipa_path, output_dir)
 
     # Find the .app bundle inside Payload/
     payload_dir = output_dir / "Payload"
