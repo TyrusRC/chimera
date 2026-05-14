@@ -24,6 +24,11 @@ from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_
 logger = logging.getLogger(__name__)
 
 
+def _jadx_sources_available(jadx_sources) -> bool:
+    """True iff jadx_sources is a real Path that exists on disk."""
+    return jadx_sources is not None and Path(jadx_sources).exists()
+
+
 def _valid_r2_string(s: object) -> bool:
     return isinstance(s, dict) and isinstance(s.get("string"), str) and bool(s.get("string"))
 
@@ -393,7 +398,7 @@ async def analyze_apk(
             logger.info("jni-static: %d edges, %d unresolved",
                         jni_result.static_edges, jni_result.unresolved)
             # Phase 6.6: scan Java sources for callers of native methods
-            if jadx_sources.exists() and not config.skip_jvm_methods:
+            if _jadx_sources_available(jadx_sources) and not config.skip_jvm_methods:
                 from chimera.parsers.jvm_methods import (
                     find_callsites, parse_jvm_methods,
                 )
