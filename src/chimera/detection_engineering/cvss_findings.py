@@ -6,21 +6,66 @@ during the engagement. The output schema is PwnDoc/SysReptor-friendly.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 
-# CVSS v3.1 severity buckets per FIRST spec
+# CVSS v3.1 severity buckets per FIRST spec.
+# Boundaries are inclusive at the lower end:
+#   0.0           -> None
+#   0.1  - 3.9    -> Low
+#   4.0  - 6.9    -> Medium
+#   7.0  - 8.9    -> High
+#   9.0  -10.0    -> Critical
 def severity_for_score(score: float) -> str:
-    if score >= 9.0:
-        return "Critical"
-    if score >= 7.0:
-        return "High"
-    if score >= 4.0:
-        return "Medium"
-    if score > 0.0:
+    if score <= 0.0:
+        return "None"
+    if score < 4.0:
         return "Low"
-    return "Informational"
+    if score < 7.0:
+        return "Medium"
+    if score < 9.0:
+        return "High"
+    return "Critical"
+
+
+def score_from_vector(vector: str) -> float:
+    """Compute the CVSS v3.1 base score from a vector string.
+
+    Vector format: 'CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N'
+
+    Implementation follows the FIRST CVSS v3.1 specification:
+    https://www.first.org/cvss/v3.1/specification-document
+    """
+    parts = dict(seg.split(":", 1) for seg in vector.split("/")[1:])
+    av = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}[parts["AV"]]
+    ac = {"L": 0.77, "H": 0.44}[parts["AC"]]
+    scope_changed = parts.get("S", "U") == "C"
+    pr_map = {
+        "U": {"N": 0.85, "L": 0.62, "H": 0.27},
+        "C": {"N": 0.85, "L": 0.68, "H": 0.5},
+    }
+    pr = pr_map["C" if scope_changed else "U"][parts["PR"]]
+    ui = {"N": 0.85, "R": 0.62}[parts["UI"]]
+    c = {"H": 0.56, "L": 0.22, "N": 0.0}[parts["C"]]
+    i = {"H": 0.56, "L": 0.22, "N": 0.0}[parts["I"]]
+    a = {"H": 0.56, "L": 0.22, "N": 0.0}[parts["A"]]
+
+    iss = 1 - ((1 - c) * (1 - i) * (1 - a))
+    if not scope_changed:
+        impact = 6.42 * iss
+    else:
+        impact = 7.52 * (iss - 0.029) - 3.25 * pow(iss - 0.02, 15)
+    exploitability = 8.22 * av * ac * pr * ui
+    if impact <= 0:
+        return 0.0
+    if not scope_changed:
+        base = min(impact + exploitability, 10.0)
+    else:
+        base = min(1.08 * (impact + exploitability), 10.0)
+    # Round up to one decimal place per CVSS v3.1 roundup definition.
+    return math.ceil(base * 10) / 10
 
 
 @dataclass
@@ -28,7 +73,7 @@ class Finding:
     """One pentest finding, ready for export to PwnDoc/SysReptor/MD."""
     finding_id: str
     title: str
-    severity: str                       # Critical/High/Medium/Low/Informational
+    severity: str                       # Critical/High/Medium/Low/None or Informational
     cvss_vector: str                    # e.g., "CVSS:3.1/AV:N/AC:L/..."
     cvss_base_score: float
     masvs_id: Optional[str] = None      # e.g., "MASVS-RESILIENCE"
@@ -56,15 +101,30 @@ class Finding:
         }
 
 
-# Suggested CVSS vectors and scores for common Chimera detections.
+# Suggested CVSS vectors for common Chimera detections.
 # These are STARTING POINTS — analysts must verify exploitability and
-# adjust based on the engagement context.
+# adjust based on the engagement context. The score + severity are
+# derived from the vector so they cannot drift apart.
 
-_VECTOR_MISSING_RESILIENCE = "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"  # 6.7 Medium
-_VECTOR_MISSING_PINNING = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"     # 4.7 Medium
-_VECTOR_HARDCODED_SECRET = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"    # 6.2 Medium
-_VECTOR_OUTDATED_SDK = "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N"        # 5.4 Medium
-_VECTOR_OBFUSCATION_PRESENT = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"  # 0.0 Informational
+_VECTOR_MISSING_RESILIENCE = "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N"
+_SCORE_MISSING_RESILIENCE = score_from_vector(_VECTOR_MISSING_RESILIENCE)
+_SEVERITY_MISSING_RESILIENCE = severity_for_score(_SCORE_MISSING_RESILIENCE)
+
+_VECTOR_MISSING_PINNING = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+_SCORE_MISSING_PINNING = score_from_vector(_VECTOR_MISSING_PINNING)
+_SEVERITY_MISSING_PINNING = severity_for_score(_SCORE_MISSING_PINNING)
+
+_VECTOR_HARDCODED_SECRET = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+_SCORE_HARDCODED_SECRET = score_from_vector(_VECTOR_HARDCODED_SECRET)
+_SEVERITY_HARDCODED_SECRET = severity_for_score(_SCORE_HARDCODED_SECRET)
+
+_VECTOR_OUTDATED_SDK = "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N"
+_SCORE_OUTDATED_SDK = score_from_vector(_VECTOR_OUTDATED_SDK)
+_SEVERITY_OUTDATED_SDK = severity_for_score(_SCORE_OUTDATED_SDK)
+
+_VECTOR_OBFUSCATION_PRESENT = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"
+_SCORE_OBFUSCATION_PRESENT = score_from_vector(_VECTOR_OBFUSCATION_PRESENT)
+_SEVERITY_OBFUSCATION_PRESENT = severity_for_score(_SCORE_OBFUSCATION_PRESENT)
 
 
 def build_findings_from_chimera(model, cache) -> list[Finding]:
@@ -123,9 +183,9 @@ def build_findings_from_chimera(model, cache) -> list[Finding]:
         findings.append(Finding(
             finding_id="CHIMERA-RESILIENCE-001",
             title="Missing runtime resilience controls",
-            severity="Medium",
+            severity=_SEVERITY_MISSING_RESILIENCE,
             cvss_vector=_VECTOR_MISSING_RESILIENCE,
-            cvss_base_score=6.7,
+            cvss_base_score=_SCORE_MISSING_RESILIENCE,
             masvs_id="MASVS-RESILIENCE",
             cwe_id="CWE-693",  # Protection Mechanism Failure
             description=(
@@ -154,9 +214,9 @@ def build_findings_from_chimera(model, cache) -> list[Finding]:
         findings.append(Finding(
             finding_id="CHIMERA-NETWORK-001",
             title="No SSL pinning detected",
-            severity="Medium",
+            severity=_SEVERITY_MISSING_PINNING,
             cvss_vector=_VECTOR_MISSING_PINNING,
-            cvss_base_score=4.7,
+            cvss_base_score=_SCORE_MISSING_PINNING,
             masvs_id="MASVS-NETWORK",
             cwe_id="CWE-295",  # Improper Certificate Validation
             description=(

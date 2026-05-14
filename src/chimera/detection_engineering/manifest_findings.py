@@ -8,17 +8,40 @@ from __future__ import annotations
 
 from typing import Optional
 
-from chimera.detection_engineering.cvss_findings import Finding
+from chimera.detection_engineering.cvss_findings import (
+    Finding,
+    score_from_vector,
+    severity_for_score,
+)
 from chimera.parsers.android_manifest import ManifestModel
 from chimera.parsers.network_security_config import NSCModel
 
 
-_VECTOR_DEBUGGABLE = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"  # 7.1 High
-_VECTOR_BACKUP = "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"      # 5.5 Medium
-_VECTOR_CLEARTEXT = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"   # 4.7 Medium
-_VECTOR_EXPORTED = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L"    # 5.3 Medium
-_VECTOR_NSC_CLEARTEXT = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"   # 4.7 Medium
-_VECTOR_NSC_USER_CA = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"     # 5.9 Medium
+# Score + severity are derived from each vector via score_from_vector /
+# severity_for_score so the three values can never drift apart.
+_VECTOR_DEBUGGABLE = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+_SCORE_DEBUGGABLE = score_from_vector(_VECTOR_DEBUGGABLE)
+_SEVERITY_DEBUGGABLE = severity_for_score(_SCORE_DEBUGGABLE)
+
+_VECTOR_BACKUP = "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+_SCORE_BACKUP = score_from_vector(_VECTOR_BACKUP)
+_SEVERITY_BACKUP = severity_for_score(_SCORE_BACKUP)
+
+_VECTOR_CLEARTEXT = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+_SCORE_CLEARTEXT = score_from_vector(_VECTOR_CLEARTEXT)
+_SEVERITY_CLEARTEXT = severity_for_score(_SCORE_CLEARTEXT)
+
+_VECTOR_EXPORTED = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L"
+_SCORE_EXPORTED = score_from_vector(_VECTOR_EXPORTED)
+_SEVERITY_EXPORTED = severity_for_score(_SCORE_EXPORTED)
+
+_VECTOR_NSC_CLEARTEXT = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+_SCORE_NSC_CLEARTEXT = score_from_vector(_VECTOR_NSC_CLEARTEXT)
+_SEVERITY_NSC_CLEARTEXT = severity_for_score(_SCORE_NSC_CLEARTEXT)
+
+_VECTOR_NSC_USER_CA = "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+_SCORE_NSC_USER_CA = score_from_vector(_VECTOR_NSC_USER_CA)
+_SEVERITY_NSC_USER_CA = severity_for_score(_SCORE_NSC_USER_CA)
 
 
 def build_findings_from_models(
@@ -33,9 +56,9 @@ def build_findings_from_models(
         findings.append(Finding(
             finding_id="MANIFEST-DEBUGGABLE",
             title="Application is debuggable in production",
-            severity="High",
+            severity=_SEVERITY_DEBUGGABLE,
             cvss_vector=_VECTOR_DEBUGGABLE,
-            cvss_base_score=7.1,
+            cvss_base_score=_SCORE_DEBUGGABLE,
             masvs_id="MASVS-RESILIENCE",
             cwe_id="CWE-489",
             description=(
@@ -53,9 +76,9 @@ def build_findings_from_models(
         findings.append(Finding(
             finding_id="MANIFEST-BACKUP",
             title="Unrestricted backup allowed",
-            severity="Medium",
+            severity=_SEVERITY_BACKUP,
             cvss_vector=_VECTOR_BACKUP,
-            cvss_base_score=5.5,
+            cvss_base_score=_SCORE_BACKUP,
             masvs_id="MASVS-STORAGE",
             cwe_id="CWE-200",
             description=(
@@ -77,9 +100,9 @@ def build_findings_from_models(
         findings.append(Finding(
             finding_id="MANIFEST-CLEARTEXT",
             title="Cleartext HTTP traffic permitted",
-            severity="High",
+            severity=_SEVERITY_CLEARTEXT,
             cvss_vector=_VECTOR_CLEARTEXT,
-            cvss_base_score=7.4,
+            cvss_base_score=_SCORE_CLEARTEXT,
             masvs_id="MASVS-NETWORK",
             cwe_id="CWE-319",
             description=(
@@ -105,9 +128,9 @@ def build_findings_from_models(
             findings.append(Finding(
                 finding_id="MANIFEST-EXPORTED",
                 title=f"Exported {comp.kind} without permission",
-                severity="Medium",
+                severity=_SEVERITY_EXPORTED,
                 cvss_vector=_VECTOR_EXPORTED,
-                cvss_base_score=5.3,
+                cvss_base_score=_SCORE_EXPORTED,
                 masvs_id="MASVS-PLATFORM",
                 cwe_id="CWE-926",
                 description=(
@@ -130,9 +153,9 @@ def build_findings_from_models(
             findings.append(Finding(
                 finding_id="NSC-CLEARTEXT-PERMITTED",
                 title="network_security_config permits cleartext traffic",
-                severity="High",
+                severity=_SEVERITY_NSC_CLEARTEXT,
                 cvss_vector=_VECTOR_NSC_CLEARTEXT,
-                cvss_base_score=7.4,
+                cvss_base_score=_SCORE_NSC_CLEARTEXT,
                 masvs_id="MASVS-NETWORK",
                 cwe_id="CWE-319",
                 description=(
@@ -149,9 +172,9 @@ def build_findings_from_models(
                 findings.append(Finding(
                     finding_id="NSC-CLEARTEXT-PERMITTED",
                     title="network_security_config permits cleartext traffic for domains",
-                    severity="High",
+                    severity=_SEVERITY_NSC_CLEARTEXT,
                     cvss_vector=_VECTOR_NSC_CLEARTEXT,
-                    cvss_base_score=7.4,
+                    cvss_base_score=_SCORE_NSC_CLEARTEXT,
                     masvs_id="MASVS-NETWORK",
                     cwe_id="CWE-319",
                     description=(
@@ -169,9 +192,9 @@ def build_findings_from_models(
             findings.append(Finding(
                 finding_id="NSC-USER-CA-TRUSTED",
                 title="User-installed CAs are trusted",
-                severity="High",
+                severity=_SEVERITY_NSC_USER_CA,
                 cvss_vector=_VECTOR_NSC_USER_CA,
-                cvss_base_score=5.9,
+                cvss_base_score=_SCORE_NSC_USER_CA,
                 masvs_id="MASVS-NETWORK",
                 cwe_id="CWE-295",
                 description=(

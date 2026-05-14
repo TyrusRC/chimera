@@ -44,11 +44,24 @@ def _pe_model() -> UnifiedProgramModel:
 
 
 def test_severity_for_score():
+    # FIRST CVSS v3.1 bucketing:
+    #   0.0           -> None
+    #   0.1  - 3.9    -> Low
+    #   4.0  - 6.9    -> Medium
+    #   7.0  - 8.9    -> High
+    #   9.0  -10.0    -> Critical
     assert severity_for_score(9.5) == "Critical"
+    assert severity_for_score(9.0) == "Critical"
+    assert severity_for_score(8.9) == "High"
     assert severity_for_score(7.0) == "High"
+    assert severity_for_score(6.9) == "Medium"
     assert severity_for_score(4.0) == "Medium"
+    assert severity_for_score(3.9) == "Low"
     assert severity_for_score(0.5) == "Low"
-    assert severity_for_score(0.0) == "Informational"
+    # Score 0.0 now maps to "None" per FIRST CVSS v3.1 spec (was previously
+    # reported as "Informational" — that label is still used for non-CVSS
+    # report categories but no longer derives from a zero score).
+    assert severity_for_score(0.0) == "None"
 
 
 def test_pe_returns_no_findings():
