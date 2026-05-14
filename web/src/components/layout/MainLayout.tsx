@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { TabBar, TabId } from './TabBar'
@@ -11,13 +11,35 @@ import { XrefsPanel } from '../XrefsPanel'
 import { ProtectionReport } from '../ProtectionReport'
 import { DevicePanel } from '../device/DevicePanel'
 import { NetworkPanel } from '../NetworkPanel'
+import { api, ProjectCapabilities } from '../../api/client'
 import { useStore } from '../../store'
 
 interface Props { projectId: string }
 
 export function MainLayout({ projectId }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>('code')
+  const [capabilities, setCapabilities] = useState<ProjectCapabilities | undefined>(undefined)
   const selectedFunction = useStore((s) => s.selectedFunction)
+
+  // Fetch project detail to discover which analyst surfaces apply.
+  useEffect(() => {
+    const ac = new AbortController()
+    api.getProject(projectId)
+      .then((p) => { if (!ac.signal.aborted) setCapabilities(p.capabilities) })
+      .catch(() => { /* leave undefined → permissive */ })
+    return () => ac.abort()
+  }, [projectId])
+
+  // If the currently-active tab becomes hidden by capabilities, snap back to 'code'.
+  useEffect(() => {
+    if (!capabilities) return
+    const hidden = (
+      (activeTab === 'protection' && !capabilities.masvs) ||
+      (activeTab === 'devices' && !capabilities.frida) ||
+      (activeTab === 'network' && !capabilities.network_security_config)
+    )
+    if (hidden) setActiveTab('code')
+  }, [capabilities, activeTab])
 
   return (
     <div className="flex flex-col h-screen bg-chimera-bg">
@@ -41,7 +63,7 @@ export function MainLayout({ projectId }: Props) {
 
         {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+          <TabBar activeTab={activeTab} onTabChange={setActiveTab} capabilities={capabilities} />
           <div className="flex-1 flex overflow-hidden">
             {/* Primary tab area */}
             <div className="flex-1 overflow-hidden">

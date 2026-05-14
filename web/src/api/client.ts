@@ -30,11 +30,21 @@ export interface ProjectSummary {
   finding_count: number
 }
 
+export interface ProjectCapabilities {
+  frida: boolean
+  masvs: boolean
+  manifest: boolean
+  network_security_config: boolean
+  dotnet: boolean
+  objc: boolean
+}
+
 export interface ProjectDetail extends ProjectSummary {
   format: string
   framework: string
   function_count: number
   string_count: number
+  capabilities: ProjectCapabilities
 }
 
 export interface FunctionSummary {
