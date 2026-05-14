@@ -1,29 +1,55 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, ProjectSummary } from '../api/client'
 import { useStore } from '../store'
+
+const ACCEPTED_FILE_TYPES =
+  '.apk,.aab,.ipa,.xapk,.apkm,.exe,.dll,.so,.dylib,.elf,.macho,.dex,.jar'
 
 export function ProjectList() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [path, setPath] = useState('')
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [info, setInfo] = useState<{ name: string; version: string } | null>(null)
   const setProject = useStore((s) => s.setProject)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     api.listProjects().then(setProjects).catch(() => {})
     api.getInfo().then(setInfo).catch(() => {})
   }, [])
 
-  const handleAnalyze = async () => {
-    if (!path) return
+  const analyzePath = async (target: string) => {
     setLoading(true)
     try {
-      const result = await api.createProject(path)
+      const result = await api.createProject(target)
       setProject(result.id)
     } catch (e: any) {
       alert(e.message)
     }
     setLoading(false)
+  }
+
+  const handleAnalyze = async () => {
+    if (!path) return
+    await analyzePath(path)
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const { path: uploadedPath } = await api.uploadProject(file)
+      setPath(uploadedPath)
+      await analyzePath(uploadedPath)
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setUploading(false)
+      // Reset the input so selecting the same file again re-triggers the handler
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   return (
@@ -46,11 +72,33 @@ export function ProjectList() {
             />
             <button
               onClick={handleAnalyze}
-              disabled={loading || !path}
+              disabled={loading || uploading || !path}
               className="bg-chimera-accent text-chimera-bg px-4 py-2 rounded text-sm font-medium hover:opacity-90 disabled:opacity-50"
             >
               {loading ? 'Analyzing...' : 'Analyze'}
             </button>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_FILE_TYPES}
+              onChange={handleFileChange}
+              disabled={uploading || loading}
+              className="hidden"
+              id="chimera-upload-input"
+            />
+            <label
+              htmlFor="chimera-upload-input"
+              className={`text-xs px-3 py-1.5 rounded border border-chimera-border text-chimera-muted hover:text-chimera-text hover:border-chimera-accent cursor-pointer ${
+                uploading || loading ? 'opacity-50 pointer-events-none' : ''
+              }`}
+            >
+              {uploading ? 'Uploading...' : 'Upload binary...'}
+            </label>
+            <span className="text-[10px] text-chimera-muted">
+              .apk .aab .ipa .xapk .exe .dll .so .dylib .elf .dex .jar
+            </span>
           </div>
         </div>
 

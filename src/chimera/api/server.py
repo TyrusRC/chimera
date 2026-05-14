@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from chimera import __version__
-from chimera.api.routes import system, projects, functions, strings, callgraph, devices, frida
+from chimera.api.routes import system, projects, functions, strings, callgraph, devices, frida, uploads
 from chimera.api.websocket import analysis as ws_analysis, frida as ws_frida
 from chimera.device.manager import shutdown_all
 
@@ -48,6 +48,9 @@ def create_app() -> FastAPI:
 
     # Register API routes
     app.include_router(system.router)
+    # uploads is registered before projects so /api/projects/upload is matched
+    # before any catch-all parametric route on the projects router.
+    app.include_router(uploads.router)
     app.include_router(projects.router)
     app.include_router(functions.router)
     app.include_router(strings.router)

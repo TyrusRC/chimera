@@ -148,6 +148,16 @@ export const api = {
       body: JSON.stringify({ path }),
     }),
   getProject: (id: string) => request<ProjectDetail>(`/projects/${id}`),
+  uploadProject: async (file: File): Promise<{ path: string; filename: string; size: number }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch(`${BASE_URL}/projects/upload`, { method: 'POST', body: fd })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || res.statusText)
+    }
+    return res.json()
+  },
 
   // Functions
   listFunctions: (projectId: string, params?: Record<string, string>) => {
