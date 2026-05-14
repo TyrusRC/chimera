@@ -64,6 +64,21 @@ def test_severity_for_score():
     assert severity_for_score(0.0) == "None"
 
 
+@pytest.mark.parametrize("score,expected", [
+    (0.0, "None"),
+    (0.1, "Low"),
+    (3.9, "Low"),
+    (4.0, "Medium"),
+    (6.9, "Medium"),
+    (7.0, "High"),
+    (8.9, "High"),
+    (9.0, "Critical"),
+    (10.0, "Critical"),
+])
+def test_severity_for_score_buckets_per_cvss_v31(score, expected):
+    assert severity_for_score(score) == expected
+
+
 def test_pe_returns_no_findings():
     """Auto-stub mapping is mobile-only for now."""
     m = _pe_model()
