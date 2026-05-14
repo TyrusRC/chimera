@@ -15,12 +15,15 @@ export function CodeView({ projectId, address }: Props) {
       setFuncName('')
       return
     }
-    api.getFunction(projectId, address).then((f) => {
+    const ac = new AbortController()
+    api.getFunction(projectId, address, ac.signal).then((f) => {
+      if (ac.signal.aborted) return
       setFuncName(`${f.name} (${f.address})`)
       setCode(f.decompiled || `// No decompiled code available for ${f.name}\n// Backend: ${f.source_backend}`)
       const langMap: Record<string, string> = { java: 'java', kotlin: 'kotlin', c: 'c', objc: 'objective-c', swift: 'swift' }
       setLanguage(langMap[f.language] || 'c')
-    }).catch(() => setCode('// Error loading function'))
+    }).catch(() => { if (!ac.signal.aborted) setCode('// Error loading function') })
+    return () => ac.abort()
   }, [projectId, address])
 
   return (

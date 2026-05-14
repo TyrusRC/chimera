@@ -16,10 +16,12 @@ export function XrefsPanel({ projectId, address }: Props) {
       setFunc(null)
       return
     }
+    const ac = new AbortController()
     api
-      .getFunction(projectId, address)
-      .then(setFunc)
-      .catch(() => setFunc(null))
+      .getFunction(projectId, address, ac.signal)
+      .then((f) => { if (!ac.signal.aborted) setFunc(f) })
+      .catch(() => { if (!ac.signal.aborted) setFunc(null) })
+    return () => ac.abort()
   }, [projectId, address])
 
   if (!func) {

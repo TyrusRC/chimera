@@ -176,11 +176,12 @@ export const api = {
       `/projects/${projectId}/functions${qs}`,
     )
   },
-  getFunction: (projectId: string, address: string) =>
-    request<FunctionDetail>(`/projects/${projectId}/functions/${address}`),
-  getDisassembly: (projectId: string, address: string) =>
+  getFunction: (projectId: string, address: string, signal?: AbortSignal) =>
+    request<FunctionDetail>(`/projects/${projectId}/functions/${address}`, { signal }),
+  getDisassembly: (projectId: string, address: string, signal?: AbortSignal) =>
     request<{ address: string; name: string; instructions: Instruction[] }>(
       `/projects/${projectId}/functions/${address}/disassembly`,
+      { signal },
     ),
 
   // Strings

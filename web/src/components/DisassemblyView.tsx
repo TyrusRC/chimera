@@ -17,9 +17,11 @@ export function DisassemblyView({ projectId, address }: Props) {
       return
     }
     setError(null)
-    api.getDisassembly(projectId, address)
-      .then((d) => setInstructions(d.instructions ?? []))
-      .catch((e: Error) => setError(e.message))
+    const ac = new AbortController()
+    api.getDisassembly(projectId, address, ac.signal)
+      .then((d) => { if (!ac.signal.aborted) setInstructions(d.instructions ?? []) })
+      .catch((e: Error) => { if (!ac.signal.aborted) setError(e.message) })
+    return () => ac.abort()
   }, [projectId, address])
 
   if (!address) {
