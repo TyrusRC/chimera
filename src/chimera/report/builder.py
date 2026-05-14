@@ -18,6 +18,50 @@ from chimera.core.cache import AnalysisCache
 from chimera.model.program import UnifiedProgramModel
 
 
+def _behavior_section(sha: str, cache, native_protection: dict, protection_profile: dict) -> dict:
+    """Aggregate anti-analysis / network / persistence / IOC / packer signals."""
+    aa_evidence: list[str] = []
+    for k in ("anti_debug_evidence", "anti_vm_evidence", "self_inject_evidence"):
+        v = (native_protection or {}).get(k) or []
+        if isinstance(v, list):
+            aa_evidence.extend(str(x) for x in v)
+
+    anti_analysis = {
+        "anti_debug": bool((native_protection or {}).get("has_anti_debug")) or bool((protection_profile or {}).get("anti_debug")),
+        "anti_vm": bool((native_protection or {}).get("has_anti_vm")) or bool((protection_profile or {}).get("anti_emulator")),
+        "anti_frida": bool((protection_profile or {}).get("anti_frida")),
+        "root_jailbreak_detect": bool((protection_profile or {}).get("root_detect")) or bool((protection_profile or {}).get("jailbreak_detect")),
+        "self_inject": bool((native_protection or {}).get("has_self_inject")),
+        "evidence": aa_evidence[:50],
+    }
+
+    persistence_extra = cache.get_json(sha, "elf_persistence") or []
+    persistence = {
+        "indicators_present": bool((native_protection or {}).get("has_persistence_strings")) or bool(persistence_extra),
+        "elf_persistence_count": len(persistence_extra) if isinstance(persistence_extra, list) else 0,
+    }
+
+    network = {
+        "cleartext_permitted": bool((protection_profile or {}).get("cleartext_traffic")),
+        "user_ca_trusted": bool((protection_profile or {}).get("user_ca_trusted")),
+        "pinning_present": bool((protection_profile or {}).get("pinning_present")),
+    }
+
+    iocs = cache.get_json(sha, "iocs") or {}
+    packer = {
+        "detected": bool((native_protection or {}).get("packer_detected")),
+        "name": (native_protection or {}).get("packer_name"),
+    }
+
+    return {
+        "anti_analysis": anti_analysis,
+        "network": network,
+        "persistence": persistence,
+        "iocs": iocs,
+        "packer": packer,
+    }
+
+
 def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
     """Aggregate model + cache state into one analyst-ready report payload."""
     sha = model.binary.sha256
@@ -25,6 +69,8 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
     jadx_meta = cache.get_json(sha, "jadx") or {}
     manifest_bytes = cache.get(sha, "manifest_xml")
     native_protections = cache.get_json(sha, "native_protections") or {}
+    native_protection = cache.get_json(sha, "native_protection") or {}
+    protection_profile = cache.get_json(sha, "protection_profile") or {}
 
     # Per-native-lib backend results — walk the cache dir.
     sha_dir = cache.cache_dir / sha[:2] / sha
@@ -125,7 +171,8 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
         "elf_persistence": cache.get_json(sha, "elf_persistence") or [],
         "elf_syscalls": cache.get_json(sha, "elf_syscalls") or {},
         "dotnet_assemblies": ilspy_payloads,
-        "native_protection": cache.get_json(sha, "native_protection") or {},
+        "native_protection": native_protection,
+        "behavior": _behavior_section(sha, cache, native_protection, protection_profile),
         "imports": [
             {"dll": e.dll, "name": e.name, "address": e.address, "ordinal": e.ordinal, "bucket": e.bucket}
             for e in model.imports
