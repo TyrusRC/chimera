@@ -32,6 +32,28 @@ from chimera.pipelines.common import detect_platform
 logger = logging.getLogger(__name__)
 
 
+class UnsupportedFormatError(Exception):
+    """Raised by ChimeraEngine.analyze when the input format has no pipeline."""
+
+    SUPPORTED = (
+        "APK/AAB/XAPK/APKM/DEX  -> android",
+        "IPA                    -> ios",
+        "MACHO/DYLIB/FAT        -> macho (standalone)",
+        "PE32/PE64/DOTNET       -> windows",
+        "ELF                    -> linux native",
+        "MEMORY_LIME/RAW        -> memory forensics",
+    )
+
+    def __init__(self, detected_format: str | None, path: str):
+        self.detected_format = detected_format
+        self.path = path
+        supported = "\n  ".join(self.SUPPORTED)
+        super().__init__(
+            f"Unsupported format {detected_format!r} for {path!r}. "
+            f"Supported formats:\n  {supported}"
+        )
+
+
 class ChimeraEngine:
     def __init__(self, config: ChimeraConfig):
         self.config = config
@@ -104,11 +126,13 @@ class ChimeraEngine:
                 path, self.config, self.registry, self.resource_mgr, self.cache,
             )
         else:
-            raise ValueError(
-                f"Unsupported platform for {path.name}. "
-                f"Supported: Android (APK/AAB/DEX), iOS (IPA/Mach-O), "
-                f"Windows (PE/DLL/.NET), Linux (ELF)."
-            )
+            detected: str | None = None
+            try:
+                from chimera.model.binary import BinaryInfo
+                detected = BinaryInfo.from_path(path).format.value
+            except Exception:
+                pass
+            raise UnsupportedFormatError(detected, str(path))
 
     async def cleanup(self) -> None:
         for adapter in self.registry.all_registered():

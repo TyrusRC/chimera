@@ -66,11 +66,12 @@ def test_engine_routes_memory_image_to_analyze_memory(tmp_path):
 
 
 def test_engine_rejects_unknown_format(tmp_path):
+    from chimera.core.engine import UnsupportedFormatError
     p = tmp_path / "garbage.bin"
     p.write_bytes(b"\x00" * 100)
     config = ChimeraConfig(project_dir=tmp_path/"p", cache_dir=tmp_path/"c")
     eng = ChimeraEngine(config)
-    with pytest.raises(ValueError, match="Unsupported platform"):
+    with pytest.raises(UnsupportedFormatError, match="Unsupported format"):
         asyncio.run(eng.analyze(str(p)))
 
 
