@@ -63,9 +63,14 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
                 "jvm": f.address, "native": None, "type": "unbound",
             })
 
-    # Collect ilspy_ keys for .NET assemblies
-    ilspy_keys = [k for k in cache.list_keys(sha) if k.startswith("ilspy_")]
-    ilspy_payloads = [cache.get_json(sha, k) for k in ilspy_keys if cache.get_json(sha, k)]
+    # Collect ilspy_ keys for .NET assemblies. Read each key once.
+    ilspy_payloads = [
+        p
+        for k in cache.list_keys(sha)
+        if k.startswith("ilspy_")
+        for p in (cache.get_json(sha, k),)
+        if p
+    ]
 
     return {
         "schema": "chimera-report/1",
