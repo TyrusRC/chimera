@@ -22,6 +22,8 @@ export function FridaConsole({ deviceId, platform }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const ws = useRef<WebSocket | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
+  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   // Auto-scroll on new lines
@@ -29,19 +31,29 @@ export function FridaConsole({ deviceId, platform }: Props) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [lines])
 
-  // Close WS on unmount so Frida sessions don't leak
+  // On unmount: close WS and tell backend to release the Frida session.
   useEffect(() => {
     return () => {
       ws.current?.close()
       ws.current = null
+      const sid = sessionIdRef.current
+      if (sid) {
+        // Fire-and-forget — the component is going away; no UI update on result.
+        api.closeFridaSession(sid).catch(() => {})
+      }
     }
   }, [])
 
   // Load bundled scripts once
   useEffect(() => {
-    api.listFridaScripts()
-      .then((r) => setScripts(r.scripts.filter((s) => !platform || s.platform === platform || s.platform === 'both')))
-      .catch((e: Error) => setError(`scripts: ${e.message}`))
+    const ac = new AbortController()
+    api.listFridaScripts(ac.signal)
+      .then((r) => {
+        if (ac.signal.aborted) return
+        setScripts(r.scripts.filter((s) => !platform || s.platform === platform || s.platform === 'both'))
+      })
+      .catch((e: Error) => { if (!ac.signal.aborted) setError(`scripts: ${e.message}`) })
+    return () => ac.abort()
   }, [platform])
 
   // Refresh package list whenever the device changes
@@ -50,9 +62,11 @@ export function FridaConsole({ deviceId, platform }: Props) {
       setPackages([])
       return
     }
-    api.listPackages(deviceId)
-      .then((r) => setPackages(r.packages))
-      .catch((e: Error) => setError(`packages: ${e.message}`))
+    const ac = new AbortController()
+    api.listPackages(deviceId, ac.signal)
+      .then((r) => { if (!ac.signal.aborted) setPackages(r.packages) })
+      .catch((e: Error) => { if (!ac.signal.aborted) setError(`packages: ${e.message}`) })
+    return () => ac.abort()
   }, [deviceId])
 
   function log(line: LogLine) {

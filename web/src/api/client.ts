@@ -1,6 +1,6 @@
 const BASE_URL = '/api'
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function request<T>(path: string, options?: RequestInit & { signal?: AbortSignal }): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
@@ -185,12 +185,12 @@ export const api = {
 
   // Devices
   listDevices: () => request<DeviceEntry[]>('/devices'),
-  listPackages: (deviceId: string) =>
-    request<{ packages: string[] }>(`/devices/${deviceId}/packages`),
+  listPackages: (deviceId: string, signal?: AbortSignal) =>
+    request<{ packages: string[] }>(`/devices/${deviceId}/packages`, { signal }),
 
   // Frida
-  listFridaScripts: () =>
-    request<{ scripts: FridaScriptMeta[] }>('/frida/scripts'),
+  listFridaScripts: (signal?: AbortSignal) =>
+    request<{ scripts: FridaScriptMeta[] }>('/frida/scripts', { signal }),
   listFridaSessions: () =>
     request<{ sessions: FridaSessionInfo[] }>('/frida/sessions'),
   createFridaSession: (body: { device_id?: string; target: string; mode: 'attach' | 'spawn' }) =>
