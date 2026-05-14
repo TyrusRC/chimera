@@ -1,6 +1,7 @@
 """Compute the diff between two cached chimera projects."""
 from __future__ import annotations
 
+import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,14 +64,23 @@ def _parse_nsc_or_none(xml: Optional[bytes]) -> Optional[NSCModel]:
             return None
 
 
-def _evidence_key(f: Finding) -> str:
-    """Stable identity key for a finding across two app versions.
+_LINE_SUFFIX_RE = re.compile(r":(\d+)(\s|$)")
 
-    Uses (rule_id + first evidence string), which captures the location
-    well enough that line-shifts don't create false 'resolved + added'
-    pairs unless the rule actually fires on a different element.
+
+def _evidence_key(f: Finding) -> str:
+    """Stable identity for a finding's evidence, independent of source-line shifts.
+
+    Manifest/NSC evidence strings embed a ``:<line>`` suffix
+    (e.g. ``AndroidManifest.xml:14 cleartextTraffic=true``). Any unrelated
+    line shift would otherwise reclassify an unchanged finding as
+    ``resolved + added``. Strip the line suffix so identity is anchored
+    to (file, element) rather than (file, line).
     """
-    return f.evidence[0] if f.evidence else ""
+    if not f.evidence:
+        return ""
+    text = f.evidence[0]
+    # Drop ":<line>" suffixes that appear in manifest/NSC evidence formats.
+    return _LINE_SUFFIX_RE.sub(r"\2", text).strip()
 
 
 def _findings_for(snap: ProjectSnapshot) -> list[Finding]:

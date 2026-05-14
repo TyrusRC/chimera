@@ -149,3 +149,49 @@ def test_findings_unchanged_not_listed():
     diff = diff_projects(a, b)
     assert diff.findings_added == []
     assert diff.findings_resolved == []
+
+
+def test_evidence_key_ignores_manifest_line_number():
+    from chimera.diff.engine import _evidence_key
+    from chimera.detection_engineering.cvss_findings import Finding
+
+    a = Finding(
+        finding_id="MANIFEST-CLEARTEXT",
+        title="t",
+        severity="Medium",
+        cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+        cvss_base_score=0.0,
+        evidence=["AndroidManifest.xml:14 cleartextTraffic=true"],
+    )
+    b = Finding(
+        finding_id="MANIFEST-CLEARTEXT",
+        title="t",
+        severity="Medium",
+        cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+        cvss_base_score=0.0,
+        evidence=["AndroidManifest.xml:27 cleartextTraffic=true"],
+    )
+    assert _evidence_key(a) == _evidence_key(b)
+
+
+def test_evidence_key_preserves_distinct_evidence():
+    from chimera.diff.engine import _evidence_key
+    from chimera.detection_engineering.cvss_findings import Finding
+
+    a = Finding(
+        finding_id="MANIFEST-CLEARTEXT",
+        title="t",
+        severity="Medium",
+        cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+        cvss_base_score=0.0,
+        evidence=["AndroidManifest.xml:14 cleartextTraffic=true"],
+    )
+    b = Finding(
+        finding_id="MANIFEST-CLEARTEXT",
+        title="t",
+        severity="Medium",
+        cvss_vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+        cvss_base_score=0.0,
+        evidence=["AndroidManifest.xml:14 networkSecurityConfig present"],
+    )
+    assert _evidence_key(a) != _evidence_key(b)
