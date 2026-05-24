@@ -25,3 +25,11 @@ tests/deobf_evidence/fixtures/**/.cache/
 
 # Internal artifacts — kept local only
 docs/
+
+# Verification artefacts produced by scripts/e2e_docker.sh + manual drives
+workflow-out/
+
+# tsc shadows next to .tsx sources (vite consumes .tsx directly)
+web/src/**/*.js
+!web/src/**/*.config.js
+web/package-lock.json

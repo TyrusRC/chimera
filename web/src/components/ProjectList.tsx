@@ -3,7 +3,7 @@ import { api, ProjectSummary } from '../api/client'
 import { useStore } from '../store'
 
 const ACCEPTED_FILE_TYPES =
-  '.apk,.aab,.ipa,.xapk,.apkm,.exe,.dll,.so,.dylib,.elf,.macho,.dex,.jar'
+  '.apk,.aab,.ipa,.xapk,.apkm,.exe,.dll,.sys,.so,.dylib,.elf,.macho,.bin,.dex,.jar,.o,.a'
 
 export function ProjectList() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -57,7 +57,7 @@ export function ProjectList() {
       <div className="w-[500px] bg-chimera-surface rounded-lg border border-chimera-border p-6">
         <h1 className="text-xl font-bold text-chimera-accent mb-1">Chimera</h1>
         <p className="text-chimera-muted text-xs mb-6">
-          {info ? `v${info.version} — Mobile RE Platform` : 'Loading...'}
+          {info ? `v${info.version} — Reverse Engineering Platform` : 'Loading...'}
         </p>
 
         <div className="mb-6">
@@ -67,7 +67,7 @@ export function ProjectList() {
               type="text"
               value={path}
               onChange={(e) => setPath(e.target.value)}
-              placeholder="/path/to/app.apk or app.ipa"
+              placeholder="/path/to/sample.exe, server.elf, app.apk, …"
               className="flex-1 bg-chimera-bg border border-chimera-border rounded px-3 py-2 text-sm text-chimera-text placeholder-chimera-muted focus:outline-none focus:border-chimera-accent"
             />
             <button
@@ -97,7 +97,7 @@ export function ProjectList() {
               {uploading ? 'Uploading...' : 'Upload binary...'}
             </label>
             <span className="text-[10px] text-chimera-muted">
-              .apk .aab .ipa .xapk .exe .dll .so .dylib .elf .dex .jar
+              PE · ELF · Mach-O · .NET · APK · IPA · DEX
             </span>
           </div>
         </div>

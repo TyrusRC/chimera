@@ -48,7 +48,7 @@ export function MainLayout({ projectId }: Props) {
       {/* Top bar */}
       <div className="h-10 bg-chimera-surface border-b border-chimera-border flex items-center px-4 text-sm">
         <span className="text-chimera-accent font-bold mr-2">CHIMERA</span>
-        <span className="text-chimera-muted">Mobile RE Platform</span>
+        <span className="text-chimera-muted">Reverse Engineering Platform</span>
         <button
           onClick={() => useStore.getState().setProject(null)}
           className="ml-auto text-chimera-muted hover:text-chimera-text text-xs"
