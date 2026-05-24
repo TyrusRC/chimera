@@ -11,7 +11,7 @@ from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
 from chimera.core.resource_manager import ResourceManager
 from chimera.model.binary import BinaryInfo, Framework
-from chimera.model.function import FunctionInfo
+from chimera.model.function import FunctionInfo, ImportEntry
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.common import (
     _rehydrate_from_cache,
@@ -165,6 +165,20 @@ async def analyze_apk(
                         original_name=fname,
                         language="c", classification="unknown",
                         layer="native", source_backend="radare2",
+                    ))
+                # Surface native imports per-lib so the model carries them
+                # — PE/ELF pipelines already do this; without it the report
+                # has no view of native-side dependencies for mobile.
+                for imp in triage.get("imports", []) or []:
+                    name = imp.get("name") or imp.get("realname")
+                    if not name:
+                        continue
+                    vaddr = imp.get("plt") or imp.get("vaddr") or 0
+                    model.add_import(ImportEntry(
+                        dll=lib_path.name,
+                        name=str(name),
+                        address=hex(vaddr) if isinstance(vaddr, int) and vaddr else None,
+                        ordinal=imp.get("ordinal"),
                     ))
                 cache.put_json(binary.sha256, f"r2_{lib_path.name}", triage)
 

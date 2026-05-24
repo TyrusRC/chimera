@@ -195,6 +195,22 @@ async def analyze_elf(
         skipped_phases.append("elf_persistence")
 
     # -----------------------------------------------------------------------
+    # Phase 5.5: FLIRT-equivalent function signature matching. Renames
+    # statically-linked libc/openssl/zlib/curl functions in the model so
+    # decompilation and call-graph views show recognisable names.
+    # -----------------------------------------------------------------------
+    if not getattr(config, "skip_sig_match", False):
+        try:
+            from chimera.parsers.function_signatures import match_functions
+            sig_stats = match_functions(model, elf_path)
+            cache.put_json(sha, "sig_match", sig_stats)
+            if sig_stats["matched"]:
+                logger.info("library signatures matched %d functions", sig_stats["matched"])
+        except Exception as exc:
+            logger.warning("signature matcher failed: %s", exc)
+            skipped_phases.append("sig_match")
+
+    # -----------------------------------------------------------------------
     # Phase 6: Syscall scoring
     # -----------------------------------------------------------------------
     try:

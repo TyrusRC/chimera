@@ -1,0 +1,12 @@
+{
+  "name": "pe-isdebuggerpresent-nop",
+  "description": "Rewrite the IAT-pointed thunk for IsDebuggerPresent so it returns 0 (xor eax,eax; ret). Defeats the most common Windows anti-debug check without touching call sites.",
+  "applies_to": ["pe"],
+  "patches": [
+    {
+      "kind": "find-import-and-stub",
+      "import_name": "IsDebuggerPresent",
+      "stub_bytes_hex": "31c0c3"
+    }
+  ]
+}

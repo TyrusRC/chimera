@@ -9,9 +9,9 @@ interface Finding {
   rule_id: string
   title: string
   severity: string
-  masvs_category?: string
-  location?: string
-  description?: string
+  masvs_category?: string | null
+  location?: string | null
+  description?: string | null
 }
 
 interface ProtectionItem {

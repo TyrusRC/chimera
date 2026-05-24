@@ -216,6 +216,23 @@ async def analyze_pe(
             skipped_phases.append("import_scoring")
 
     # -----------------------------------------------------------------------
+    # Phase 6.5: FLIRT-equivalent function signature matching.
+    # Walks the model's functions and tags statically-linked libc/openssl/
+    # zlib/curl matches in-place. Best-effort — silently no-ops when the
+    # signature pack is empty or the binary's arch isn't represented.
+    # -----------------------------------------------------------------------
+    if not getattr(config, "skip_sig_match", False):
+        try:
+            from chimera.parsers.function_signatures import match_functions
+            sig_stats = match_functions(model, pe_path)
+            cache.put_json(sha, "sig_match", sig_stats)
+            if sig_stats["matched"]:
+                logger.info("library signatures matched %d functions", sig_stats["matched"])
+        except Exception as exc:
+            logger.warning("signature matcher failed: %s", exc)
+            skipped_phases.append("sig_match")
+
+    # -----------------------------------------------------------------------
     # Phase 7: PE flags
     # -----------------------------------------------------------------------
     if header is not None:

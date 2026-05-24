@@ -40,8 +40,18 @@ def _evidence_to_location(evidence: str) -> dict:
     return location
 
 
-def findings_to_sarif(findings: Iterable[Finding], tool_version: str = "1.0.0") -> dict:
-    """Convert Chimera findings to a SARIF v2.1.0 document."""
+def findings_to_sarif(findings: Iterable[Finding], tool_version: str | None = None) -> dict:
+    """Convert Chimera findings to a SARIF v2.1.0 document.
+
+    `tool_version` defaults to the installed package version so downstream
+    aggregators (CodeQL, GitHub code-scanning, etc.) see a value that
+    actually moves when chimera does.
+    """
+    if tool_version is None:
+        try:
+            from chimera import __version__ as tool_version
+        except Exception:
+            tool_version = "0.0.0"
     findings = list(findings)
     rules = [
         {

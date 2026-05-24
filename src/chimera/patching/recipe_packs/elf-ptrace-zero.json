@@ -1,0 +1,12 @@
+{
+  "name": "elf-ptrace-zero",
+  "description": "Stub the ptrace() PLT entry to return 0 (xor eax,eax; ret). Defeats the canonical Linux anti-debug check, ptrace(PTRACE_TRACEME, ...). x86_64 only.",
+  "applies_to": ["elf"],
+  "patches": [
+    {
+      "kind": "find-elf-plt-and-stub",
+      "symbol_name": "ptrace",
+      "stub_bytes_hex": "31c0c3"
+    }
+  ]
+}

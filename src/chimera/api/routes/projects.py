@@ -147,13 +147,29 @@ async def cancel_project(project_id: str) -> dict:
 
 
 async def _run_analysis(project_id: str, req: AnalyzeRequest) -> None:
+    from chimera.api.websocket.analysis import update_progress
+
     config = ChimeraConfig(ghidra_home=req.ghidra_home)
     engine = ChimeraEngine(config)
+    update_progress(project_id, "starting", "Initialising engine", 5)
     try:
         try:
+            update_progress(project_id, "analyzing", "Running pipeline", 15)
             model = await asyncio.wait_for(
                 engine.analyze(req.path), timeout=_analysis_timeout,
             )
+            update_progress(project_id, "finalizing", "Storing results", 90)
+            # Re-apply any persisted overlay (renames/types from prior runs)
+            # so analyst work isn't lost across container restarts.
+            try:
+                from chimera.core.overlay import ProjectOverlay
+                overlay = ProjectOverlay.load(config.project_dir, model.binary.sha256)
+                touched = overlay.apply_to_model(model)
+                if touched:
+                    logger.info("overlay: re-applied %d annotations for %s",
+                                touched, project_id)
+            except Exception as exc:
+                logger.warning("overlay re-apply failed for %s: %s", project_id, exc)
             await _store.update(
                 project_id,
                 platform=model.binary.platform.value,
@@ -164,17 +180,21 @@ async def _run_analysis(project_id: str, req: AnalyzeRequest) -> None:
                 status="complete",
                 model=model,
             )
+            update_progress(project_id, "complete", "Analysis complete", 100)
             logger.info("Analysis complete for %s", project_id)
         except asyncio.TimeoutError:
             await _store.update(
                 project_id, status=f"error: timeout after {_analysis_timeout}s",
             )
+            update_progress(project_id, "error", f"Timeout after {_analysis_timeout}s", 100)
         except asyncio.CancelledError:
             await _store.update(project_id, status="cancelled")
+            update_progress(project_id, "cancelled", "Cancelled by user", 100)
             raise
         except Exception as e:
             logger.error("Analysis failed for %s: %s", project_id, e)
             await _store.update(project_id, status=f"error: {e}")
+            update_progress(project_id, "error", str(e), 100)
     finally:
         await engine.cleanup()
 

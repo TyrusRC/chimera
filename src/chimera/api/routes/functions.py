@@ -71,6 +71,20 @@ async def get_function(project_id: str, address: str) -> dict:
     callees = model.get_callees(address)
     callers = model.get_callers(address)
 
+    # Surface overlay annotations so the UI can render comments / variable
+    # renames inline with the decomp without making a second API call.
+    overlay_comments: dict[str, str] = {}
+    overlay_var_renames: dict[str, str] = {}
+    try:
+        from chimera.core.config import ChimeraConfig
+        from chimera.core.overlay import ProjectOverlay
+        overlay = ProjectOverlay.load(ChimeraConfig().project_dir, model.binary.sha256)
+        overlay_comments = overlay.get_comments(address)
+        overlay_var_renames = overlay.get_variable_renames(address)
+    except Exception:
+        # Annotations are best-effort — never block a function read.
+        pass
+
     return {
         "address": func.address,
         "name": func.name,
@@ -83,6 +97,10 @@ async def get_function(project_id: str, address: str) -> dict:
         "signature": func.signature,
         "callees": [{"address": c.address, "name": c.name} for c in callees],
         "callers": [{"address": c.address, "name": c.name} for c in callers],
+        "annotations": {
+            "comments": overlay_comments,
+            "variable_renames": overlay_var_renames,
+        },
     }
 
 
@@ -113,14 +131,55 @@ async def get_bytes(
 
     Uses mmap so multi-MB binaries don't load fully into RAM. Clamps the
     requested range to the file's actual size.
+
+    The stored project path is resolved against the configured allow-roots
+    (cache_dir + project_dir + the upload staging dir + CHIMERA_DATA_DIR if
+    set) so a malformed project entry cannot trick the endpoint into reading
+    arbitrary files via symlink or traversal.
     """
+    import os
     from chimera.api.routes.projects import _store
+    from chimera.core.config import ChimeraConfig
+
     project = await _store.get(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    path = Path(project.get("path", ""))
-    if not path.exists():
+    raw_path = project.get("path", "")
+    try:
+        path = Path(raw_path).resolve(strict=True)
+    except (OSError, RuntimeError):
         raise HTTPException(status_code=404, detail="Binary file missing")
+
+    cfg = ChimeraConfig()
+    allow_roots: list[Path] = []
+    for root in (cfg.cache_dir, cfg.project_dir):
+        try:
+            allow_roots.append(Path(root).resolve())
+        except OSError:
+            pass
+    for env_var in ("CHIMERA_DATA_DIR", "CHIMERA_UPLOAD_DIR"):
+        v = os.environ.get(env_var)
+        if v:
+            try:
+                allow_roots.append(Path(v).resolve())
+            except OSError:
+                pass
+    # The upload route writes here by default (~/.chimera/uploads). Without it
+    # the bytes endpoint 403s on every project created through /api/projects/upload.
+    try:
+        from chimera.api.routes.uploads import _staging_dir
+        allow_roots.append(_staging_dir().resolve())
+    except Exception:
+        pass
+    # /data is the conventional read-only mount inside the container.
+    if Path("/data").exists():
+        allow_roots.append(Path("/data").resolve())
+
+    if allow_roots and not any(
+        path == root or root in path.parents for root in allow_roots
+    ):
+        raise HTTPException(status_code=403, detail="Path outside allowed roots")
+
     size = path.stat().st_size
     if size == 0 or offset >= size:
         return {"offset": offset, "length": 0, "hex": "", "total_size": size}

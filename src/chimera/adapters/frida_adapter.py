@@ -24,6 +24,16 @@ class FridaSession:
     def messages(self) -> list[dict]:
         return list(self._messages)
 
+    def drain_messages(self) -> list[dict]:
+        """Return all queued messages and reset the internal buffer.
+
+        Long-running attach sessions can accumulate thousands of messages
+        from a chatty agent; the CLI reads + prints + clears via this
+        method each tick so the buffer doesn't grow without bound.
+        """
+        drained, self._messages = self._messages, []
+        return drained
+
     def _on_message(self, message: dict, data: Any) -> None:
         self._messages.append(message)
         if message.get("type") == "send":
@@ -77,14 +87,27 @@ class FridaAdapter(BackendAdapter):
         return {"error": "Use attach() or spawn() for Frida operations"}
 
     async def attach(self, package_or_pid: str | int, device_id: str | None = None) -> FridaSession | None:
+        """Attach to a running process on a Frida-reachable device.
+
+        `device_id` controls device selection:
+          * ``"local"``  — local machine (Linux/macOS/Windows host process).
+          * any other id — resolved via ``frida.get_device(id)``.
+          * ``None``     — USB-attached mobile (default for the mobile workflow).
+        """
         try:
             import frida
-            if device_id:
+            if device_id == "local":
+                # `frida.attach(pid)` on the local host short-circuits the
+                # device lookup; useful for `chimera attach --pid` against a
+                # host process without a USB device present.
+                session = frida.attach(package_or_pid)
+                device = frida.get_local_device()
+            elif device_id:
                 device = frida.get_device(device_id)
+                session = device.attach(package_or_pid)
             else:
                 device = frida.get_usb_device(timeout=5)
-
-            session = device.attach(package_or_pid)
+                session = device.attach(package_or_pid)
             frida_session = FridaSession(device, session)
             key = str(package_or_pid)
             self._sessions[key] = frida_session

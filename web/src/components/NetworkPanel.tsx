@@ -1,5 +1,7 @@
 interface Props { projectId: string }
-export function NetworkPanel({ projectId }: Props) {
+// projectId is reserved for the upcoming live-capture binding; intentionally
+// unused until the mitmproxy bridge lands.
+export function NetworkPanel(_props: Props) {
   return (
     <div className="p-4 text-chimera-muted text-xs">
       <h3 className="text-sm font-bold text-chimera-text mb-2">Network Capture</h3>

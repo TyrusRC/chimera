@@ -1,0 +1,12 @@
+{
+  "name": "pe-checkremotedebuggerpresent-nop",
+  "description": "Stub CheckRemoteDebuggerPresent to write 0 into its out-pointer and return TRUE. Same intent as the IsDebuggerPresent recipe but covers the kernel32 variant programs use to side-step single-target patches.",
+  "applies_to": ["pe"],
+  "patches": [
+    {
+      "kind": "find-import-and-stub",
+      "import_name": "CheckRemoteDebuggerPresent",
+      "stub_bytes_hex": "48c702000000004c89c0c3"
+    }
+  ]
+}

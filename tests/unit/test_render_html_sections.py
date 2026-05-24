@@ -108,3 +108,31 @@ def test_render_html_masvs_omitted_when_not_applicable():
     html = render_html(report)
     # The MASVS table itself should not appear for non-mobile reports.
     assert "MASVS-STORAGE" not in html
+
+
+def test_render_html_tolerates_dict_shaped_elf_persistence():
+    """The ELF pipeline stores `{hit_count, hits}` in the cache; render_html
+    used to assume it was a flat list and crashed with AttributeError. Both
+    shapes must render cleanly."""
+    # Shape A: dict-with-hits (current pipeline output).
+    report = _base_report(elf_persistence={
+        "hit_count": 1,
+        "hits": [
+            {"category": "cron", "path": "/etc/crontab",
+             "evidence": "* * * * * /tmp/payload", "string_address": "0x4010"},
+        ],
+    })
+    html = render_html(report)
+    assert "cron" in html
+    assert "/etc/crontab" in html
+    # Shape B: legacy flat list — also tolerated.
+    report2 = _base_report(elf_persistence=[
+        {"category": "systemd", "path": "/etc/systemd/system/x.service",
+         "evidence": "ExecStart=/tmp/x", "string_address": "0x4020"},
+    ])
+    html2 = render_html(report2)
+    assert "systemd" in html2
+    # Shape C: garbage strings inside hits — must skip not crash.
+    report3 = _base_report(elf_persistence={"hits": ["junk-string", None]})
+    html3 = render_html(report3)
+    assert "<em>none</em>" in html3

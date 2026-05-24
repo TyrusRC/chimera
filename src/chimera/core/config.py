@@ -8,10 +8,29 @@ from pathlib import Path
 from typing import Optional
 
 
+def _env_path(name: str, default_factory) -> Path:
+    """Resolve a path from an env var, falling back to the default factory.
+
+    Tests use this to redirect project/cache state into a tmp_path instead
+    of polluting the working tree. Containers use it to pin storage onto a
+    mounted volume.
+    """
+    raw = os.environ.get(name)
+    return Path(raw) if raw else default_factory()
+
+
 @dataclass
 class ChimeraConfig:
-    project_dir: Path = field(default_factory=lambda: Path.cwd() / "chimera_project")
-    cache_dir: Path = field(default_factory=lambda: Path.cwd() / "chimera_cache")
+    project_dir: Path = field(
+        default_factory=lambda: _env_path(
+            "CHIMERA_PROJECT_DIR", lambda: Path.cwd() / "chimera_project",
+        )
+    )
+    cache_dir: Path = field(
+        default_factory=lambda: _env_path(
+            "CHIMERA_CACHE_DIR", lambda: Path.cwd() / "chimera_cache",
+        )
+    )
     ghidra_home: Optional[str] = None
     ghidra_max_mem: str = "4g"
     # Ghidra runs serially per-lib and dominates wall time on modern apps
@@ -31,6 +50,9 @@ class ChimeraConfig:
     skip_floss: bool = False
     skip_ilspy: bool = False
     skip_pe_imports: bool = False
+    # FLIRT-equivalent library function name matching. Disabled in fast/
+    # triage modes; default-on otherwise.
+    skip_sig_match: bool = False
     floss_timeout: int = 90
     adb_device: Optional[str] = None
     ios_udid: Optional[str] = None

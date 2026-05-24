@@ -36,10 +36,14 @@ def _behavior_section(sha: str, cache, native_protection: dict, protection_profi
         "evidence": aa_evidence[:50],
     }
 
-    persistence_extra = cache.get_json(sha, "elf_persistence") or []
+    persistence_raw = cache.get_json(sha, "elf_persistence") or []
+    if isinstance(persistence_raw, dict):
+        persistence_hits = persistence_raw.get("hits") or []
+    else:
+        persistence_hits = persistence_raw if isinstance(persistence_raw, list) else []
     persistence = {
-        "indicators_present": bool((native_protection or {}).get("has_persistence_strings")) or bool(persistence_extra),
-        "elf_persistence_count": len(persistence_extra) if isinstance(persistence_extra, list) else 0,
+        "indicators_present": bool((native_protection or {}).get("has_persistence_strings")) or bool(persistence_hits),
+        "elf_persistence_count": len(persistence_hits),
     }
 
     network = {
@@ -87,6 +91,66 @@ def _attack_surface_section(model: UnifiedProgramModel, sha: str, cache) -> dict
         out["url_schemes"] = list(url_schemes)[:100]
 
     return out
+
+
+def _build_objc_section(model: UnifiedProgramModel) -> dict:
+    """Surface Objective-C runtime data the iOS/MachO pipelines populate.
+
+    Without this, `objc_methods` / categories / protocols / callsites are
+    collected into the model but never reach the JSON/HTML report — the
+    analyst can't see the class hierarchy of a native iOS binary.
+    """
+    methods = model.objc_methods
+    callsites = model.objc_callsites
+    categories = model.objc_categories
+    protocols = model.objc_protocols
+    if not (methods or callsites or categories or protocols):
+        return {}
+
+    classes: dict[str, dict[str, int]] = {}
+    for m in methods:
+        c = classes.setdefault(
+            m.class_name, {"instance_methods": 0, "class_methods": 0},
+        )
+        c["class_methods" if m.is_class_method else "instance_methods"] += 1
+
+    return {
+        "method_count": len(methods),
+        "callsite_count": len(callsites),
+        "category_count": len(categories),
+        "protocol_count": len(protocols),
+        "classes": [
+            {"name": name, **counts}
+            for name, counts in sorted(classes.items())
+        ][:200],
+        "categories": [
+            {
+                "name": c.name,
+                "target_class": c.target_class,
+                "instance_method_count": len(c.instance_methods),
+                "class_method_count": len(c.class_methods),
+            }
+            for c in categories[:100]
+        ],
+        "protocols": [
+            {
+                "name": p.name,
+                "required_method_count": len(p.required_methods),
+                "optional_method_count": len(p.optional_methods),
+            }
+            for p in protocols[:100]
+        ],
+        "callsites_sample": [
+            {
+                "caller": cs.caller_function,
+                "address": cs.call_address,
+                "selector": cs.selector,
+                "receiver_class": cs.receiver_class,
+                "resolution": cs.resolution,
+            }
+            for cs in callsites[:100]
+        ],
+    }
 
 
 def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
@@ -206,6 +270,7 @@ def build_report(model: UnifiedProgramModel, cache: AnalysisCache) -> dict:
             {"dll": e.dll, "name": e.name, "address": e.address, "ordinal": e.ordinal, "bucket": e.bucket}
             for e in model.imports
         ][:500],
+        "objc": _build_objc_section(model),
         "vol_pslist":            cache.get_json(sha, "vol_pslist") or {},
         "vol_pstree":            cache.get_json(sha, "vol_pstree") or {},
         "vol_bash":              cache.get_json(sha, "vol_bash") or {},
@@ -399,6 +464,73 @@ def _render_masvs_html(matrix: dict) -> str:
     )
 
 
+def _render_objc_html(objc: dict) -> str:
+    if not objc:
+        return ""
+    cls_rows = "".join(
+        f"<tr><td><code>{html.escape(c['name'])}</code></td>"
+        f"<td>{c['instance_methods']}</td>"
+        f"<td>{c['class_methods']}</td></tr>"
+        for c in objc.get("classes", [])
+    ) or "<tr><td colspan=3><em>none</em></td></tr>"
+    cat_rows = "".join(
+        f"<tr><td><code>{html.escape(c['name'])}</code></td>"
+        f"<td><code>{html.escape(c['target_class'])}</code></td>"
+        f"<td>{c['instance_method_count']}</td>"
+        f"<td>{c['class_method_count']}</td></tr>"
+        for c in objc.get("categories", [])
+    )
+    prot_rows = "".join(
+        f"<tr><td><code>{html.escape(p['name'])}</code></td>"
+        f"<td>{p['required_method_count']}</td>"
+        f"<td>{p['optional_method_count']}</td></tr>"
+        for p in objc.get("protocols", [])
+    )
+    cs_rows = "".join(
+        f"<tr><td><code>{html.escape(cs['caller'])}</code></td>"
+        f"<td><code>{html.escape(cs['address'])}</code></td>"
+        f"<td><code>{html.escape(cs['selector'])}</code></td>"
+        f"<td>{html.escape(cs.get('receiver_class') or '—')}</td>"
+        f"<td>{html.escape(cs['resolution'])}</td></tr>"
+        for cs in objc.get("callsites_sample", [])
+    )
+
+    parts = [
+        f"<h2>Objective-C runtime — {objc['method_count']:,} methods · "
+        f"{objc['callsite_count']:,} call-sites · "
+        f"{objc['category_count']:,} categories · "
+        f"{objc['protocol_count']:,} protocols</h2>",
+        "<h3>Classes</h3>",
+        "<table><tr><th>Class</th><th>Instance methods</th><th>Class methods</th></tr>",
+        cls_rows,
+        "</table>",
+    ]
+    if cat_rows:
+        parts += [
+            "<h3>Categories</h3>",
+            "<table><tr><th>Name</th><th>Target class</th>"
+            "<th>Instance</th><th>Class</th></tr>",
+            cat_rows,
+            "</table>",
+        ]
+    if prot_rows:
+        parts += [
+            "<h3>Protocols</h3>",
+            "<table><tr><th>Name</th><th>Required</th><th>Optional</th></tr>",
+            prot_rows,
+            "</table>",
+        ]
+    if cs_rows:
+        parts += [
+            "<h3>Call-sites (sample)</h3>",
+            "<table><tr><th>Caller</th><th>Address</th><th>Selector</th>"
+            "<th>Receiver</th><th>Resolution</th></tr>",
+            cs_rows,
+            "</table>",
+        ]
+    return "\n".join(parts)
+
+
 def render_html(report: dict) -> str:
     """Render the report dict as a single self-contained HTML page."""
     binary = report["binary"]
@@ -440,6 +572,7 @@ def render_html(report: dict) -> str:
     behavior_html = _render_behavior_html(report.get("behavior") or {})
     attack_surface_html = _render_attack_surface_html(report.get("attack_surface") or {})
     masvs_html = _render_masvs_html(report.get("masvs") or {})
+    objc_html = _render_objc_html(report.get("objc") or {})
 
     cl_bindings = (report.get("cross_layer") or {}).get("bindings") or []
     cl_rows = "".join(
@@ -449,24 +582,33 @@ def render_html(report: dict) -> str:
         for b in cl_bindings
     ) or "<tr><td colspan=3><em>none</em></td></tr>"
 
-    # PE imports buckets table
-    pe_imports = report.get("pe_imports") or {}
+    # PE imports buckets table — the cache key wraps the buckets under
+    # "bucket_summary"; iterate that, not the outer envelope.
+    pe_imports_raw = report.get("pe_imports") or {}
+    pe_buckets = pe_imports_raw.get("bucket_summary") or {}
     pe_imports_rows = "".join(
         f"<tr><td>{html.escape(b)}</td>"
         f"<td>{info.get('score', 0)}</td>"
         f"<td>{info.get('weight', 0):.1f}</td>"
         f"<td><code>{html.escape(', '.join(info.get('imports', [])[:8]))}</code></td></tr>"
-        for b, info in pe_imports.items()
+        for b, info in pe_buckets.items()
     ) or "<tr><td colspan=4><em>none</em></td></tr>"
 
-    # ELF persistence findings table
-    elf_persistence = report.get("elf_persistence") or []
+    # ELF persistence findings table.
+    # The cache stores either a raw list (legacy) or a {hit_count, hits} dict
+    # (current — written by pipelines/elf.py). Tolerate both shapes here so
+    # an upgrade across versions doesn't crash the HTML render.
+    elf_persistence_raw = report.get("elf_persistence") or []
+    if isinstance(elf_persistence_raw, dict):
+        elf_persistence = elf_persistence_raw.get("hits") or []
+    else:
+        elf_persistence = elf_persistence_raw
     persistence_rows = "".join(
         f"<tr><td>{html.escape(r.get('category', ''))}</td>"
         f"<td><code>{html.escape(r.get('path', ''))}</code></td>"
         f"<td><code>{html.escape((r.get('evidence') or '')[:120])}</code></td>"
         f"<td>{html.escape(r.get('string_address') or '—')}</td></tr>"
-        for r in elf_persistence
+        for r in elf_persistence if isinstance(r, dict)
     ) or "<tr><td colspan=4><em>none</em></td></tr>"
 
     # .NET assemblies (one outer table per assembly, types listed)
@@ -633,6 +775,8 @@ table.kv th {{ width: 200px; }}
 
 <h2>Native protections</h2>
 {nprot_html}
+
+{objc_html}
 
 <h2>Cross-layer bindings</h2>
 <table>

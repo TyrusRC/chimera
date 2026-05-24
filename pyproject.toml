@@ -25,6 +25,12 @@ dependencies = [
 capa = [
     "flare-capa>=8.0",
 ]
+# Dynamic instrumentation — needed for `chimera attach` and any Frida-
+# driven workflow. Optional because frida-python pulls a per-platform
+# wheel and we want CI / desktop installs to be lightweight by default.
+dynamic = [
+    "frida>=16.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

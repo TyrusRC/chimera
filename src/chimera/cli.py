@@ -746,12 +746,13 @@ async def _sdks(path: str, project_dir: str | None, cache_dir: str | None,
 @click.option("--out", "out_path", type=click.Path(), default=None,
               help="Output path. Defaults to <name>.report.{json,html}")
 @click.option("--format", "fmt",
-              type=click.Choice(["json", "html", "both", "masvs", "cvss", "sbom", "ir"]),
+              type=click.Choice(["json", "html", "both", "masvs", "cvss", "sbom", "ir", "sarif"]),
               default="both",
               help="Output format(s). 'masvs' = MASVS coverage matrix; "
                    "'cvss' = CVSS finding draft (Markdown); "
                    "'sbom' = CycloneDX 1.6 SBOM (JSON); "
-                   "'ir' = IR findings (Markdown, memory images only).")
+                   "'ir' = IR findings (Markdown, memory images only); "
+                   "'sarif' = SARIF v2.1.0 findings (JSON).")
 def report(path: str, project_dir: str | None, cache_dir: str | None,
            ghidra_home: str | None, out_path: str | None, fmt: str):
     """Run analysis and write a report for the analyst.
@@ -821,6 +822,15 @@ async def _report(path: str, project_dir: str | None, cache_dir: str | None,
             md_path = base.with_suffix(".ir.md")
             md_path.write_text(render_ir_findings_markdown(findings))
             wrote.append(str(md_path))
+        if fmt == "sarif":
+            from chimera.detection_engineering.cvss_findings import (
+                build_findings_from_chimera,
+            )
+            from chimera.detection_engineering.sarif_export import findings_to_sarif
+            findings = build_findings_from_chimera(model, cache)
+            sarif_path = base.with_suffix(".sarif.json")
+            sarif_path.write_text(_json.dumps(findings_to_sarif(findings), indent=2))
+            wrote.append(str(sarif_path))
 
         click.echo(f"Report written for {Path(path).name}:")
         for p in wrote:
@@ -917,7 +927,10 @@ async def _imports_cmd(path, project_dir, cache_dir, bucket_filter, min_score):
         model = await engine.analyze(path)
         from chimera.core.cache import AnalysisCache
         cache = AnalysisCache(config.cache_dir)
-        scored = cache.get_json(model.binary.sha256, "pe_imports") or {}
+        # pe_imports cache wraps the bucket dict under "bucket_summary" alongside
+        # a "scored_count" total; iterate the nested map, not the wrapper.
+        raw = cache.get_json(model.binary.sha256, "pe_imports") or {}
+        scored = raw.get("bucket_summary") or {}
         if not scored:
             click.echo("No PE import scoring available (input may not be a PE).")
             return
@@ -971,7 +984,8 @@ async def _persistence_cmd(path, project_dir, cache_dir):
         model = await engine.analyze(path)
         from chimera.core.cache import AnalysisCache
         cache = AnalysisCache(config.cache_dir)
-        rows = cache.get_json(model.binary.sha256, "elf_persistence") or []
+        raw = cache.get_json(model.binary.sha256, "elf_persistence") or []
+        rows = raw.get("hits") if isinstance(raw, dict) else raw
         if not rows:
             click.echo("No persistence-relevant strings detected.")
             return
@@ -1297,6 +1311,438 @@ def _print_malfind(blob: dict):
         click.echo(f"{r.get('pid', '?'):>6}  {r.get('process', '?'):<16}  "
                    f"{r.get('protection', '?'):<6}  {r.get('start_addr', '?'):<16}  "
                    f"{r.get('end_addr', '?')}")
+
+
+# ----------------------------------------------------------------------
+# patch — in-place PE/ELF/Mach-O byte editor with a recipe library
+# ----------------------------------------------------------------------
+
+
+@main.command("patch")
+@click.argument("binary", type=click.Path(exists=True, dir_okay=False))
+@click.option("--addr", type=str, default=None,
+              help="Virtual address to patch (hex). Pair with --bytes.")
+@click.option("--bytes", "raw_bytes", type=str, default=None,
+              help="Bytes to write as a hex string. Pair with --addr.")
+@click.option("--json", "json_path", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Apply a batch of patches from a JSON file. Schema: "
+                   "{patches:[{address, bytes_hex, description?}]}.")
+@click.option("--recipe", "recipes", multiple=True,
+              help="Apply a bundled recipe by name (repeatable).")
+@click.option("--list-recipes", is_flag=True,
+              help="List bundled recipes and exit.")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Output path (default: <binary>.patched.<ext>)")
+@click.option("--dry-run", is_flag=True,
+              help="Print the diff summary and do NOT write the output file.")
+def patch(binary: str, addr: str | None, raw_bytes: str | None,
+          json_path: str | None, recipes: tuple[str, ...],
+          list_recipes: bool, out_path: str | None, dry_run: bool):
+    """Apply byte-level patches to a PE / ELF / Mach-O binary.
+
+    \b
+    Examples:
+      chimera patch app.exe --addr 0x14001234 --bytes 909090
+      chimera patch sample.elf --recipe elf-ptrace-zero
+      chimera patch sample.exe --recipe pe-isdebuggerpresent-nop --dry-run
+      chimera patch app.exe --json patches.json --out app.cracked.exe
+    """
+    import json as _json
+    from chimera.patching import BinaryPatcher, PatchError, PatchPlan
+    from chimera.patching.recipes import (
+        apply_recipe,
+        load_bundled_recipes,
+    )
+
+    if list_recipes:
+        for name, r in sorted(load_bundled_recipes().items()):
+            click.echo(f"  {name:<40s} [{','.join(r.applies_to)}]  {r.description}")
+        return
+
+    if not (addr or json_path or recipes):
+        raise click.UsageError(
+            "Provide --addr+--bytes, --json, --recipe, or --list-recipes."
+        )
+
+    try:
+        patcher = BinaryPatcher.open(binary)
+    except PatchError as exc:
+        click.echo(f"chimera patch: {exc}", err=True)
+        raise click.exceptions.Exit(1)
+
+    try:
+        if addr and raw_bytes:
+            patcher.patch(int(addr, 16), bytes.fromhex(raw_bytes),
+                          description="--addr/--bytes")
+        if json_path:
+            blob = _json.loads(Path(json_path).read_text())
+            for step in blob.get("patches", []):
+                plan = PatchPlan(
+                    bytes_=bytes.fromhex(step["bytes_hex"]),
+                    virtual_address=int(step["address"], 16),
+                    description=step.get("description", "batch"),
+                )
+                patcher.apply(plan)
+        if recipes:
+            db = load_bundled_recipes()
+            for name in recipes:
+                if name not in db:
+                    raise click.UsageError(f"unknown recipe {name!r}")
+                apply_recipe(patcher, db[name])
+    except PatchError as exc:
+        click.echo(f"chimera patch: {exc}", err=True)
+        raise click.exceptions.Exit(2)
+
+    click.echo(f"Patches applied: {len(patcher.results)}")
+    for r in patcher.results:
+        va = f"@VA {r.virtual_address:#x}" if r.virtual_address is not None else "@OFF"
+        click.echo(f"  {va:>18s}  off={r.file_offset:#x}  {r.before.hex():<16s} -> {r.after.hex():<16s}  {r.description}")
+
+    if not patcher.results:
+        click.echo("(no patches to write)")
+        return
+
+    out = patcher.save(out_path, dry_run=dry_run)
+    if dry_run:
+        click.echo(f"Dry-run: would write {out}")
+    else:
+        click.echo(f"Wrote {out}")
+
+
+# ----------------------------------------------------------------------
+# gdb-export — emit a .gdbinit with one $name -> address for each function
+# ----------------------------------------------------------------------
+
+
+@main.command("gdb-export")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--cache-dir", type=click.Path(), default=None)
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Output path (default: <binary>.gdbinit)")
+def gdb_export(path: str, cache_dir: str | None, project_dir: str | None,
+               out_path: str | None):
+    """Emit a .gdbinit setting `$function_name` convenience variables.
+
+    Run with:
+
+    \b
+      gdb -x app.gdbinit ./app
+      (gdb) b *$decode_license
+      (gdb) chimera-bp decode_license     # convenience helper
+
+    The init file declares one convenience variable per recovered or
+    overlay-renamed function, plus a `chimera-bp` user command that
+    accepts function names. Symbols that are not valid gdb identifiers
+    are sanitised (dots and slashes become underscores) but kept
+    one-to-one so the analyst can recover the mapping.
+    """
+    asyncio.run(_gdb_export_cmd(path, project_dir, cache_dir, out_path))
+
+
+async def _gdb_export_cmd(path: str, project_dir: str | None,
+                          cache_dir: str | None, out_path: str | None):
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.engine import ChimeraEngine
+    from chimera.core.overlay import ProjectOverlay
+
+    config = ChimeraConfig(
+        project_dir=Path(project_dir) if project_dir else Path.cwd() / "chimera_project",
+        cache_dir=Path(cache_dir) if cache_dir else Path.cwd() / "chimera_cache",
+    )
+    engine = ChimeraEngine(config)
+    try:
+        model = await engine.analyze(path)
+        overlay = ProjectOverlay.load(config.project_dir, model.binary.sha256)
+        overlay.apply_to_model(model)
+
+        out = Path(out_path) if out_path else Path(path).with_suffix(Path(path).suffix + ".gdbinit")
+        emitted = _emit_gdbinit(out, Path(path), model)
+        click.echo(f"Wrote {out} ({emitted} symbols)")
+    finally:
+        await engine.cleanup()
+
+
+def _emit_gdbinit(out_path: Path, binary: Path, model) -> int:
+    """Generate the .gdbinit content. Returns number of symbols emitted."""
+    seen: set[str] = set()
+    lines: list[str] = [
+        "# Generated by chimera gdb-export — function-name → address map.",
+        f"# Source binary: {binary}",
+        "",
+        "set confirm off",
+        f"file {binary}",
+        "",
+    ]
+    emitted = 0
+    for f in model.functions:
+        if not f.address or f.address in {"0xffffffffffffffff", "0x0"}:
+            continue
+        ident = _sanitise_gdb_var(f.name)
+        if not ident or ident in seen:
+            continue
+        seen.add(ident)
+        try:
+            int(f.address, 16)
+        except ValueError:
+            continue
+        lines.append(f"set ${ident} = (void *){f.address}")
+        emitted += 1
+
+    lines += [
+        "",
+        "# chimera-bp <name>  — set a breakpoint by recovered name.",
+        "define chimera-bp",
+        "  if $argc != 1",
+        '    printf "usage: chimera-bp <function_name>\\n"',
+        "  else",
+        "    eval \"break *$arg0\"",
+        "  end",
+        "end",
+        "",
+        f"printf \"chimera: {emitted} symbols loaded\\n\"",
+    ]
+    out_path.write_text("\n".join(lines) + "\n")
+    return emitted
+
+
+def _sanitise_gdb_var(name: str) -> str:
+    """Make `name` a valid gdb convenience-variable identifier.
+
+    gdb accepts `[A-Za-z_][A-Za-z0-9_]*`. We strip everything else and
+    drop the result if it would start with a digit.
+    """
+    if not name:
+        return ""
+    out: list[str] = []
+    for ch in name:
+        if ch.isalnum() or ch == "_":
+            out.append(ch)
+        else:
+            out.append("_")
+    s = "".join(out).strip("_")
+    if not s or s[0].isdigit():
+        return ""
+    return s
+
+
+# ----------------------------------------------------------------------
+# attach — Frida-driven runtime hook session with bundled bypasses
+# ----------------------------------------------------------------------
+
+
+@main.command("attach")
+@click.option("--pid", type=int, default=None,
+              help="Attach to a local host process by PID.")
+@click.option("--target", "target", type=str, default=None,
+              help="Target package/bundle id (mobile) or process name.")
+@click.option("--device", "device_id", default=None,
+              help="Frida device id. Use 'local' for the host machine "
+                   "(default: USB-attached mobile device).")
+@click.option("--bypass", "bypasses", multiple=True,
+              help="Bundled script id to preload (repeatable). "
+                   "See `chimera frida list` for available ids.")
+@click.option("--mode", type=click.Choice(["attach", "spawn"]), default="attach",
+              help="Whether to attach to a running process or spawn fresh "
+                   "(spawn requires --target).")
+@click.option("--duration", type=int, default=30,
+              help="Seconds to keep the session alive. Pair with --interactive "
+                   "to read commands from stdin instead of sleeping.")
+@click.option("--interactive", is_flag=True,
+              help="Drop into a tiny REPL after preloading bypasses: each "
+                   "line of stdin is evaluated against the attached session.")
+@click.option("--print-messages/--no-print-messages", default=True,
+              help="Stream the script's send()/console.log() messages to stdout.")
+def attach(pid: int | None, target: str | None, device_id: str | None,
+           bypasses: tuple[str, ...], mode: str, duration: int,
+           interactive: bool, print_messages: bool):
+    """Attach Frida to a target and preload bundled bypass scripts.
+
+    \b
+    Examples:
+      # Hook a running mobile app and silence root + SSL pinning checks.
+      chimera attach --target com.example.app --bypass root_bypass --bypass ssl_pinning
+
+      # Spawn fresh so the bypasses run before the first anti-debug check.
+      chimera attach --target com.example.app --mode spawn --bypass anti_debug
+
+      # Attach to a local host process by PID.
+      chimera attach --pid 1234 --device local --bypass ssl_pinning
+
+      # Drop into a console — each stdin line is evaluated in the agent.
+      chimera attach --target com.example.app --interactive
+    """
+    if pid is None and not target:
+        raise click.UsageError("provide --pid or --target")
+    if mode == "spawn" and not target:
+        raise click.UsageError("--mode spawn requires --target (package/bundle id)")
+    asyncio.run(_attach_cmd(
+        pid=pid, target=target, device_id=device_id,
+        bypasses=bypasses, mode=mode, duration=duration,
+        interactive=interactive, print_messages=print_messages,
+    ))
+
+
+async def _attach_cmd(*, pid, target, device_id, bypasses, mode, duration,
+                      interactive, print_messages):
+    import asyncio as _aio
+    from chimera.adapters.frida_adapter import FridaAdapter
+    from chimera.frida_scripts import get_script, read_source
+
+    # Resolve & validate every bypass up-front so we don't half-load a
+    # session before discovering one was misspelled.
+    resolved: list[tuple[str, str]] = []  # [(script_id, source), ...]
+    for script_id in bypasses:
+        meta = get_script(script_id)
+        if meta is None:
+            click.echo(f"chimera attach: unknown script id {script_id!r}", err=True)
+            raise click.exceptions.Exit(1)
+        source = read_source(script_id)
+        if not source:
+            click.echo(f"chimera attach: empty script source for {script_id!r}", err=True)
+            raise click.exceptions.Exit(1)
+        resolved.append((script_id, source))
+
+    adapter = FridaAdapter()
+    if not adapter.is_available():
+        click.echo(
+            "chimera attach: frida-python not installed. "
+            "Install with `pip install frida` and ensure frida-server is "
+            "reachable on the target.", err=True,
+        )
+        raise click.exceptions.Exit(2)
+
+    target_repr = f"pid={pid}" if pid is not None else target
+    click.echo(f"[chimera] {mode} -> {target_repr} ({device_id or 'usb'})")
+
+    if mode == "spawn":
+        # We don't preload via spawn() because we want multi-script support.
+        # Spawn-with-suspend gives us a window to load every bypass *before*
+        # the app code runs — load_script + later device.resume().
+        session = await adapter.spawn(target, device_id=device_id)
+    else:
+        attach_target = pid if pid is not None else target
+        session = await adapter.attach(attach_target, device_id=device_id)
+
+    if session is None:
+        click.echo("chimera attach: failed to attach (see logs)", err=True)
+        raise click.exceptions.Exit(3)
+
+    # Preload bypasses sequentially. Each load_script registers its own
+    # on_message handler; FridaSession aggregates them into .messages.
+    for script_id, source in resolved:
+        click.echo(f"[chimera] loading {script_id}")
+        await session.load_script(source)
+
+    try:
+        if interactive:
+            click.echo("[chimera] interactive mode — each line is eval'd in the agent.")
+            click.echo("[chimera] type 'quit' to detach.")
+            while True:
+                try:
+                    line = await _aio.to_thread(input, "frida> ")
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if not line:
+                    continue
+                if line.strip() in {"quit", "exit", ".q"}:
+                    break
+                try:
+                    result = await session.evaluate(line)
+                    click.echo(repr(result))
+                except Exception as exc:
+                    click.echo(f"[chimera] error: {exc}", err=True)
+        else:
+            click.echo(f"[chimera] holding session for {duration}s (Ctrl+C to detach)")
+            elapsed = 0
+            tick = 1
+            while elapsed < duration:
+                await _aio.sleep(tick)
+                elapsed += tick
+                if print_messages:
+                    for msg in session.drain_messages():
+                        click.echo(f"[agent] {msg}")
+    except KeyboardInterrupt:
+        click.echo("\n[chimera] interrupted")
+    finally:
+        await adapter.cleanup()
+        click.echo("[chimera] detached")
+
+
+# ----------------------------------------------------------------------
+# unpack — packer detection + UPX shell-out + protected-binary guidance
+# ----------------------------------------------------------------------
+
+
+@main.command("unpack")
+@click.argument("binary", type=click.Path(exists=True, dir_okay=False))
+@click.option("--packer", "packer_override", type=str, default=None,
+              help="Force a specific packer (skip auto-detection).")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Output path (default: <binary>.unpacked.<ext>)")
+@click.option("--detect-only", is_flag=True,
+              help="Run detection and print findings; do not attempt unpacking.")
+def unpack(binary: str, packer_override: str | None, out_path: str | None,
+           detect_only: bool):
+    """Detect a binary's packer and attempt to unpack it.
+
+    \b
+    Supported automated paths:
+      * UPX (calls `upx -d`)
+    Detected, manually-handled (guidance printed):
+      * Themida / VMProtect / ASPack / PECompact / MPRESS / Enigma
+
+    Detection uses chimera's bundled YARA packer rules first, then falls
+    back to a section-entropy heuristic. Pass --packer to skip detection.
+    """
+    from chimera.unpacking import (
+        UnpackError,
+        detect_packer,
+        run_unpacker,
+        unpacker_for,
+    )
+
+    src = Path(binary)
+    detection = detect_packer(src)
+    click.echo(f"[chimera] detection: packer={detection.packer or '(none)'} "
+               f"entropy_sections={detection.high_entropy_sections} "
+               f"signals={','.join(detection.signals) or '-'}")
+
+    if detect_only:
+        return
+
+    packer = packer_override or detection.packer
+    if not packer:
+        click.echo("[chimera] no packer detected; nothing to unpack")
+        click.echo("[chimera] (pass --packer NAME to force, "
+                   "or --detect-only to see signals)")
+        raise click.exceptions.Exit(0)
+
+    unpacker = unpacker_for(packer)
+    if unpacker is None:
+        click.echo(f"[chimera] no automated unpacker for {packer!r}.")
+        from chimera.unpacking import guidance_for
+        msg = guidance_for(packer)
+        if msg:
+            click.echo("[chimera] manual guidance:")
+            for line in msg.splitlines():
+                click.echo(f"  {line}")
+        raise click.exceptions.Exit(2)
+
+    out = Path(out_path) if out_path else src.with_name(
+        f"{src.stem}.unpacked{src.suffix}"
+    )
+    try:
+        result = run_unpacker(unpacker, src, out)
+    except UnpackError as exc:
+        click.echo(f"chimera unpack: {exc}", err=True)
+        raise click.exceptions.Exit(3)
+
+    click.echo(f"[chimera] {packer} → unpacked to {result.output}")
+    click.echo(f"[chimera] original size: {result.original_size} bytes")
+    click.echo(f"[chimera] unpacked size: {result.unpacked_size} bytes")
+    if result.notes:
+        click.echo(f"[chimera] notes: {result.notes}")
 
 
 if __name__ == "__main__":

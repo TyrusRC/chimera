@@ -1,0 +1,1590 @@
+{
+  "pack": "libc-musl-openssl-zlib-curl-x86_64",
+  "version": 1,
+  "signatures": [
+    {
+      "name": "fgetc",
+      "lib": "libc.so",
+      "size": 370,
+      "bytes_hex": "55534889fb4883ec18f64774800f84ad000000f64701807457488b4308483b43",
+      "mask_hex": "ffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fgets",
+      "lib": "libc.so",
+      "size": 458,
+      "bytes_hex": "4155415455534883ec1885f60f8e7e0100004989fd83fe010f84820100008b02",
+      "mask_hex": "ffffffffffffffffffffffffffff00000000ffffffffffffffff00000000ffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_exit",
+      "lib": "libc.so",
+      "size": 64,
+      "bytes_hex": "534889fbe8e7c207004885c0742664488b04251000000048899828060000f083",
+      "mask_hex": "ffffffffff00000000ffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "nanosleep",
+      "lib": "libc.so",
+      "size": 49,
+      "bytes_hex": "4883ec084889fa4889f131ff31f6e8bd4bffff85c075094883c408c30f1f4000",
+      "mask_hex": "ffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_detach",
+      "lib": "libc.so",
+      "size": 85,
+      "bytes_hex": "4885ff743b8b87d002000085c0783131c0f0480fb1bf20060000752af6870803",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_detach",
+      "lib": "libc.so",
+      "size": 85,
+      "bytes_hex": "4885ff743b8b87d002000085c0783131c0f0480fb1bf20060000752af6870803",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "snprintf",
+      "lib": "libc.so",
+      "size": 175,
+      "bytes_hex": "4881ecd800000048894c24384c894424404c894c244884c074370f294424500f",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "setsockopt",
+      "lib": "libc.so",
+      "size": 42,
+      "bytes_hex": "4989cab8360000000f05483d00f0ffff7706c30f1f440000488b15212b0d00f7",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "sleep",
+      "lib": "libc.so",
+      "size": 106,
+      "bytes_hex": "5589f8534883ec2864488b1c252800000048895c2418488b1d63c00e004889e7",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fopen64",
+      "lib": "libc.so",
+      "size": 10,
+      "bytes_hex": "ba01000000e916ffffff660f1f440000488b87e800000048c1c8116448330425",
+      "mask_hex": "ffffffffffff00000000ffffffffffffffffffff00000000ffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "clock_gettime",
+      "lib": "libc.so",
+      "size": 127,
+      "bytes_hex": "488b05f98f1000488b80000300004885c074154883ec08ffd085c0752331c048",
+      "mask_hex": "ffffff00000000ffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "clock_gettime",
+      "lib": "libc.so",
+      "size": 127,
+      "bytes_hex": "488b05f98f1000488b80000300004885c074154883ec08ffd085c0752331c048",
+      "mask_hex": "ffffff00000000ffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "qsort_r",
+      "lib": "libc.so",
+      "size": 1017,
+      "bytes_hex": "415741564155415455534881ec6804000064488b042528000000488984245804",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "free",
+      "lib": "libc.so",
+      "size": 516,
+      "bytes_hex": "4885ff0f847f010000415741564155415455488d6ff0534883ec284c8b254e1b",
+      "mask_hex": "ffffffffff00000000ffffffffffffffffffffffffffffffffffffffffff0000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fread",
+      "lib": "libc.so",
+      "size": 338,
+      "bytes_hex": "4157415641554154554889f553480fafea4883ec184885ed0f84af0000004989",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "exit",
+      "lib": "libc.so",
+      "size": 26,
+      "bytes_hex": "4883ec08b901000000ba01000000488d350b331a00e856fdffff660f1f440000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffff00000000ff00000000ffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strtoull",
+      "lib": "libc.so",
+      "size": 21,
+      "bytes_hex": "488b05792919004531c031c9644c8b08e93b00000066662e0f1f840000000000",
+      "mask_hex": "ffffff00000000ffffffffffffffffffff00000000ffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "setenv",
+      "lib": "libc.so",
+      "size": 88,
+      "bytes_hex": "415455534885ff7437803f004889fb742f4889f5be3d0000004189d4e86f2afe",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "freeaddrinfo",
+      "lib": "libc.so",
+      "size": 57,
+      "bytes_hex": "4885ff743355534889fb4883ec0866904889dd488b5b28488b7d20e870b4eeff",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "accept4",
+      "lib": "libc.so",
+      "size": 31,
+      "bytes_hex": "4883ec104863c94863ff4531c968200100004531c0e8e6d6f7ff4883c418c390",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "getaddrinfo",
+      "lib": "libc.so",
+      "size": 9083,
+      "bytes_hex": "4157415641554989d54154554889fd534889f34881ecf80a000048894c246064",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_self",
+      "lib": "libc.so",
+      "size": 10,
+      "bytes_hex": "64488b042510000000c3660f1f4400008bbfd0020000b8cb0000000f0589c2f7",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "sigaction",
+      "lib": "libc.so",
+      "size": 178,
+      "bytes_hex": "55534883ec2864488b04252800000048894424188d47ff83f83f777c8d47e083",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strdup",
+      "lib": "libc.so",
+      "size": 60,
+      "bytes_hex": "554889fd534883ec08e832e9f7ff488d58014889dfe8eeebf7ff4885c0741748",
+      "mask_hex": "ffffffffffffffffffff00000000ffffffffffffffff00000000ffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "bind",
+      "lib": "libc.so",
+      "size": 33,
+      "bytes_hex": "b8310000000f05483d01f0ffff7301c3488b0d192e0d00f7d86489014883c8ff",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "ferror",
+      "lib": "libc.so",
+      "size": 316,
+      "bytes_hex": "8b07f64774800f8494000000f6c4800f858b00000055534889fb4883ec18488b",
+      "mask_hex": "ffffffffffffffff00000000ffffffffff00000000ffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fflush",
+      "lib": "libc.so",
+      "size": 346,
+      "bytes_hex": "4885ff0f842701000055534889fb4883ec08f64701807468488babd800000048",
+      "mask_hex": "ffffffffff00000000ffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strtod",
+      "lib": "libc.so",
+      "size": 18,
+      "bytes_hex": "488b0519b3190031d264488b08e96e070000662e0f1f840000000000662e0f1f",
+      "mask_hex": "ffffff00000000ffffffffffffff00000000ffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strtof",
+      "lib": "libc.so",
+      "size": 18,
+      "bytes_hex": "488b05d986190031d264488b08e94e070000662e0f1f840000000000662e0f1f",
+      "mask_hex": "ffffff00000000ffffffffffffff00000000ffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strtok",
+      "lib": "libc.so",
+      "size": 12,
+      "bytes_hex": "488d1591121400e9040000000f1f400041554989d541544989f455534889fb48",
+      "mask_hex": "ffffff00000000ff00000000ffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "poll",
+      "lib": "libc.so",
+      "size": 27,
+      "bytes_hex": "4883ec104863d24531c94531c06a0731c9e89abcf8ff4883c418c30f1f440000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strtol",
+      "lib": "libc.so",
+      "size": 21,
+      "bytes_hex": "488b05f95a19004531c031c9644c8b08e93b00000066662e0f1f840000000000",
+      "mask_hex": "ffffff00000000ffffffffffffffffffff00000000ffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fopen",
+      "lib": "libc.so",
+      "size": 10,
+      "bytes_hex": "ba01000000e916ffffff660f1f440000488b87e800000048c1c8116448330425",
+      "mask_hex": "ffffffffffff00000000ffffffffffffffffffff00000000ffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strndup",
+      "lib": "libc.so",
+      "size": 64,
+      "bytes_hex": "4154554889fd53e894dbf7ff4c8d60014889c34c89e7e84ddff7ff4885c07419",
+      "mask_hex": "ffffffffffffffff00000000ffffffffffffffffffffff00000000ffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "system",
+      "lib": "libc.so",
+      "size": 45,
+      "bytes_hex": "4885ff740be976fbffff660f1f4400004883ec08488d3d812d1500e860fbffff",
+      "mask_hex": "ffffffffffff00000000ffffffffffffffffffffffffff00000000ff00000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "socket",
+      "lib": "libc.so",
+      "size": 33,
+      "bytes_hex": "b8290000000f05483d01f0ffff7301c3488b0da9290d00f7d86489014883c8ff",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fork",
+      "lib": "libc.so",
+      "size": 1296,
+      "bytes_hex": "415741564531f64155415455534881ecd80000000fb61df5aa100064488b0425",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "recvfrom",
+      "lib": "libc.so",
+      "size": 22,
+      "bytes_hex": "4883ec104863c94863ff6a2de8cfd4f7ff4883c418c3662e0f1f840000000000",
+      "mask_hex": "ffffffffffffffffffffffffff00000000ffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_join",
+      "lib": "libc.so",
+      "size": 15,
+      "bytes_hex": "41b80100000031c931d2e9210000009048897c24f831d264488b042510000000",
+      "mask_hex": "ffffffffffffffffffffff00000000ffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_join",
+      "lib": "libc.so",
+      "size": 15,
+      "bytes_hex": "41b80100000031c931d2e9210000009048897c24f831d264488b042510000000",
+      "mask_hex": "ffffffffffffffffffffff00000000ffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "read",
+      "lib": "libc.so",
+      "size": 27,
+      "bytes_hex": "4883ec104863ff4531c94531c06a0031c9e8bab7f8ff4883c418c30f1f440000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "usleep",
+      "lib": "libc.so",
+      "size": 93,
+      "bytes_hex": "4883ec2831f664488b04252800000048894424188d074869c083de1b4348c1e8",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "epoll_wait",
+      "lib": "libc.so",
+      "size": 34,
+      "bytes_hex": "4883ec104863c94863d24863ff68e80000004531c94531c0e8f3ebf7ff4883c4",
+      "mask_hex": "ffffffffffffffffffffffffffffff00000000ffffffffffff00000000ffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "unsetenv",
+      "lib": "libc.so",
+      "size": 344,
+      "bytes_hex": "4155415455534883ec084885ff0f842d010000803f004989fc0f8421010000be",
+      "mask_hex": "ffffffffffffffffffffffffffffff00000000ffffffffffffffff00000000ff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "gmtime",
+      "lib": "libc.so",
+      "size": 17,
+      "bytes_hex": "488b3f488d1506c7110031f6e99f1d0000662e0f1f8400000000000f1f440000",
+      "mask_hex": "ffffffffffff00000000ffffff00000000ffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "send",
+      "lib": "libc.so",
+      "size": 28,
+      "bytes_hex": "4883ec104863c94863ff4531c96a2c4531c0e869d4f7ff4883c418c30f1f4000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "wait",
+      "lib": "libc.so",
+      "size": 15,
+      "bytes_hex": "4889fe31d2bfffffffffe961000000904889d189f24889febfffffffffe90e00",
+      "mask_hex": "ffffffffffffffffffffff00000000ffffffffffffffffffffffffffffff0000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "gethostbyname",
+      "lib": "libc.so",
+      "size": 533,
+      "bytes_hex": "41564155415455534883ec2064488b1c252800000048895c24184889fbc74424",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "feof",
+      "lib": "libc.so",
+      "size": 316,
+      "bytes_hex": "8b07f64774800f8494000000f6c4800f858b00000055534889fb4883ec18488b",
+      "mask_hex": "ffffffffffffffff00000000ffffffffff00000000ffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_cond_signal",
+      "lib": "libc.so",
+      "size": 633,
+      "bytes_hex": "55534883ec088b471c89c3c1eb030f84930000004989f8c1e007488d7f18440f",
+      "mask_hex": "ffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_create",
+      "lib": "libc.so",
+      "size": 3902,
+      "bytes_hex": "415741564155415455534881ec1801000048897c241848897424084889542428",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_cond_signal",
+      "lib": "libc.so",
+      "size": 101,
+      "bytes_hex": "55534883ec08488b2f4885ed74124883c4084889ef5b5de9141100000f1f4000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_create",
+      "lib": "libc.so",
+      "size": 3902,
+      "bytes_hex": "415741564155415455534881ec1801000048897c241848897424084889542428",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "recv",
+      "lib": "libc.so",
+      "size": 28,
+      "bytes_hex": "4883ec104863c94863ff4531c96a2d4531c0e8e9d4f7ff4883c418c30f1f4000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "execve",
+      "lib": "libc.so",
+      "size": 33,
+      "bytes_hex": "b83b0000000f05483d01f0ffff7301c3488b0dc96f1000f7d86489014883c8ff",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_mutex_lock",
+      "lib": "libc.so",
+      "size": 777,
+      "bytes_hex": "8b471089c281e27f01000083e07c0f85ac000000534883ec1085d20f85a70000",
+      "mask_hex": "ffffffffffffffffffffffffffffffff00000000ffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "realloc",
+      "lib": "libc.so",
+      "size": 1709,
+      "bytes_hex": "4157415641554154554889f5534889fb4883ec38803d3d8c1400000f84af0100",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_cond_broadcast",
+      "lib": "libc.so",
+      "size": 673,
+      "bytes_hex": "4155415455534883ec088b5f1c89d8c1e8030f84b9000000c1e3078b47184989",
+      "mask_hex": "ffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_cond_broadcast",
+      "lib": "libc.so",
+      "size": 101,
+      "bytes_hex": "55534883ec08488b2f4885ed74124883c4084889ef5b5de9540e00000f1f4000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "execvp",
+      "lib": "libc.so",
+      "size": 15,
+      "bytes_hex": "488b0541711000488b10e96104000090554889e5415641554154534883ec2064",
+      "mask_hex": "ffffff00000000ffffffff00000000ffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "getnameinfo",
+      "lib": "libc.so",
+      "size": 3380,
+      "bytes_hex": "41574989d741564155415455534881ecf8080000644c8b3425280000004c89b4",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "_exit",
+      "lib": "libc.so",
+      "size": 36,
+      "bytes_hex": "488b35297b1000bae7000000eb036690f489d00f05483d00f0ffff76f3f7d864",
+      "mask_hex": "ffffff00000000ffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strftime",
+      "lib": "libc.so",
+      "size": 16,
+      "bytes_hex": "488b05b9da1000644c8b00e9a0240000488b05a9da1000644c8b00e990480000",
+      "mask_hex": "ffffff00000000ffffffffff00000000ffffff00000000ffffffffff00000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "open",
+      "lib": "libc.so",
+      "size": 143,
+      "bytes_hex": "4883ec58488954243064488b042528000000488944241831c040f6c640754989",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "shutdown",
+      "lib": "libc.so",
+      "size": 33,
+      "bytes_hex": "b8300000000f05483d01f0ffff7301c3488b0df92a0d00f7d86489014883c8ff",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "atoi",
+      "lib": "libc.so",
+      "size": 21,
+      "bytes_hex": "4883ec08ba0a00000031f6e850e300004883c408c3662e0f1f84000000000090",
+      "mask_hex": "ffffffffffffffffffffffff00000000ffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "malloc",
+      "lib": "libc.so",
+      "size": 776,
+      "bytes_hex": "415455534889fb4883ec10803d86961400000f84680100004885db0f886d0100",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffff00000000ffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "atol",
+      "lib": "libc.so",
+      "size": 12,
+      "bytes_hex": "ba0a00000031f6e934e300000f1f4000ba0a00000031f6e924e300000f1f4000",
+      "mask_hex": "ffffffffffffffff00000000ffffffffffffffffffffffff00000000ffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "recvmsg",
+      "lib": "libc.so",
+      "size": 32,
+      "bytes_hex": "4883ec104863d24863ff4531c96a2f4531c031c9e887d4f7ff4883c4184898c3",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "bsearch",
+      "lib": "libc.so",
+      "size": 126,
+      "bytes_hex": "415741564155415455534883ec1848897c24084885d274524989f54889d34989",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pread",
+      "lib": "libc.so",
+      "size": 25,
+      "bytes_hex": "4883ec104863ff4531c94531c06a11e8dc79faff4883c418c30f1f8000000000",
+      "mask_hex": "ffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strtoll",
+      "lib": "libc.so",
+      "size": 21,
+      "bytes_hex": "488b05f95a19004531c031c9644c8b08e93b00000066662e0f1f840000000000",
+      "mask_hex": "ffffff00000000ffffffffffffffffffff00000000ffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "execv",
+      "lib": "libc.so",
+      "size": 15,
+      "bytes_hex": "488b05b1711000488b10e90100000090b83b0000000f05483d01f0ffff7301c3",
+      "mask_hex": "ffffff00000000ffffffff00000000ffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "sendto",
+      "lib": "libc.so",
+      "size": 25,
+      "bytes_hex": "4883ec104863c94863ff4589c96a2ce8fcd3f7ff4883c418c30f1f8000000000",
+      "mask_hex": "ffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fprintf",
+      "lib": "libc.so",
+      "size": 179,
+      "bytes_hex": "4881ecd8000000488954243048894c24384c894424404c894c244884c074370f",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "mktime",
+      "lib": "libc.so",
+      "size": 32,
+      "bytes_hex": "534889fbe8c71100004889df5b488d15d4bb1100488d35a5f4ffffe9d0f5ffff",
+      "mask_hex": "ffffffffff00000000ffffffffffffff00000000ffffff00000000ff00000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "listen",
+      "lib": "libc.so",
+      "size": 33,
+      "bytes_hex": "b8320000000f05483d01f0ffff7301c3488b0dc92c0d00f7d86489014883c8ff",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "vprintf",
+      "lib": "libc.so",
+      "size": 26,
+      "bytes_hex": "488b05c19516004889f231c94889fe488b004889c7e9f694feff660f1f440000",
+      "mask_hex": "ffffff00000000ffffffffffffffffffffffffffffff00000000ffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "aligned_alloc",
+      "lib": "libc.so",
+      "size": 97,
+      "bytes_hex": "534889fb4883ec10803d5985140000743f488d43ff4885d875164885db741148",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "sendmsg",
+      "lib": "libc.so",
+      "size": 30,
+      "bytes_hex": "4883ec104863d24863ff4531c96a2e4531c031c9e817d4f7ff4883c418c36690",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pwrite",
+      "lib": "libc.so",
+      "size": 25,
+      "bytes_hex": "4883ec104863ff4531c94531c06a12e8bc79faff4883c418c3662e0f1f840000",
+      "mask_hex": "ffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "raise",
+      "lib": "libc.so",
+      "size": 49,
+      "bytes_hex": "5389fbe80895050089de4889c7e82e4d050085c0750a5bc30f1f840000000000",
+      "mask_hex": "ffffffff00000000ffffffffffff00000000ffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "vsnprintf",
+      "lib": "libc.so",
+      "size": 169,
+      "bytes_hex": "534889f066480f6ec74889d6660f6cc04881ecb000000064488b142528000000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "sprintf",
+      "lib": "libc.so",
+      "size": 190,
+      "bytes_hex": "4881ecd8000000488954243048894c24384c894424404c894c244884c074370f",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "localtime",
+      "lib": "libc.so",
+      "size": 20,
+      "bytes_hex": "488b3f488d15d6c61100be01000000e96c1d0000662e0f1f8400000000006690",
+      "mask_hex": "ffffffffffff00000000ffffffffffff00000000ffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "openat",
+      "lib": "libc.so",
+      "size": 134,
+      "bytes_hex": "4883ec5848894c243864488b042528000000488944241831c0f6c240754289d0",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "ftell",
+      "lib": "libc.so",
+      "size": 386,
+      "bytes_hex": "55534889fb4883ec18f6470180754b488bbf88000000803d33e016000064488b",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strerror",
+      "lib": "libc.so",
+      "size": 16,
+      "bytes_hex": "488b0559b7130064488b30e90000000041574156415541544989f45589fd5348",
+      "mask_hex": "ffffff00000000ffffffffff00000000ffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "kill",
+      "lib": "libc.so",
+      "size": 33,
+      "bytes_hex": "b83e0000000f05483d01f0ffff7301c3488b0dd94d1a00f7d86489014883c8ff",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "getsockopt",
+      "lib": "libc.so",
+      "size": 42,
+      "bytes_hex": "4989cab8370000000f05483d00f0ffff7706c30f1f440000488b15612d0d00f7",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "getenv",
+      "lib": "libc.so",
+      "size": 165,
+      "bytes_hex": "41574156415541544989fc55534883ec084c8b3de01e1a004c8b35399d1a0049",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffff00000000ffffff00000000ff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_mutex_init",
+      "lib": "libc.so",
+      "size": 591,
+      "bytes_hex": "415455534883ec1064488b1c252800000048895c24084889fb4885f6747a8b06",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "calloc",
+      "lib": "libc.so",
+      "size": 1126,
+      "bytes_hex": "41564889f84155415455534883ec1048f7e64889c30f90c04885db0f882f0200",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "accept",
+      "lib": "libc.so",
+      "size": 27,
+      "bytes_hex": "4883ec104863ff4531c94531c06a2b31c9e80ad7f7ff4883c418c30f1f440000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fclose",
+      "lib": "libc.so",
+      "size": 602,
+      "bytes_hex": "415455538b074889fbf6c4200f858e000000f6c4800f8495000000c1e80583e0",
+      "mask_hex": "ffffffffffffffffffffffffffff00000000ffffffffff00000000ffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "close",
+      "lib": "libc.so",
+      "size": 31,
+      "bytes_hex": "4883ec104863ff4531c94531c06a0331c931d231f6e806fff8ff4883c418c390",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffff00000000ffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fputc",
+      "lib": "libc.so",
+      "size": 410,
+      "bytes_hex": "41545589fd534889f34883ec10f64674800f84b9000000f64601807463488b53",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "printf",
+      "lib": "libc.so",
+      "size": 200,
+      "bytes_hex": "4881ecd80000004889742428488954243048894c24384c894424404c894c2448",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fputs",
+      "lib": "libc.so",
+      "size": 418,
+      "bytes_hex": "41554154554889fd534889f34883ec08e8cb94faff4989c4f64301807546488b",
+      "mask_hex": "ffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "signal",
+      "lib": "libc.so",
+      "size": 181,
+      "bytes_hex": "4881ec4801000064488b0c252800000048898c24380100008d4fff83f93f7760",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "connect",
+      "lib": "libc.so",
+      "size": 29,
+      "bytes_hex": "4883ec1089d24863ff4531c96a2a4531c031c9e898d6f7ff4883c418c30f1f00",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "atoll",
+      "lib": "libc.so",
+      "size": 12,
+      "bytes_hex": "ba0a00000031f6e924e300000f1f4000415741564155415455534883ec184889",
+      "mask_hex": "ffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_mutex_unlock",
+      "lib": "libc.so",
+      "size": 10,
+      "bytes_hex": "be01000000e9e6feffff660f1f44000031c0c3662e0f1f8400000000000f1f00",
+      "mask_hex": "ffffffffffff00000000ffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strtoul",
+      "lib": "libc.so",
+      "size": 21,
+      "bytes_hex": "488b05792919004531c031c9644c8b08e93b00000066662e0f1f840000000000",
+      "mask_hex": "ffffff00000000ffffffffffffffffffff00000000ffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "memcpy",
+      "lib": "libc.so",
+      "size": 40,
+      "bytes_hex": "4889f84883fa100f82a30000000f10064883fa200f87030100000f104c16f00f",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffff00000000ffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fwrite",
+      "lib": "libc.so",
+      "size": 466,
+      "bytes_hex": "41574156415541544989f4554c0fafe2534883ec184d85e40f84bd0000004989",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "select",
+      "lib": "libc.so",
+      "size": 330,
+      "bytes_hex": "415455534883ec2064488b042528000000488944241831c04d85c00f84cf0000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "qsort",
+      "lib": "libc.so",
+      "size": 8,
+      "bytes_hex": "4531c0e9f8fbffff0f1f8400000000004883ec0831c9488d351b0b1a0031d2e8",
+      "mask_hex": "ffffffff00000000ffffffffffffffffffffffffffffffffff00000000ffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "fseek",
+      "lib": "libc.so",
+      "size": 290,
+      "bytes_hex": "55534889fb4883ec18f64701807547488bbf88000000803d836016000064488b",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "write",
+      "lib": "libc.so",
+      "size": 27,
+      "bytes_hex": "4883ec104863ff4531c94531c06a0131c9e82aadf8ff4883c418c30f1f440000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "vsprintf",
+      "lib": "libc.so",
+      "size": 113,
+      "bytes_hex": "5366480f6ec731c9660f6cc04883ec3064488b042528000000488944242831c0",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "posix_memalign",
+      "lib": "libc.so",
+      "size": 119,
+      "bytes_hex": "803d917714000041544989d4554889fd534889f3745a4889da48c1ea03488d42",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "abort",
+      "lib": "libc.so",
+      "size": 136,
+      "bytes_hex": "4881ecb800000064488b3c25280000004889bc24a8000000bf06000000e80478",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_cond_wait",
+      "lib": "libc.so",
+      "size": 407,
+      "bytes_hex": "415741bf0200000041564155415455534889fb4883ec78644c8b2c2528000000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "pthread_cond_wait",
+      "lib": "libc.so",
+      "size": 103,
+      "bytes_hex": "4154554889f5534c8b274d85e474115b4889ee4c89e75d415ce9021500006690",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "lseek",
+      "lib": "libc.so",
+      "size": 36,
+      "bytes_hex": "b8080000000f05483d00f0ffff7701c3488b1569170e00f7d864890248c7c0ff",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strptime",
+      "lib": "libc.so",
+      "size": 18,
+      "bytes_hex": "488b05c914110031c9644c8b00e9fe000000662e0f1f8400000000000f1f4000",
+      "mask_hex": "ffffff00000000ffffffffffffff00000000ffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "strtok_r",
+      "lib": "libc.so",
+      "size": 117,
+      "bytes_hex": "41554989d541544989f455534889fb4883ec084885ff7458803b0074464c89e6",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "SSL_CTX_free",
+      "lib": "libssl.so",
+      "size": 1217,
+      "bytes_hex": "f30f1efa4885ff0f84ab0400004155b8ffffffff415455534889fb4883ec08f0",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "SSL_read",
+      "lib": "libssl.so",
+      "size": 135,
+      "bytes_hex": "f30f1efa4883ec1864488b042528000000488944240831c085d2782f4889e148",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "SSL_connect",
+      "lib": "libssl.so",
+      "size": 149,
+      "bytes_hex": "f30f1efa4885ff0f84830000004883ec188b0785c075194889f8488378700074",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "SSL_accept",
+      "lib": "libssl.so",
+      "size": 149,
+      "bytes_hex": "f30f1efa4885ff0f84830000004883ec188b0785c075194889f8488378700074",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "SSL_write",
+      "lib": "libssl.so",
+      "size": 140,
+      "bytes_hex": "f30f1efa4883ec1864488b042528000000488944240831c085d2783431c94863",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "TLS_server_method",
+      "lib": "libssl.so",
+      "size": 12,
+      "bytes_hex": "f30f1efa488d0545bb0d00c30f1f4000f30f1efa488d0535ba0d00c30f1f4000",
+      "mask_hex": "ffffffffffffff00000000ffffffffffffffffffffffff00000000ffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "TLS_method",
+      "lib": "libssl.so",
+      "size": 12,
+      "bytes_hex": "f30f1efa488d0595c00d00c30f1f4000f30f1efa488d0585bf0d00c30f1f4000",
+      "mask_hex": "ffffffffffffff00000000ffffffffffffffffffffffff00000000ffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "SSL_free",
+      "lib": "libssl.so",
+      "size": 129,
+      "bytes_hex": "f30f1efa4885ff746f53b8ffffffff4889fbf00fc1472083e80185c074127e10",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffff00000000ffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "SSL_new",
+      "lib": "libssl.so",
+      "size": 146,
+      "bytes_hex": "f30f1efa4883ec084885ff7413488b47084885c0744a488b40104883c408ffe0",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "SSL_CTX_new",
+      "lib": "libssl.so",
+      "size": 16,
+      "bytes_hex": "f30f1efa4889fa31f631ffe940bcfdfff30f1efa4885ff0f8483010000415541",
+      "mask_hex": "ffffffffffffffffffffffff00000000ffffffffffffffffff00000000ffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "TLS_client_method",
+      "lib": "libssl.so",
+      "size": 12,
+      "bytes_hex": "f30f1efa488d05f5b50d00c30f1f4000f30f1efa488d05e5b40d00c30f1f4000",
+      "mask_hex": "ffffffffffffff00000000ffffffffffffffffffffffff00000000ffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_EncryptUpdate",
+      "lib": "libcrypto.so",
+      "size": 575,
+      "bytes_hex": "f30f1efa534883ec1064488b042528000000488944240831c04585c00f88e600",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_DigestInit_ex",
+      "lib": "libcrypto.so",
+      "size": 14,
+      "bytes_hex": "f30f1efa4889d131d2e992faffff6690f30f1efa41574989cf415641554989f5",
+      "mask_hex": "ffffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "AES_set_encrypt_key",
+      "lib": "libcrypto.so",
+      "size": 39,
+      "bytes_hex": "f30f1efa535541544155415641574883ec08e819000000488b6c2428488b5c24",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "BIO_read",
+      "lib": "libcrypto.so",
+      "size": 80,
+      "bytes_hex": "f30f1efa4883ec1864488b042528000000488944240831c085d278124889e148",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_sha256",
+      "lib": "libcrypto.so",
+      "size": 12,
+      "bytes_hex": "f30f1efa488d05559c3700c30f1f4000f30f1efa488d05459b3700c30f1f4000",
+      "mask_hex": "ffffffffffffff00000000ffffffffffffffffffffffff00000000ffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "BIO_write",
+      "lib": "libcrypto.so",
+      "size": 80,
+      "bytes_hex": "f30f1efa4883ec1864488b042528000000488944240831c085d27e124889e148",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_MD_CTX_new",
+      "lib": "libcrypto.so",
+      "size": 26,
+      "bytes_hex": "f30f1efaba83000000488d3545982500bf48000000e9567dedff660f1f440000",
+      "mask_hex": "ffffffffffffffffffffffff00000000ffffffffffff00000000ffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "RSA_public_encrypt",
+      "lib": "libcrypto.so",
+      "size": 11,
+      "bytes_hex": "f30f1efa488b4118ff60080f1f440000f30f1efa488b4118ff60180f1f440000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_md5",
+      "lib": "libcrypto.so",
+      "size": 12,
+      "bytes_hex": "f30f1efa488d05e5943700c30f1f4000f30f1efa41544989cc5589d55389f3e8",
+      "mask_hex": "ffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_DecryptFinal_ex",
+      "lib": "libcrypto.so",
+      "size": 922,
+      "bytes_hex": "f30f1efa4155415455534883ec1864488b042528000000488944240831c04885",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "RSA_free",
+      "lib": "libcrypto.so",
+      "size": 281,
+      "bytes_hex": "f30f1efa4885ff0f840301000053b8ffffffff4889fbf00fc187a000000083e8",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "X509_free",
+      "lib": "libcrypto.so",
+      "size": 25,
+      "bytes_hex": "f30f1efa534889fbe8e382cfff4889df5b4889c6e957e5cfff0f1f8000000000",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffff00000000ffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "RSA_private_decrypt",
+      "lib": "libcrypto.so",
+      "size": 11,
+      "bytes_hex": "f30f1efa488b4118ff60200f1f440000f30f1efa488b4118ff60100f1f440000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "RSA_new",
+      "lib": "libcrypto.so",
+      "size": 13,
+      "bytes_hex": "f30f1efa31f631ffe903feffff0f1f00f30f1efa31f6e9f5fdffff0f1f440000",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffff00000000ffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "BIO_free",
+      "lib": "libcrypto.so",
+      "size": 233,
+      "bytes_hex": "f30f1efa4885ff0f84cb00000053b8ffffffff4889fbf00fc1475883e80185c0",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_sha1",
+      "lib": "libcrypto.so",
+      "size": 12,
+      "bytes_hex": "f30f1efa488d05759e3700c30f1f4000f30f1efa488d05659d3700c30f1f4000",
+      "mask_hex": "ffffffffffffff00000000ffffffffffffffffffffffff00000000ffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_DigestFinal_ex",
+      "lib": "libcrypto.so",
+      "size": 419,
+      "bytes_hex": "f30f1efa4155415455534883ec1864488b042528000000488944240831c04883",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "X509_new",
+      "lib": "libcrypto.so",
+      "size": 25,
+      "bytes_hex": "f30f1efa4883ec08e80383cfff4883c4084889c7e967a2cfff0f1f8000000000",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffff00000000ffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_DecryptInit_ex",
+      "lib": "libcrypto.so",
+      "size": 12,
+      "bytes_hex": "f30f1efa4531c9e984baebff0f1f4000f30f1efa415741564155415455534883",
+      "mask_hex": "ffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "AES_set_decrypt_key",
+      "lib": "libcrypto.so",
+      "size": 545,
+      "bytes_hex": "f30f1efa5355415441554156415752e85cfdffff4c8b042483f8000f85dc0100",
+      "mask_hex": "ffffffffffffffffffffffffffffffff00000000ffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "X509_NAME_oneline",
+      "lib": "libcrypto.so",
+      "size": 1308,
+      "bytes_hex": "f30f1efa415741564989fe4155415455534881ecb8000000644c8b1c25280000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "AES_encrypt",
+      "lib": "libcrypto.so",
+      "size": 181,
+      "bytes_hex": "f30f1efa4889e053554154415541564157488d4ac14883e4c04829e148f7d948",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "AES_decrypt",
+      "lib": "libcrypto.so",
+      "size": 188,
+      "bytes_hex": "f30f1efa4889e053554154415541564157488d4ac14883e4c04829e148f7d948",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_DecryptUpdate",
+      "lib": "libcrypto.so",
+      "size": 1638,
+      "bytes_hex": "f30f1efa415741564155415455534883ec2864488b0425280000004889442418",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "BIO_new",
+      "lib": "libcrypto.so",
+      "size": 14,
+      "bytes_hex": "f30f1efa4889fe31ffe98206fcff6690f30f1efa4885ff0f84cb00000053b8ff",
+      "mask_hex": "ffffffffffffffffffff00000000ffffffffffffffffffffff00000000ffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_EncryptInit_ex",
+      "lib": "libcrypto.so",
+      "size": 15,
+      "bytes_hex": "f30f1efa41b901000000e991baebff90f30f1efa4531c9e984baebff0f1f4000",
+      "mask_hex": "ffffffffffffffffffffff00000000ffffffffffffffffff00000000ffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_DigestUpdate",
+      "lib": "libcrypto.so",
+      "size": 329,
+      "bytes_hex": "f30f1efa4885d20f84d30000004883ec08488b4f18f6c5080f85da000000488b",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffff00000000ffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_MD_CTX_free",
+      "lib": "libcrypto.so",
+      "size": 57,
+      "bytes_hex": "f30f1efa4885ff7427534889fbe86ed8ecff4889df5bba8c000000488d35a389",
+      "mask_hex": "ffffffffffffffffffffffffffff00000000ffffffffffffffffffffffff0000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "EVP_EncryptFinal_ex",
+      "lib": "libcrypto.so",
+      "size": 699,
+      "bytes_hex": "f30f1efa41564155415455534883ec1064488b042528000000488944240831c0",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "X509_verify_cert",
+      "lib": "libcrypto.so",
+      "size": 105,
+      "bytes_hex": "f30f1efa4885ff741c4883bf0001000000740de9e8baffff0f1f840000000000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "inflateEnd",
+      "lib": "libz.so",
+      "size": 150,
+      "bytes_hex": "f30f1efa4885ff0f84830000005348837f40004889fb7468488b47484885c074",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "inflateInit2_",
+      "lib": "libz.so",
+      "size": 240,
+      "bytes_hex": "f30f1efa415455534885d20f84c7000000803a310f85be00000083f9700f85b5",
+      "mask_hex": "ffffffffffffffffffffffffff00000000ffffffffff00000000ffffffffff00",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "deflate",
+      "lib": "libz.so",
+      "size": 5915,
+      "bytes_hex": "f30f1efa4885ff0f84d30700004157415641554154554889fd534883ec284883",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "inflateInit_",
+      "lib": "libz.so",
+      "size": 19,
+      "bytes_hex": "f30f1efa89d14889f2be0f000000e9dd69ffff66662e0f1f8400000000006690",
+      "mask_hex": "ffffffffffffffffffffffffffffff00000000ffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "adler32",
+      "lib": "libz.so",
+      "size": 11,
+      "bytes_hex": "f30f1efa89d2e935f8ffff0f1f440000f30f1efa4889f14989d0b8ffffffff48",
+      "mask_hex": "ffffffffffffff00000000ffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "crc32",
+      "lib": "libz.so",
+      "size": 11,
+      "bytes_hex": "f30f1efa89d2e915e8ffff0f1f440000f30f1efa534989f24885d20f847f0000",
+      "mask_hex": "ffffffffffffff00000000ffffffffffffffffffffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "gzread",
+      "lib": "libz.so",
+      "size": 97,
+      "bytes_hex": "f30f1efa4885ff745453817f184f1c00004889fb75408b477485c0740583f8fb",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "gzwrite",
+      "lib": "libz.so",
+      "size": 77,
+      "bytes_hex": "f30f1efa4885ff7427817f18b1790000751e8b477485c075174883ec0885d278",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "inflate",
+      "lib": "libz.so",
+      "size": 9895,
+      "bytes_hex": "f30f1efa415741564155415455534883ec688974242464488b04252800000048",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "deflateInit_",
+      "lib": "libz.so",
+      "size": 39,
+      "bytes_hex": "f30f1efa4883ec084531c941b80800000051b90f00000052ba08000000e8ce9d",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "deflateInit2_",
+      "lib": "libz.so",
+      "size": 773,
+      "bytes_hex": "f30f1efa41574189f789d689c841564155415455534883ec18488b5424508b4c",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "gzclose",
+      "lib": "libz.so",
+      "size": 43,
+      "bytes_hex": "f30f1efa4885ff741c817f184f1c0000740ee969f9feff660f1f840000000000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "compress",
+      "lib": "libz.so",
+      "size": 15,
+      "bytes_hex": "f30f1efa41b8ffffffffe931fcfeff90f30f1efa4889f84889fa48c1e80c48c1",
+      "mask_hex": "ffffffffffffffffffffff00000000ffffffffffffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "gzopen",
+      "lib": "libz.so",
+      "size": 17,
+      "bytes_hex": "f30f1efa4889f2beffffffffe96ffcffff66662e0f1f8400000000000f1f4000",
+      "mask_hex": "ffffffffffffffffffffffffff00000000ffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "compress2",
+      "lib": "libz.so",
+      "size": 316,
+      "bytes_hex": "f30f1efa4157660fefc04989cfb97000000041564989f64155415455534889d3",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "uncompress",
+      "lib": "libz.so",
+      "size": 28,
+      "bytes_hex": "f30f1efa4883ec1848894c2408488d4c2408e849f9feff4883c418c30f1f4000",
+      "mask_hex": "ffffffffffffffffffffffffffffffffffffff00000000ffffffffffffffffff",
+      "arch": "x86_64",
+      "format": "elf"
+    },
+    {
+      "name": "deflateEnd",
+      "lib": "libz.so",
+      "size": 324,
+      "bytes_hex": "f30f1efa4885ff0f841301000055534889fb4883ec0848837f40000f84e70000",
+      "mask_hex": "ffffffffffffffffff00000000ffffffffffffffffffffffffffffffff000000",
+      "arch": "x86_64",
+      "format": "elf"
+    }
+  ]
+}

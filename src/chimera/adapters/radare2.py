@@ -42,12 +42,44 @@ class Radare2Adapter(BackendAdapter):
                 return self._functions(r2)
             elif mode == "imports":
                 return self._imports(r2)
+            elif mode == "decompile":
+                return self._decompile_one(r2, options)
             elif mode == "full":
                 return self._full(r2)
             else:
                 return self._triage(r2)
         finally:
             r2.quit()
+
+    def _decompile_one(self, r2, options: dict) -> dict:
+        """Decompile a single function via r2's `pdc` (poor-man's decompiler).
+
+        r2 emits a function-flavoured pseudo-C when given an analyzed
+        function. We do a *targeted* `af` at the supplied address rather
+        than a full `aaa` so the call returns in well under a second even
+        on multi-MB binaries.
+
+        `options["address"]` is a hex string (or anything `int(x, 16)`
+        accepts). Errors are surfaced in the return dict rather than
+        raised so callers can degrade gracefully when r2's analysis fails.
+        """
+        addr = options.get("address")
+        if not addr:
+            return {"ok": False, "error": "address required for decompile mode"}
+        try:
+            r2.cmd(f"af @ {addr}")  # function-scope analysis, no aaa
+            code = r2.cmd(f"pdc @ {addr}")
+        except Exception as exc:  # r2pipe surfaces as RuntimeError on stale pipes
+            return {"ok": False, "error": f"r2 pipe error: {exc!s}"}
+        if not isinstance(code, str) or not code.strip():
+            return {"ok": False, "error": "r2 pdc returned empty output"}
+        return {
+            "ok": True,
+            "backend": "radare2",
+            "address": str(addr),
+            "code": code,
+            "lines": code.count("\n") + 1,
+        }
 
     async def cleanup(self) -> None:
         pass

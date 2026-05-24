@@ -90,7 +90,7 @@ export interface FindingEntry {
   confirmed_at: string | null
 }
 
-export interface Paginated<T> {
+export interface Paginated<_T> {
   total: number
   offset: number
   limit: number
@@ -288,4 +288,49 @@ export const api = {
   // Export
   exportReport: (projectId: string, format: string) =>
     requestText(`/projects/${projectId}/export/${format}`),
+
+  // Annotations — analyst renames / comments / types persisted per binary.
+  listAnnotations: (projectId: string) =>
+    request<{
+      function_names: Record<string, string>
+      variable_renames: Record<string, Record<string, string>>
+      comments: Record<string, Record<string, string>>
+      function_types: Record<string, string>
+    }>(`/projects/${projectId}/annotations`),
+  renameAnnotation: (projectId: string, body: {
+    kind: 'function' | 'variable'
+    address: string
+    new_name: string
+    original?: string
+  }) => request<{ ok: boolean }>(`/projects/${projectId}/annotations/rename`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }),
+  commentAnnotation: (projectId: string, body: { address: string; text: string; line?: number }) =>
+    request<{ ok: boolean }>(`/projects/${projectId}/annotations/comment`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  typeAnnotation: (projectId: string, body: { address: string; signature: string }) =>
+    request<{ ok: boolean }>(`/projects/${projectId}/annotations/type`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  deleteRenameAnnotation: (projectId: string, address: string) =>
+    request<{ ok: boolean }>(`/projects/${projectId}/annotations/rename/${address}`, {
+      method: 'DELETE',
+    }),
+
+  // Decompilation — multi-backend, post-processed for readability.
+  getDecomp: (projectId: string, address: string, backend: 'r2' | 'ghidra' | 'all', signal?: AbortSignal) =>
+    request<DecompResponse>(
+      `/projects/${projectId}/functions/${address}/decomp?backend=${backend}`,
+      { signal },
+    ),
+}
+
+export interface DecompResponse {
+  address: string
+  name: string
+  backends: Record<string, { ok: boolean; code: string; lines: number; error?: string }>
 }
