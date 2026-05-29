@@ -31,6 +31,23 @@ capa = [
 dynamic = [
     "frida>=16.0",
 ]
+# VarBERT (Pal et al., IEEE S&P 2024) variable-name recovery. Optional
+# because the Transformer model weights are large and the binding pulls
+# in torch; default installs skip it. Without this extra, the adapter's
+# `is_available()` returns False and `chimera varbert rename` prints a
+# clear "install with pip install chimera[varbert]" message.
+varbert = [
+    "varbert-api>=0.1",
+]
+# EMBER 2024 malware classifier (futurecomputing4ai/EMBER2024). LightGBM
+# is the only required runtime; `ember` (PyPI: 'ember') gives the full
+# 2381-dim feature vector while `lief` is needed for any PE parsing.
+# Without these the classifier's is_available() is False.
+ml = [
+    "lightgbm>=4.0",
+    "lief>=0.14",
+    "numpy>=1.26",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

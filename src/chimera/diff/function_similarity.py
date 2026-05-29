@@ -30,10 +30,55 @@ The CLI exposes the knob so analysts can dial it per investigation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable, Protocol
 
 
 SHINGLE_SIZE = 4
+
+
+# ----------------------------------------------------------------------
+# Pluggable similarity backends
+# ----------------------------------------------------------------------
+#
+# The Jaccard implementation below is the default. A Transformer-based
+# backend (jTrans, kTrans, CLAP — ISSTA 2022 onwards) would compute an
+# embedding per function and compare via cosine similarity instead. We
+# don't ship Transformer inference (heavy torch dep), but we expose the
+# hook so an `[ml]` extra can register its provider at import time
+# without modifying core code or callers.
+#
+# A backend is a callable: (func) → (signature_set | embedding_vector,
+# source_tag). The diff function only cares that the result is hashable
+# and comparable via `_similarity(a, b)`.
+
+class SimilarityBackend(Protocol):
+    """A pluggable backend that scores function-pair similarity."""
+
+    name: str
+
+    def fingerprint(self, func) -> tuple[object, str]:
+        """Return (signature, source_tag) for `func`."""
+
+    def similarity(self, a: object, b: object) -> float:
+        """Return similarity in [0.0, 1.0]."""
+
+
+_BACKENDS: dict[str, SimilarityBackend] = {}
+
+
+def register_similarity_backend(name: str, backend: SimilarityBackend) -> None:
+    """Register a new backend by name. Idempotent."""
+    _BACKENDS[name] = backend
+
+
+def get_similarity_backend(name: str) -> SimilarityBackend | None:
+    """Look up a registered backend. Returns None when not registered."""
+    return _BACKENDS.get(name)
+
+
+def available_backends() -> list[str]:
+    """List registered backend names; always includes the 'jaccard' default."""
+    return ["jaccard"] + [n for n in _BACKENDS if n != "jaccard"]
 
 
 def _mnemonic_stream(func) -> list[str]:
@@ -132,7 +177,8 @@ def _build_entries(model) -> list[_Entry]:
     return out
 
 
-def diff_models(model_a, model_b, *, threshold: float = 0.85) -> dict:
+def diff_models(model_a, model_b, *, threshold: float = 0.85,
+                backend: str = "jaccard") -> dict:
     """Compare functions in two models. Returns dict ready to render or JSON.
 
     Algorithm:
@@ -144,7 +190,24 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85) -> dict:
          high-confidence pair with renames still surfaces, but garbage
          doesn't).
       3. Leftover A → removed; leftover B → added.
+
+    `backend` selects the fingerprint provider. "jaccard" is the default
+    and the only one we ship inline. Optional backends (jtrans, clap,
+    ktrans) can be registered at import time via
+    `register_similarity_backend(...)`.
     """
+    # Pluggable backend dispatch — non-default backends MUST be registered
+    # before this call. The Jaccard path is fully inline for speed and
+    # because it's what the test suite expects by default.
+    if backend != "jaccard":
+        bk = get_similarity_backend(backend)
+        if bk is None:
+            raise ValueError(
+                f"similarity backend {backend!r} is not registered. "
+                f"Available: {available_backends()}"
+            )
+        return _diff_with_backend(model_a, model_b, bk, threshold=threshold)
+
     entries_a = _build_entries(model_a)
     entries_b = _build_entries(model_b)
     by_name_b: dict[str, _Entry] = {e.name: e for e in entries_b if e.name}
@@ -232,7 +295,92 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85) -> dict:
     }
 
 
-def diff_iterables(funcs_a: Iterable, funcs_b: Iterable, *, threshold: float = 0.85) -> dict:
+def _diff_with_backend(model_a, model_b, backend: SimilarityBackend,
+                       *, threshold: float) -> dict:
+    """Run diff using a registered non-Jaccard backend.
+
+    Kept structurally parallel to the Jaccard fast-path so the result
+    schema is identical regardless of which backend ran.
+    """
+    def _entries(model):
+        out = []
+        for f in model.functions:
+            sig, src = backend.fingerprint(f)
+            out.append(_Entry(address=f.address, name=f.name or "",
+                              fingerprint=sig, source=f"{backend.name}:{src}"))
+        return out
+
+    entries_a = _entries(model_a)
+    entries_b = _entries(model_b)
+    by_name_b = {e.name: e for e in entries_b if e.name}
+
+    matched: list[dict] = []
+    changed: list[dict] = []
+    consumed_a: set[str] = set()
+    consumed_b: set[str] = set()
+    for ea in entries_a:
+        if not ea.name or ea.name not in by_name_b:
+            continue
+        eb = by_name_b[ea.name]
+        sim = backend.similarity(ea.fingerprint, eb.fingerprint) if ea.fingerprint and eb.fingerprint else 0.0
+        entry = {
+            "a_address": ea.address, "b_address": eb.address,
+            "a_name": ea.name, "b_name": eb.name,
+            "similarity": round(sim, 4),
+            "fingerprint": ea.source,
+        }
+        consumed_a.add(ea.address)
+        consumed_b.add(eb.address)
+        (matched if sim >= threshold else changed).append(entry)
+
+    remaining_a = [e for e in entries_a if e.address not in consumed_a and e.fingerprint]
+    remaining_b = [e for e in entries_b if e.address not in consumed_b and e.fingerprint]
+    pairs = []
+    for ea in remaining_a:
+        for eb in remaining_b:
+            sim = backend.similarity(ea.fingerprint, eb.fingerprint)
+            if sim >= threshold * 0.5:
+                pairs.append((sim, ea, eb))
+    pairs.sort(key=lambda t: -t[0])
+    used_a: set[str] = set()
+    used_b: set[str] = set()
+    for sim, ea, eb in pairs:
+        if ea.address in used_a or eb.address in used_b:
+            continue
+        used_a.add(ea.address)
+        used_b.add(eb.address)
+        entry = {
+            "a_address": ea.address, "b_address": eb.address,
+            "a_name": ea.name, "b_name": eb.name,
+            "similarity": round(sim, 4),
+            "fingerprint": ea.source,
+        }
+        (matched if sim >= threshold else changed).append(entry)
+
+    removed = [{"address": e.address, "name": e.name}
+               for e in entries_a if e.address not in consumed_a and e.address not in used_a]
+    added = [{"address": e.address, "name": e.name}
+             for e in entries_b if e.address not in consumed_b and e.address not in used_b]
+    return {
+        "threshold": threshold,
+        "backend": backend.name,
+        "totals": {
+            "a_functions": len(entries_a),
+            "b_functions": len(entries_b),
+            "matched": len(matched),
+            "changed": len(changed),
+            "added": len(added),
+            "removed": len(removed),
+        },
+        "matched": matched,
+        "changed": changed,
+        "added": added,
+        "removed": removed,
+    }
+
+
+def diff_iterables(funcs_a: Iterable, funcs_b: Iterable, *, threshold: float = 0.85,
+                   backend: str = "jaccard") -> dict:
     """Convenience wrapper for tests / non-model callers.
 
     Accepts any iterable of `FunctionInfo`-shaped objects (must expose
@@ -243,4 +391,4 @@ def diff_iterables(funcs_a: Iterable, funcs_b: Iterable, *, threshold: float = 0
         def __init__(self, fs):
             self.functions = list(fs)
 
-    return diff_models(_M(funcs_a), _M(funcs_b), threshold=threshold)
+    return diff_models(_M(funcs_a), _M(funcs_b), threshold=threshold, backend=backend)

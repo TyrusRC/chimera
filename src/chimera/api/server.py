@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from chimera import __version__
-from chimera.api.routes import system, projects, functions, strings, callgraph, devices, frida, uploads, diff, findings, annotations, decomp, ai, overlay_io
+from chimera.api.routes import system, projects, functions, strings, callgraph, devices, frida, uploads, diff, findings, annotations, decomp, ai, overlay_io, varbert as varbert_routes, flutter as flutter_routes
 from chimera.api.websocket import analysis as ws_analysis, frida as ws_frida
 from chimera.device.manager import shutdown_all
 
@@ -64,6 +64,8 @@ def create_app() -> FastAPI:
     app.include_router(decomp.router)
     app.include_router(ai.router)
     app.include_router(overlay_io.router)
+    app.include_router(varbert_routes.router)
+    app.include_router(flutter_routes.router)
     app.include_router(ws_analysis.router)
     app.include_router(ws_frida.router)
 

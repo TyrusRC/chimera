@@ -1859,6 +1859,361 @@ def ai_comment(path: str, address: str, line: int, backend: str,
     click.echo(text.strip())
 
 
+@ai.command("refine-decomp")
+@click.argument("path", type=click.Path(exists=True))
+@click.argument("address", type=str)
+@click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="ghidra",
+              help="Decompiler whose output should be refined (default: ghidra).")
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+def ai_refine_decomp(path: str, address: str, backend: str,
+                     project_dir: str | None, cache_dir: str | None):
+    """LLM4Decompile-V2-style refinement of decompiler output.
+
+    Reads the chosen decompiler's output for ADDRESS, asks the LLM to
+    rename placeholders and tighten control flow without changing
+    semantics, and prints the refined C. Strictly preview — does not
+    write to the overlay.
+    """
+    from chimera.ai import refine_decomp_prompt
+    code, name = _ai_decompile(path, address, project_dir, cache_dir, backend)
+    text = _ai_call(refine_decomp_prompt, code,
+                    function_name=name, address=address)
+    # Strip code fences the model may have added.
+    t = text.strip()
+    if t.startswith("```"):
+        first_nl = t.find("\n")
+        if first_nl != -1:
+            t = t[first_nl + 1 :]
+        if t.endswith("```"):
+            t = t[:-3].rstrip()
+    click.echo(t)
+
+
+@ai.command("batch-rename")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--max", "max_functions", type=int, default=50,
+              help="Maximum functions to consider in this pass.")
+@click.option("--threshold", "min_confidence", type=float, default=0.7,
+              help="Minimum confidence to auto-apply a name (when --apply).")
+@click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="r2")
+@click.option("--apply/--preview", default=False,
+              help="Apply suggestions to the overlay (default: preview-only).")
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]),
+              default="text")
+def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
+                    backend: str, apply: bool,
+                    project_dir: str | None, cache_dir: str | None,
+                    fmt: str):
+    """SymGen-style batch generative function naming.
+
+    Walks the project's stripped-looking functions (FUN_/sub_/fn_), feeds
+    callers/callees as context, and asks the LLM for a snake_case name +
+    confidence. With --apply, high-confidence names are written to the
+    overlay; otherwise this is a preview.
+    """
+    import json as _json
+    from chimera.ai import (
+        AIError,
+        AINotConfigured,
+        batch_rename_prompt,
+        default_client,
+    )
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.engine import ChimeraEngine
+    from chimera.core.overlay import ProjectOverlay
+
+    try:
+        client = default_client()
+    except AINotConfigured as exc:
+        raise click.ClickException(str(exc))
+
+    kwargs: dict = {}
+    if project_dir:
+        kwargs["project_dir"] = Path(project_dir)
+    if cache_dir:
+        kwargs["cache_dir"] = Path(cache_dir)
+    cfg = ChimeraConfig(**kwargs)
+    engine = ChimeraEngine(cfg)
+    model = asyncio.run(engine.analyze(path))
+    overlay = ProjectOverlay.load(cfg.project_dir, model.binary.sha256)
+
+    placeholder_prefixes = ("fun_", "sub_", "fn_", "func_", "loc_", "j_")
+    candidates = []
+    for f in model.functions:
+        name = (f.name or "").lower()
+        is_stripped = any(name.startswith(p) for p in placeholder_prefixes) or not name
+        if not is_stripped:
+            continue
+        if f.address in overlay.function_names:
+            continue
+        if not f.decompiled and not (f.disassembly and len(f.disassembly) > 4):
+            continue
+        candidates.append(f)
+    candidates.sort(key=lambda f: -len(model.get_callers(f.address) or []))
+    candidates = candidates[:max_functions]
+
+    if not candidates:
+        click.echo("[chimera] no stripped-looking functions to rename")
+        return
+
+    suggestions = []
+    for f in candidates:
+        code = f.decompiled or ""
+        if not code.strip():
+            continue
+        callers = [c.name for c in (model.get_callers(f.address) or []) if c.name][:6]
+        callees = [c.name for c in (model.get_callees(f.address) or []) if c.name][:6]
+        sys_p, user_p = batch_rename_prompt(
+            code, current_name=f.name, callers=callers, callees=callees,
+        )
+        try:
+            raw = client.complete(sys_p, user_p, max_tokens=160)
+        except AIError as exc:
+            click.echo(f"[chimera] WARN: model call failed for {f.address}: {exc}",
+                       err=True)
+            continue
+        parsed = _parse_rename_json(raw)
+        if not parsed:
+            continue
+        applied = False
+        if apply and parsed["confidence"] >= min_confidence:
+            overlay.rename_function(f.address, parsed["name"])
+            f.name = parsed["name"]
+            applied = True
+        suggestions.append({
+            "address": f.address,
+            "current_name": f.name if not applied else f.original_name,
+            "suggested_name": parsed["name"],
+            "confidence": parsed["confidence"],
+            "applied": applied,
+        })
+    if apply:
+        overlay.save()
+
+    if fmt == "json":
+        click.echo(_json.dumps({"suggestions": suggestions}, indent=2))
+        return
+    click.echo(f"[chimera] batch-rename: {len(suggestions)} suggestions, "
+               f"{sum(1 for s in suggestions if s['applied'])} applied")
+    for s in suggestions:
+        marker = "✓" if s["applied"] else " "
+        click.echo(
+            f"  {marker} {s['address']}  {s['current_name']!r} "
+            f"→ {s['suggested_name']!r}  conf={s['confidence']:.2f}"
+        )
+
+
+def _parse_rename_json(raw: str) -> dict | None:
+    """Parse the {name, confidence} JSON the LLM returns.
+
+    Tolerates code fences and stray prose by extracting the first {...}
+    block; returns None when nothing parseable surfaces (we'd rather
+    skip a function than commit a hallucinated rename).
+    """
+    import json as _json
+    txt = raw.strip()
+    if txt.startswith("```"):
+        txt = txt.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    # Last-ditch: pull the first {..} substring if the model wrapped prose.
+    if not txt.startswith("{"):
+        lo = txt.find("{")
+        hi = txt.rfind("}")
+        if lo != -1 and hi != -1 and hi > lo:
+            txt = txt[lo : hi + 1]
+    try:
+        data = _json.loads(txt)
+    except _json.JSONDecodeError:
+        return None
+    name = str(data.get("name") or "").strip()
+    try:
+        conf = float(data.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        conf = 0.0
+    if not name:
+        return None
+    return {"name": name, "confidence": max(0.0, min(1.0, conf))}
+
+
+# ----------------------------------------------------------------------
+# flutter-extract — B(l)utter Dart AOT snapshot extraction
+# ----------------------------------------------------------------------
+
+
+@main.command("flutter-extract")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("-o", "--out", "out_dir", type=click.Path(), required=True,
+              help="Output directory for B(l)utter artifacts.")
+@click.option("--libapp", "libapp_override", type=click.Path(exists=True),
+              default=None,
+              help="Explicit path to libapp.so / App binary (skips auto-detect).")
+@click.option("--blutter-bin", type=click.Path(exists=True), default=None,
+              help="Path to the blutter binary (default: $PATH / $CHIMERA_BLUTTER_BIN).")
+def flutter_extract(path: str, out_dir: str, libapp_override: str | None,
+                    blutter_bin: str | None):
+    """Reverse-engineer Flutter / Dart AOT bundles via B(l)utter.
+
+    PATH is either an unpacked APK directory, an APK file (will be
+    auto-unpacked first), or a libapp.so / App binary directly.
+    Requires the `blutter` binary on PATH or via --blutter-bin.
+    Install from https://github.com/worawit/blutter (MIT).
+    """
+    from chimera.adapters.blutter_adapter import BlutterAdapter, detect_libapp
+
+    adapter = BlutterAdapter(binary_path=blutter_bin)
+    if not adapter.is_available():
+        raise click.ClickException(
+            "blutter binary not found. Install from "
+            "https://github.com/worawit/blutter, put it on PATH, "
+            "or pass --blutter-bin / set CHIMERA_BLUTTER_BIN."
+        )
+
+    # Resolve the libapp target. If the user passed an APK, we lean on
+    # apktool downstream — for now, require either an unpacked dir or
+    # an explicit binary.
+    target = Path(libapp_override) if libapp_override else None
+    if target is None:
+        target = detect_libapp(Path(path)) if Path(path).is_dir() else \
+                 (Path(path) if Path(path).is_file() else None)
+    if target is None or not target.exists():
+        raise click.ClickException(
+            f"Could not locate libapp.so / App binary under {path!r}. "
+            "Unpack the APK first (apktool d) or pass --libapp explicitly."
+        )
+
+    click.echo(f"[chimera] blutter: extracting {target.name} → {out_dir}")
+    result = adapter.extract(target, out_dir)
+    if not result.success:
+        click.echo(f"[chimera] blutter FAILED: {result.stderr[:500]}", err=True)
+        raise click.exceptions.Exit(3)
+    click.echo(f"[chimera] blutter: {result.classes_dumped} classes, "
+               f"~{result.methods_dumped} methods written to {out_dir}")
+
+
+# ----------------------------------------------------------------------
+# classify — EMBER 2024 malware probability (optional [ml] extra)
+# ----------------------------------------------------------------------
+
+
+@main.command("classify")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--model", "model_path", type=click.Path(exists=True), default=None,
+              help="Path to a LightGBM .txt model (default: bundled / "
+                   "$CHIMERA_EMBER_MODEL).")
+@click.option("--threshold", type=float, default=0.5,
+              help="Probability threshold for the malicious label.")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]),
+              default="text")
+def classify(path: str, model_path: str | None, threshold: float, fmt: str):
+    """Score a PE with EMBER 2024 (optional [ml] extra).
+
+    Requires `lightgbm`, `lief`, and (ideally) the upstream `ember` pkg.
+    Without them, the command prints a clear "not configured" message
+    rather than crashing.
+    """
+    import json as _json
+    from chimera.detection_engineering.ember_classify import EmberClassifier
+
+    clf = EmberClassifier(
+        model_path=Path(model_path) if model_path else None,
+        threshold=threshold,
+    )
+    if not clf.is_available():
+        raise click.ClickException(
+            "EMBER classifier unavailable. Install with "
+            "`pip install \"chimera[ml]\"` (lightgbm + lief), and set "
+            "CHIMERA_EMBER_MODEL or drop a model at "
+            "src/chimera/detection_engineering/data/ember/model.txt."
+        )
+    verdict = clf.classify(path)
+    if verdict is None:
+        raise click.ClickException(
+            "EMBER could not score this binary — model file missing or "
+            "feature extraction failed (is this a valid PE?)."
+        )
+    label = "MALICIOUS" if verdict.malicious_probability >= threshold else "BENIGN"
+    if fmt == "json":
+        click.echo(_json.dumps({
+            "label": label,
+            "probability": verdict.malicious_probability,
+            "threshold": threshold,
+            "model": verdict.model_path,
+        }, indent=2))
+        return
+    click.echo(f"[chimera] EMBER 2024: {label}  "
+               f"p_malicious={verdict.malicious_probability:.4f}  "
+               f"(threshold={threshold})")
+
+
+# ----------------------------------------------------------------------
+# varbert — S&P 2024 variable-name recovery (optional [varbert] extra)
+# ----------------------------------------------------------------------
+
+
+@main.group()
+def varbert():
+    """Pal et al. 2024 — recover variable names from decompiled output.
+
+    Requires the optional `varbert-api` package. Install with
+    `pip install "chimera[varbert]"` or `pip install varbert-api`.
+    """
+
+
+@varbert.command("rename")
+@click.argument("path", type=click.Path(exists=True))
+@click.argument("address", type=str)
+@click.option("--variant", type=str, default="ghidra-O2",
+              help="Pretrained model variant (e.g. ghidra-O0, ida-O2).")
+@click.option("--apply/--preview", default=False,
+              help="Write recovered names to overlay (default: preview).")
+@click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="ghidra")
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+def varbert_rename(path: str, address: str, variant: str, apply: bool,
+                   backend: str, project_dir: str | None, cache_dir: str | None):
+    """Recover variable names for the function at ADDRESS."""
+    from chimera.adapters.varbert_adapter import VarBertAdapter
+    from chimera.core.overlay import ProjectOverlay
+
+    adapter = VarBertAdapter(model_variant=variant)
+    if not adapter.is_available():
+        raise click.ClickException(
+            "VarBERT not installed. Run "
+            "`pip install \"chimera[varbert]\"` or `pip install varbert-api`."
+        )
+
+    code, _name = _ai_decompile(path, address, project_dir, cache_dir, backend)
+    renames = adapter.rename_function(code, function_address=address)
+    if not renames:
+        click.echo("[chimera] varbert: no renames suggested")
+        return
+
+    click.echo(f"[chimera] varbert: {len(renames)} suggestions for {address}")
+    for r in renames:
+        marker = "✓" if apply else " "
+        click.echo(f"  {marker} {r.original!r} → {r.recovered!r}  "
+                   f"conf={r.confidence:.2f}")
+
+    if apply:
+        from chimera.core.config import ChimeraConfig
+        from chimera.core.engine import ChimeraEngine
+        kwargs: dict = {}
+        if project_dir:
+            kwargs["project_dir"] = Path(project_dir)
+        if cache_dir:
+            kwargs["cache_dir"] = Path(cache_dir)
+        cfg = ChimeraConfig(**kwargs)
+        engine = ChimeraEngine(cfg)
+        model = asyncio.run(engine.analyze(path))
+        overlay = ProjectOverlay.load(cfg.project_dir, model.binary.sha256)
+        for r in renames:
+            overlay.rename_variable(address, r.original, r.recovered)
+        overlay.save()
+        click.echo(f"[chimera] varbert: {len(renames)} renames written to overlay")
+
+
 # ----------------------------------------------------------------------
 # overlay — export/import analyst annotations (for sharing across analysts)
 # ----------------------------------------------------------------------

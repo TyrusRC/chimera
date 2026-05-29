@@ -20,6 +20,8 @@ from chimera.ai.prompts import (
     explain_prompt,
     rename_prompt,
     comment_prompt,
+    refine_decomp_prompt,
+    batch_rename_prompt,
 )
 
 __all__ = [
@@ -30,4 +32,6 @@ __all__ = [
     "explain_prompt",
     "rename_prompt",
     "comment_prompt",
+    "refine_decomp_prompt",
+    "batch_rename_prompt",
 ]
