@@ -13,10 +13,18 @@ export function CodeView({ projectId, address }: Props) {
   const [language, setLanguage] = useState('c')
   const [backend, setBackend] = useState<DecompBackend>('r2')
   const [decompMeta, setDecompMeta] = useState<{ lines: number; error?: string } | null>(null)
+  const [aiAvailable, setAiAvailable] = useState<boolean>(false)
+  const [aiBusy, setAiBusy] = useState<'explain' | 'rename' | null>(null)
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null)
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
   // Stash mutables on a ref so Monaco actions registered once still see fresh state.
   const ctx = useRef({ projectId, address })
   ctx.current = { projectId, address }
+
+  // Cheap one-shot probe so the AI buttons hide when no key is configured.
+  useEffect(() => {
+    api.aiStatus(projectId).then((s) => setAiAvailable(!!s.available)).catch(() => setAiAvailable(false))
+  }, [projectId])
 
   // Load function decomp + metadata. Pulls post-processed C from /decomp,
   // falls back to FunctionInfo.decompiled if the endpoint says no.
@@ -132,6 +140,58 @@ export function CodeView({ projectId, address }: Props) {
           <span className="text-chimera-accent font-mono">{funcName}</span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {aiAvailable && address && (
+            <>
+              <button
+                disabled={aiBusy !== null}
+                onClick={async () => {
+                  if (!address) return
+                  setAiBusy('explain')
+                  setAiExplanation(null)
+                  try {
+                    const r = await api.aiExplain(projectId, address, backend)
+                    setAiExplanation(r.explanation)
+                  } catch (e) {
+                    window.alert(`AI explain failed: ${(e as Error).message}`)
+                  } finally {
+                    setAiBusy(null)
+                  }
+                }}
+                className="text-xs px-2 py-0.5 rounded bg-chimera-panel border border-chimera-border hover:border-chimera-accent disabled:opacity-50"
+                title="Ask Claude to explain this function"
+              >
+                {aiBusy === 'explain' ? 'Explaining…' : 'AI explain'}
+              </button>
+              <button
+                disabled={aiBusy !== null}
+                onClick={async () => {
+                  if (!address) return
+                  setAiBusy('rename')
+                  try {
+                    const r = await api.aiRename(projectId, address, backend)
+                    const ok = window.confirm(
+                      `Suggested name: ${r.suggested_name}\n\nApply rename?`,
+                    )
+                    if (ok) {
+                      await api.renameAnnotation(projectId, {
+                        kind: 'function', address, new_name: r.suggested_name,
+                      })
+                      const f = await api.getFunction(projectId, address)
+                      setFuncName(`${f.name} (${f.address})`)
+                    }
+                  } catch (e) {
+                    window.alert(`AI rename failed: ${(e as Error).message}`)
+                  } finally {
+                    setAiBusy(null)
+                  }
+                }}
+                className="text-xs px-2 py-0.5 rounded bg-chimera-panel border border-chimera-border hover:border-chimera-accent disabled:opacity-50"
+                title="Ask Claude to suggest a snake_case name"
+              >
+                {aiBusy === 'rename' ? 'Naming…' : 'AI rename'}
+              </button>
+            </>
+          )}
           <label className="text-chimera-muted">Decompiler:</label>
           <select
             value={backend}
@@ -146,6 +206,20 @@ export function CodeView({ projectId, address }: Props) {
           )}
         </div>
       </div>
+      {aiExplanation && (
+        <div className="px-3 py-2 bg-chimera-panel border-b border-chimera-border text-xs text-chimera-text">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-chimera-accent font-semibold">AI explanation</span>
+            <button
+              onClick={() => setAiExplanation(null)}
+              className="text-chimera-muted hover:text-chimera-text text-[10px]"
+            >
+              dismiss
+            </button>
+          </div>
+          <div className="whitespace-pre-wrap leading-relaxed">{aiExplanation}</div>
+        </div>
+      )}
       <div className="flex-1">
         <Editor
           theme="vs-dark"

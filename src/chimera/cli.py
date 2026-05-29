@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 
@@ -1743,6 +1744,265 @@ def unpack(binary: str, packer_override: str | None, out_path: str | None,
     click.echo(f"[chimera] unpacked size: {result.unpacked_size} bytes")
     if result.notes:
         click.echo(f"[chimera] notes: {result.notes}")
+
+
+# ----------------------------------------------------------------------
+# ai — LLM-assisted analyst helpers (explain, suggest name, suggest comment)
+# ----------------------------------------------------------------------
+
+
+@main.group()
+def ai():
+    """LLM-backed analyst helpers — explain, rename, comment.
+
+    Requires ANTHROPIC_API_KEY in the environment. Override the model with
+    CHIMERA_AI_MODEL (default: claude-sonnet-4-6).
+    """
+
+
+def _ai_decompile(path: str, address: str, project_dir: str | None,
+                  cache_dir: str | None, backend: str) -> tuple[str, str]:
+    """Run the chosen decompiler against `address` and return (code, name)."""
+    from chimera.adapters.radare2 import Radare2Adapter
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.engine import ChimeraEngine
+    from chimera.core.overlay import ProjectOverlay
+    from chimera.report.decomp_postprocess import post_process
+
+    kwargs: dict = {}
+    if project_dir:
+        kwargs["project_dir"] = Path(project_dir)
+    if cache_dir:
+        kwargs["cache_dir"] = Path(cache_dir)
+    cfg = ChimeraConfig(**kwargs)
+    engine = ChimeraEngine(cfg)
+    model = asyncio.run(engine.analyze(path))
+    overlay = ProjectOverlay.load(cfg.project_dir, model.binary.sha256)
+    func = model.get_function(address)
+    if func is None:
+        raise click.ClickException(f"function {address} not found in model")
+    if backend == "ghidra" and func.decompiled:
+        pp = post_process(func.decompiled, model, address, overlay=overlay)
+        return pp.code, func.name
+    r2 = Radare2Adapter()
+    if not r2.is_available():
+        raise click.ClickException("r2 is not installed; cannot decompile via r2")
+    import r2pipe
+    pipe = r2pipe.open(str(path), flags=["-2"])
+    try:
+        raw = r2._decompile_one(pipe, {"address": address})
+    finally:
+        pipe.quit()
+    if not raw.get("ok"):
+        raise click.ClickException(f"r2 decompile failed: {raw.get('error')}")
+    pp = post_process(raw["code"], model, address, overlay=overlay)
+    return pp.code, func.name
+
+
+def _ai_call(fn, *args, **kwargs):
+    from chimera.ai import AIError, AINotConfigured, default_client
+    try:
+        client = default_client()
+    except AINotConfigured as exc:
+        raise click.ClickException(str(exc))
+    sys_p, user_p = fn(*args, **kwargs)
+    try:
+        return client.complete(sys_p, user_p)
+    except AIError as exc:
+        raise click.ClickException(str(exc))
+
+
+@ai.command("explain")
+@click.argument("path", type=click.Path(exists=True))
+@click.argument("address", type=str)
+@click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="r2",
+              help="Decompiler backend to source the code from.")
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+def ai_explain(path: str, address: str, backend: str,
+               project_dir: str | None, cache_dir: str | None):
+    """Explain what the function at ADDRESS does."""
+    from chimera.ai import explain_prompt
+    code, name = _ai_decompile(path, address, project_dir, cache_dir, backend)
+    text = _ai_call(explain_prompt, code, function_name=name, address=address)
+    click.echo(text)
+
+
+@ai.command("rename")
+@click.argument("path", type=click.Path(exists=True))
+@click.argument("address", type=str)
+@click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="r2")
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+def ai_rename(path: str, address: str, backend: str,
+              project_dir: str | None, cache_dir: str | None):
+    """Suggest a snake_case name for the function at ADDRESS."""
+    from chimera.ai import rename_prompt
+    code, name = _ai_decompile(path, address, project_dir, cache_dir, backend)
+    text = _ai_call(rename_prompt, code, current_name=name)
+    click.echo(text.strip().splitlines()[0].strip().strip("`'\""))
+
+
+@ai.command("comment")
+@click.argument("path", type=click.Path(exists=True))
+@click.argument("address", type=str)
+@click.option("--line", type=int, default=0, help="Line number (0 = function header).")
+@click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="r2")
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+def ai_comment(path: str, address: str, line: int, backend: str,
+               project_dir: str | None, cache_dir: str | None):
+    """Suggest a one-line comment for ADDRESS (optionally a specific line)."""
+    from chimera.ai import comment_prompt
+    code, _name = _ai_decompile(path, address, project_dir, cache_dir, backend)
+    text = _ai_call(comment_prompt, code, line=line)
+    click.echo(text.strip())
+
+
+# ----------------------------------------------------------------------
+# overlay — export/import analyst annotations (for sharing across analysts)
+# ----------------------------------------------------------------------
+
+
+@main.group()
+def overlay():
+    """Export / import the analyst annotation overlay (renames, comments, types)."""
+
+
+@overlay.command("export")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("-o", "--out", "out_path", type=click.Path(), default=None,
+              help="Output file (default: stdout).")
+def overlay_export(path: str, project_dir: str | None, out_path: str | None):
+    """Export the overlay for the binary at PATH as a portable JSON document."""
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.overlay import ProjectOverlay
+    from chimera.model.binary import BinaryInfo
+    kwargs: dict = {}
+    if project_dir:
+        kwargs["project_dir"] = Path(project_dir)
+    cfg = ChimeraConfig(**kwargs)
+    b = BinaryInfo.from_path(Path(path))
+    overlay = ProjectOverlay.load(cfg.project_dir, b.sha256)
+    payload = {
+        "schema": "chimera-overlay-export/1",
+        "sha256": b.sha256,
+        "source_path": str(Path(path).name),
+        "function_names": overlay.function_names,
+        "variable_renames": overlay.variable_renames,
+        "comments": overlay.comments,
+        "function_types": overlay.function_types,
+        "user_classifications": overlay.user_classifications,
+    }
+    text = json.dumps(payload, indent=2, sort_keys=True)
+    if out_path:
+        Path(out_path).write_text(text)
+        click.echo(f"[chimera] overlay exported → {out_path}")
+    else:
+        click.echo(text)
+
+
+@overlay.command("import")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("-i", "--in", "in_path", type=click.Path(exists=True), required=True,
+              help="Input overlay JSON.")
+@click.option("--mode", type=click.Choice(["merge", "replace"]), default="merge",
+              help="merge: overlay-on-top; replace: discard local overlay first.")
+def overlay_import(path: str, project_dir: str | None, in_path: str, mode: str):
+    """Import an overlay JSON into the project for the binary at PATH."""
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.overlay import ProjectOverlay
+    from chimera.model.binary import BinaryInfo
+
+    kwargs: dict = {}
+    if project_dir:
+        kwargs["project_dir"] = Path(project_dir)
+    cfg = ChimeraConfig(**kwargs)
+    b = BinaryInfo.from_path(Path(path))
+    incoming = json.loads(Path(in_path).read_text())
+    incoming_sha = incoming.get("sha256", "")
+    if incoming_sha and incoming_sha != b.sha256:
+        click.echo(
+            f"[chimera] WARN: overlay was exported from a different binary "
+            f"(sha={incoming_sha[:12]}… vs current {b.sha256[:12]}…). "
+            "Addresses may not line up.",
+            err=True,
+        )
+    target = ProjectOverlay.load(cfg.project_dir, b.sha256)
+    if mode == "replace":
+        target.function_names.clear()
+        target.variable_renames.clear()
+        target.comments.clear()
+        target.function_types.clear()
+        target.user_classifications.clear()
+    # Merge: incoming values win on conflict.
+    target.function_names.update(incoming.get("function_names") or {})
+    for addr, vmap in (incoming.get("variable_renames") or {}).items():
+        target.variable_renames.setdefault(addr, {}).update(vmap)
+    for addr, cmap in (incoming.get("comments") or {}).items():
+        target.comments.setdefault(addr, {}).update(cmap)
+    target.function_types.update(incoming.get("function_types") or {})
+    target.user_classifications.update(incoming.get("user_classifications") or {})
+    target.save()
+    click.echo(
+        f"[chimera] overlay imported ({mode}): "
+        f"{len(target.function_names)} renames, "
+        f"{len(target.comments)} commented addrs, "
+        f"{len(target.function_types)} typed"
+    )
+
+
+# ----------------------------------------------------------------------
+# diff-functions — BinDiff-style function similarity comparison
+# ----------------------------------------------------------------------
+
+
+@main.command("diff-functions")
+@click.argument("a", type=click.Path(exists=True))
+@click.argument("b", type=click.Path(exists=True))
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--cache-dir", type=click.Path(), default=None)
+@click.option("--threshold", type=float, default=0.85,
+              help="Minimum similarity to count as a match.")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+def diff_functions(a: str, b: str, project_dir: str | None,
+                   cache_dir: str | None, threshold: float, fmt: str):
+    """BinDiff-style function similarity between two binaries.
+
+    Returns four sets: matched (high-similarity pairs), changed (low-
+    similarity pairs by name), added (only in B), removed (only in A).
+    """
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.engine import ChimeraEngine
+    from chimera.diff.function_similarity import diff_models
+    kwargs: dict = {}
+    if project_dir:
+        kwargs["project_dir"] = Path(project_dir)
+    if cache_dir:
+        kwargs["cache_dir"] = Path(cache_dir)
+    cfg = ChimeraConfig(**kwargs)
+
+    async def _run():
+        engine = ChimeraEngine(cfg)
+        return await engine.analyze(a), await engine.analyze(b)
+    ma, mb = asyncio.run(_run())
+    result = diff_models(ma, mb, threshold=threshold)
+    if fmt == "json":
+        click.echo(json.dumps(result, indent=2, sort_keys=True))
+        return
+    click.echo(f"[chimera] diff-functions {Path(a).name} → {Path(b).name}")
+    click.echo(f"  matched:  {len(result['matched'])}")
+    click.echo(f"  changed:  {len(result['changed'])}")
+    click.echo(f"  added:    {len(result['added'])}")
+    click.echo(f"  removed:  {len(result['removed'])}")
+    for m in result["matched"][:20]:
+        click.echo(f"    ~ {m['a_address']} → {m['b_address']}  "
+                   f"{m['a_name']!r} → {m['b_name']!r}  sim={m['similarity']:.2f}")
+    for m in result["changed"][:20]:
+        click.echo(f"    ! {m['a_name']!r} drifted  "
+                   f"a={m['a_address']} b={m['b_address']} sim={m['similarity']:.2f}")
 
 
 if __name__ == "__main__":

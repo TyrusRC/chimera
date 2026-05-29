@@ -29,6 +29,12 @@ class DiffRequest(BaseModel):
     b: str
 
 
+class FunctionDiffRequest(BaseModel):
+    a: str
+    b: str
+    threshold: float = 0.85
+
+
 def _finding_to_dict(f) -> dict:
     return {
         "finding_id": getattr(f, "finding_id", None),
@@ -102,3 +108,23 @@ async def diff(req: DiffRequest) -> dict:
         "findings_added": [_finding_to_dict(f) for f in result.findings_added],
         "findings_resolved": [_finding_to_dict(f) for f in result.findings_resolved],
     }
+
+
+@router.post("/diff/functions")
+async def diff_functions(req: FunctionDiffRequest) -> dict:
+    """BinDiff-style per-function similarity comparison.
+
+    Both `a` and `b` must be project IDs currently in the in-memory store
+    (i.e. analyzed in this server's lifetime). We use the live models —
+    not the cached snapshot — so analyst renames in the overlay are
+    reflected in the matching.
+    """
+    from chimera.diff.function_similarity import diff_models
+
+    proj_a = await _store.get(req.a)
+    proj_b = await _store.get(req.b)
+    if not proj_a or "model" not in proj_a:
+        raise HTTPException(status_code=404, detail=f"Project {req.a!r} not analyzed yet")
+    if not proj_b or "model" not in proj_b:
+        raise HTTPException(status_code=404, detail=f"Project {req.b!r} not analyzed yet")
+    return diff_models(proj_a["model"], proj_b["model"], threshold=req.threshold)

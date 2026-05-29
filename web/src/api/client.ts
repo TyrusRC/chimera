@@ -327,6 +327,56 @@ export const api = {
       `/projects/${projectId}/functions/${address}/decomp?backend=${backend}`,
       { signal },
     ),
+
+  // AI — Claude-backed explain/rename/comment. 503 when ANTHROPIC_API_KEY unset.
+  aiStatus: (projectId: string) =>
+    request<{ available: boolean; model: string | null }>(`/projects/${projectId}/ai/status`),
+  aiExplain: (projectId: string, address: string, backend: 'r2' | 'ghidra' = 'r2') =>
+    request<{ address: string; name: string; explanation: string; model: string }>(
+      `/projects/${projectId}/ai/explain`,
+      { method: 'POST', body: JSON.stringify({ address, backend }) },
+    ),
+  aiRename: (projectId: string, address: string, backend: 'r2' | 'ghidra' = 'r2') =>
+    request<{ address: string; current_name: string; suggested_name: string; model: string }>(
+      `/projects/${projectId}/ai/rename`,
+      { method: 'POST', body: JSON.stringify({ address, backend }) },
+    ),
+  aiComment: (projectId: string, address: string, line: number, backend: 'r2' | 'ghidra' = 'r2') =>
+    request<{ address: string; name: string; line: number; comment: string; model: string }>(
+      `/projects/${projectId}/ai/comment`,
+      { method: 'POST', body: JSON.stringify({ address, line, backend }) },
+    ),
+
+  // Overlay — portable annotation export/import for analyst-to-analyst sharing.
+  exportOverlay: (projectId: string) =>
+    request<{
+      schema: string
+      sha256: string
+      function_names: Record<string, string>
+      variable_renames: Record<string, Record<string, string>>
+      comments: Record<string, Record<string, string>>
+      function_types: Record<string, string>
+      user_classifications: Record<string, string>
+    }>(`/projects/${projectId}/overlay/export`),
+  importOverlay: (projectId: string, payload: unknown, mode: 'merge' | 'replace' = 'merge') =>
+    request<{ ok: boolean; mode: string; warnings: string[]; counts: Record<string, number> }>(
+      `/projects/${projectId}/overlay/import`,
+      { method: 'POST', body: JSON.stringify({ payload, mode }) },
+    ),
+
+  // Function similarity — BinDiff-style two-binary diff at function granularity.
+  diffFunctions: (a: string, b: string, threshold = 0.85) =>
+    request<{
+      threshold: number
+      totals: Record<string, number>
+      matched: Array<{ a_address: string; b_address: string; a_name: string; b_name: string; similarity: number; fingerprint: string }>
+      changed: Array<{ a_address: string; b_address: string; a_name: string; b_name: string; similarity: number; fingerprint: string }>
+      added: Array<{ address: string; name: string }>
+      removed: Array<{ address: string; name: string }>
+    }>(`/diff/functions`, {
+      method: 'POST',
+      body: JSON.stringify({ a, b, threshold }),
+    }),
 }
 
 export interface DecompResponse {
