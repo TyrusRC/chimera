@@ -12,12 +12,16 @@ schema to allow either side to evolve without breaking the other).
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from chimera.core.config import ChimeraConfig
 from chimera.core.overlay import ProjectOverlay
+
+if TYPE_CHECKING:
+    from chimera.model.program import UnifiedProgramModel
 
 router = APIRouter(prefix="/api/projects/{project_id}/overlay", tags=["overlay"])
 logger = logging.getLogger(__name__)
@@ -31,7 +35,7 @@ class ImportRequest(BaseModel):
     mode: str = "merge"  # "merge" | "replace"
 
 
-async def _load(project_id: str) -> tuple[ProjectOverlay, "UnifiedProgramModel", str]:
+async def _load(project_id: str) -> tuple[ProjectOverlay, UnifiedProgramModel, str]:
     from chimera.api.routes.projects import _store
     project = await _store.get(project_id)
     if not project or "model" not in project:

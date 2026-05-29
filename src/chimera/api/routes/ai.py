@@ -24,8 +24,10 @@ from chimera.ai import (
     comment_prompt,
     default_client,
     explain_prompt,
+    parse_rename_json,
     refine_decomp_prompt,
     rename_prompt,
+    strip_fence,
 )
 
 router = APIRouter(prefix="/api/projects/{project_id}/ai", tags=["ai"])
@@ -161,7 +163,7 @@ async def refine_decomp(project_id: str, req: RefineDecompRequest) -> dict:
     except AIError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     # Strip fences if the model wrapped its answer
-    refined = _strip_fence(text)
+    refined = strip_fence(text)
     return {
         "address": addr,
         "name": name,
@@ -201,19 +203,6 @@ async def batch_rename(project_id: str, req: BatchRenameRequest) -> dict:
         "suggestions": results,
         "model": client.model,
     }
-
-
-def _strip_fence(text: str) -> str:
-    """Pull the body out of ```c ... ``` fences the model may emit."""
-    t = text.strip()
-    if t.startswith("```"):
-        # Drop the opening fence + lang
-        first_nl = t.find("\n")
-        if first_nl != -1:
-            t = t[first_nl + 1 :]
-        if t.endswith("```"):
-            t = t[: -3].rstrip()
-    return t
 
 
 def _select_candidates(model, overlay, req: BatchRenameRequest) -> list:
@@ -274,7 +263,7 @@ async def _run_batch_rename(client, model, overlay, candidates, req, project_id)
         except AIError as exc:
             logger.warning("batch_rename: model call failed for %s: %s", f.address, exc)
             continue
-        parsed = _parse_rename_json(raw)
+        parsed = parse_rename_json(raw)
         if not parsed:
             continue
         entry = {
@@ -294,21 +283,3 @@ async def _run_batch_rename(client, model, overlay, candidates, req, project_id)
     return results
 
 
-def _parse_rename_json(raw: str) -> dict | None:
-    import json as _json
-    txt = raw.strip()
-    # Strip code fences if present
-    if txt.startswith("```"):
-        txt = txt.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-    try:
-        data = _json.loads(txt)
-    except _json.JSONDecodeError:
-        return None
-    name = str(data.get("name") or "").strip()
-    try:
-        conf = float(data.get("confidence", 0.0))
-    except (TypeError, ValueError):
-        conf = 0.0
-    if not name:
-        return None
-    return {"name": name, "confidence": max(0.0, min(1.0, conf))}

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import click
 
-from chimera import __version__
 from chimera.cli._common import _load_cache_and_sha
 from chimera.cli._root import main
 

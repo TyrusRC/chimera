@@ -9,7 +9,7 @@ from pathlib import Path
 
 import click
 
-from chimera import __version__
+from chimera.ai import parse_rename_json
 from chimera.cli._root import main
 
 logger = logging.getLogger(__name__)
@@ -151,19 +151,11 @@ def ai_refine_decomp(path: str, address: str, backend: str,
     semantics, and prints the refined C. Strictly preview — does not
     write to the overlay.
     """
-    from chimera.ai import refine_decomp_prompt
+    from chimera.ai import refine_decomp_prompt, strip_fence
     code, name = _ai_decompile(path, address, project_dir, cache_dir, backend)
     text = _ai_call(refine_decomp_prompt, code,
                     function_name=name, address=address)
-    # Strip code fences the model may have added.
-    t = text.strip()
-    if t.startswith("```"):
-        first_nl = t.find("\n")
-        if first_nl != -1:
-            t = t[first_nl + 1 :]
-        if t.endswith("```"):
-            t = t[:-3].rstrip()
-    click.echo(t)
+    click.echo(strip_fence(text))
 
 
 
@@ -191,7 +183,6 @@ def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
     confidence. With --apply, high-confidence names are written to the
     overlay; otherwise this is a preview.
     """
-    import json as _json
     from chimera.ai import (
         AIError,
         AINotConfigured,
@@ -252,7 +243,7 @@ def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
             click.echo(f"[chimera] WARN: model call failed for {f.address}: {exc}",
                        err=True)
             continue
-        parsed = _parse_rename_json(raw)
+        parsed = parse_rename_json(raw)
         if not parsed:
             continue
         applied = False
@@ -271,7 +262,7 @@ def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
         overlay.save()
 
     if fmt == "json":
-        click.echo(_json.dumps({"suggestions": suggestions}, indent=2))
+        click.echo(json.dumps({"suggestions": suggestions}, indent=2))
         return
     click.echo(f"[chimera] batch-rename: {len(suggestions)} suggestions, "
                f"{sum(1 for s in suggestions if s['applied'])} applied")
@@ -284,32 +275,9 @@ def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
 
 
 
+# Backwards-compat re-export for the test suite, which imports
+# `_parse_rename_json` from `chimera.cli`. The real implementation lives
+# in `chimera.ai.parsing.parse_rename_json` so the API and CLI share one
+# parser instead of drifting copies.
 def _parse_rename_json(raw: str) -> dict | None:
-    """Parse the {name, confidence} JSON the LLM returns.
-
-    Tolerates code fences and stray prose by extracting the first {...}
-    block; returns None when nothing parseable surfaces (we'd rather
-    skip a function than commit a hallucinated rename).
-    """
-    import json as _json
-    txt = raw.strip()
-    if txt.startswith("```"):
-        txt = txt.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-    # Last-ditch: pull the first {..} substring if the model wrapped prose.
-    if not txt.startswith("{"):
-        lo = txt.find("{")
-        hi = txt.rfind("}")
-        if lo != -1 and hi != -1 and hi > lo:
-            txt = txt[lo : hi + 1]
-    try:
-        data = _json.loads(txt)
-    except _json.JSONDecodeError:
-        return None
-    name = str(data.get("name") or "").strip()
-    try:
-        conf = float(data.get("confidence", 0.0))
-    except (TypeError, ValueError):
-        conf = 0.0
-    if not name:
-        return None
-    return {"name": name, "confidence": max(0.0, min(1.0, conf))}
+    return parse_rename_json(raw)

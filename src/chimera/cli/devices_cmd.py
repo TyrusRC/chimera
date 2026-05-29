@@ -7,7 +7,6 @@ import logging
 
 import click
 
-from chimera import __version__
 from chimera.cli._root import main
 
 logger = logging.getLogger(__name__)

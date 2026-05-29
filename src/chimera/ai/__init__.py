@@ -16,6 +16,10 @@ from chimera.ai.client import (
     AIError,
     default_client,
 )
+from chimera.ai.parsing import (
+    parse_rename_json,
+    strip_fence,
+)
 from chimera.ai.prompts import (
     explain_prompt,
     rename_prompt,
@@ -34,4 +38,6 @@ __all__ = [
     "comment_prompt",
     "refine_decomp_prompt",
     "batch_rename_prompt",
+    "parse_rename_json",
+    "strip_fence",
 ]

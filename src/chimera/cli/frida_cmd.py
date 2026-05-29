@@ -7,7 +7,6 @@ import logging
 
 import click
 
-from chimera import __version__
 from chimera.cli._root import main
 
 logger = logging.getLogger(__name__)
@@ -94,7 +93,7 @@ async def _frida_run(script_id, target, device_id, mode, duration):
 
     source = read_source(script_id)
     if not source:
-        click.echo(f"chimera frida: failed to read script source", err=True)
+        click.echo("chimera frida: failed to read script source", err=True)
         raise click.exceptions.Exit(1)
 
     adapter = FridaAdapter()

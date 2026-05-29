@@ -5,9 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import click
 
-from chimera import __version__
 
 logger = logging.getLogger(__name__)
 
