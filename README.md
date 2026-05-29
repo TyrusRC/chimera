@@ -24,6 +24,13 @@ persistent renames / comments / type signatures, byte-level patching
 with anti-debug recipes, a UPX auto-unpacker, packer detection
 (YARA + section-name + entropy), and a gdb symbol bridge.
 
+Optional 2024-2026 research add-ons round it out: an Anthropic-backed AI
+assistant (LLM4Decompile V2-style decompiler refinement + SymGen-style
+batch generative naming), the VarBERT variable-name recovery model
+(S&P 2024), the EMBER 2024 malware classifier, the B(l)utter Flutter /
+Dart AOT extractor, and a BinDiff-style per-function similarity diff —
+all opt-in, none on the default `analyze` hot path.
+
 ---
 
 ## Features
@@ -50,12 +57,21 @@ with anti-debug recipes, a UPX auto-unpacker, packer detection
 - **Dynamic attach** — `chimera attach --pid <pid>` (local) or `--target <pkg> --device <id>` (mobile) with multi-bypass preload, message drain, interactive REPL.
 
 ### Shared workflow
-- **Static + dynamic** — Semgrep + YARA + capa for static; Frida for runtime confirmation.
+- **Static + dynamic** — Semgrep + YARA (or optional YARA-X) + capa for static; Frida for runtime confirmation.
 - **Binary-vs-binary diff** — `chimera diff <a> <b>` reports added/removed permissions, exported components, SDKs, native libraries (with sha256), manifest + NSC findings (regression / resolution).
+- **Function-similarity diff (BinDiff-style)** — `chimera diff-functions a.bin b.bin --threshold 0.85` matches functions via opcode-shingled Jaccard, reports matched/changed/added/removed. Pluggable backend hook lets a future torch-backed jTrans / CLAP embedding land without API churn.
 - **Reports** — JSON, HTML, Markdown, SARIF v2.1.0, CycloneDX 1.6 SBOM, MASVS coverage matrix, CVSS finding draft.
-- **Web UI + TUI** — FastAPI-backed UI with Monaco editor (right-click rename / comment / set-type), Textual TUI for device interaction.
+- **Annotation sharing** — `chimera overlay export <bin> -o overlay.json` and `chimera overlay import <bin> -i overlay.json --merge|--replace` move renames / comments / types between analysts. Schema includes the binary sha256 so import against a different binary surfaces a warning rather than silently corrupting addresses.
+- **Web UI + TUI** — FastAPI-backed UI with Monaco editor (right-click rename / comment / set-type, plus AI explain / AI rename buttons when an API key is set), Textual TUI for device interaction.
 - **MCP server** — high-level analysis tools exposed to any MCP-compatible LLM client.
 - **OWASP MASVS** — findings tagged with MASVS categories.
+
+### AI-assisted RE (optional, opt-in)
+- **LLM-backed explain / rename / comment** — `chimera ai explain <bin> <addr>` and `/api/projects/{id}/ai/{explain,rename,comment}`. The Web UI exposes "AI explain" + "AI rename" buttons in the CodeView header (hidden when no key configured).
+- **LLM4Decompile-V2-style refinement** — `chimera ai refine-decomp <bin> <addr> --backend ghidra` asks the model to clean up Ghidra pseudo-C (rename `iVar1`/`FUN_xxxxx`, tighten control flow) **without inventing semantics**. Strictly preview; never writes to overlay.
+- **SymGen-style batch generative naming** — `chimera ai batch-rename <bin> --max 50 --threshold 0.7 --apply` walks stripped-looking functions (FUN_/sub_/fn_), feeds callgraph neighbours as context, asks for `{name, confidence}` JSON, optionally applies high-confidence names to the overlay. Preview by default.
+- **Configuration** — `ANTHROPIC_API_KEY` env var enables the surface; `CHIMERA_AI_MODEL` overrides the model (default `claude-sonnet-4-6`); urllib-only client, no SDK dep. Missing key → HTTP 503 with a clear message; the CLI prints an actionable install hint.
+- **Research add-ons (extras)** — VarBERT variable-name recovery (`chimera varbert rename`, `pip install "chimera[varbert]"`), EMBER 2024 malware classifier (`chimera classify <pe>`, `pip install "chimera[ml]"`), B(l)utter Flutter / Dart AOT extractor (`chimera flutter-extract <apk> -o out`, external `blutter` binary on PATH or `CHIMERA_BLUTTER_BIN`).
 
 ## Desktop reverse engineering
 
@@ -148,27 +164,52 @@ required for the simple kinds.
 
 ### Optional tools
 
+External binaries discovered on `PATH`:
+
 - `floss` (`pip install flare-floss`) — string deobfuscation for PE/ELF.
 - `ilspycmd` (`dotnet tool install -g ilspycmd`) — .NET decompilation.
 - `capa` (`pip install flare-capa`) — capability matching.
 - `upx` (`apt-get install upx-ucl`) — auto-unpack for UPX-packed binaries.
 - `gdb` — for the `gdb-export` handoff.
+- `yara-x` (`cargo install yara-x-cli`) — modern Rust YARA rewrite. Activate with `CHIMERA_USE_YARA_X=1`; falls back to legacy `yara` when absent.
+- `blutter` (build from [worawit/blutter](https://github.com/worawit/blutter)) — Flutter / Dart AOT snapshot extractor. Discovery: `PATH` or `CHIMERA_BLUTTER_BIN`.
+
+Optional Python extras (gated to keep the default wheel lean):
+
+- `pip install "chimera[varbert]"` — VarBERT variable-name recovery model (Pal et al., S&P 2024). Adds `chimera varbert rename` + `/api/projects/{id}/varbert/rename`.
+- `pip install "chimera[ml]"` — LightGBM + lief for the EMBER 2024 malware classifier. Adds `chimera classify`. Drop a model at `src/chimera/detection_engineering/data/ember/model.txt` or point `CHIMERA_EMBER_MODEL` at one.
+- `pip install "chimera[capa]"` — heavyweight capability matching (separate from the base install to avoid dependency clashes).
+- `pip install "chimera[dynamic]"` — `frida-python` for `chimera attach` / Frida workflows.
+
+AI assistant config (no extra to install — uses urllib):
+
+- `ANTHROPIC_API_KEY` — required to enable `chimera ai ...` and the SPA's AI buttons. Without it, every AI surface fails soft (HTTP 503 with a clear hint).
+- `CHIMERA_AI_MODEL` — override the model (default `claude-sonnet-4-6`).
+- `ANTHROPIC_BASE_URL` — point at a proxy / local endpoint.
 
 All optional; pipelines skip gracefully when a tool isn't installed.
-The Docker image bundles all of the above except `floss`, `ilspycmd`
-and `capa` (off by default to avoid dependency clashes — opt in with
-`--build-arg INSTALL_CAPA=1`).
+The Docker image bundles all of the external binaries above except
+`floss`, `ilspycmd` and `capa` (off by default to avoid dependency
+clashes — opt in with `--build-arg INSTALL_CAPA=1`).
 
 ### Limitations
 
 - **No Hex-Rays-quality decompiler.** Ghidra is good and the
   post-processor cleans it up, but for heavily-optimised C++ Hex-Rays
-  is still the gold standard.
+  is still the gold standard. The AI refinement pass closes the gap on
+  readability, not on accuracy — it's instructed never to invent
+  semantics, so it can't recover what Ghidra dropped.
 - **No interactive structure recovery** — you can rename and retype,
-  but there's no "Edit → Structure" editor inside chimera yet.
+  but there's no "Edit → Structure" editor inside chimera yet. (ReSym
+  CCS 2024 ships struct synthesis with ~10GB checkpoints — tracked as a
+  research-grade follow-up.)
 - **No native debugger UX** — debugging happens via the gdb bridge, not
   inside chimera.
-- No sandbox, no symbolic execution.
+- **No symbolic execution / VMP devirtualization shipping today** — the
+  packer-detection table covers commercial protectors but the unpacker
+  side stops at UPX. VM-protectors emit manual guidance instead of an
+  auto-pwn.
+- No sandbox.
 - Authenticode signatures are detected (presence) but not validated.
 - Mixed-mode .NET (C++/CLI) falls back to Ghidra.
 
@@ -256,7 +297,7 @@ flowchart TB
         Apktool[apktool]
         Frida[Frida]
         Semgrep[Semgrep]
-        YARA[YARA]
+        YARA["YARA / YARA-X"]
         Capa[capa]
         Hermes[hermes-dec]
         ClassDump[class-dump]
@@ -265,6 +306,13 @@ flowchart TB
         AFL[AFL++]
         UPX[upx]
         Gdb[gdb]
+        Blutter["B(l)utter<br/>(Dart AOT)"]
+    end
+
+    subgraph AI["AI &amp; ML (opt-in)"]
+        Claude["Anthropic API<br/>explain · rename · refine · batch"]
+        VarBert["VarBERT<br/>S&amp;P 2024 vars"]
+        Ember["EMBER 2024<br/>malware classifier"]
     end
 
     Model["Unified Program Model<br/>functions · strings · xrefs · findings"]
@@ -286,6 +334,9 @@ flowchart TB
     Overlay --> Model
     SigDB --> Model
     Model --> Findings
+    Model -. opt-in .-> AI
+    AI -. suggestions .-> Overlay
+    Ember -. PE verdict .-> Findings
 ```
 
 ## Analysis pipeline
@@ -408,6 +459,26 @@ chimera attach --pid 12345                                 # local process via F
 chimera attach --target com.example.app --device usb       # mobile attach
 chimera attach --pid 12345 --bypass anti_debug --interactive  # multi-bypass + REPL
 
+# AI-assisted (requires ANTHROPIC_API_KEY)
+chimera ai explain server.bin 0x1234
+chimera ai rename  server.bin 0x1234
+chimera ai comment server.bin 0x1234 --line 12
+chimera ai refine-decomp server.bin 0x1234 --backend ghidra
+chimera ai batch-rename server.bin --max 50 --threshold 0.7         # preview
+chimera ai batch-rename server.bin --max 50 --threshold 0.7 --apply # write to overlay
+
+# Research add-ons (optional extras)
+chimera varbert rename  server.bin 0x1234 --variant ghidra-O2 --apply
+chimera classify sample.exe --threshold 0.5 --format json
+chimera flutter-extract unpacked_apk_dir -o out                     # auto-detects libapp.so
+
+# BinDiff-style function similarity (any two analyzed binaries)
+chimera diff-functions a.bin b.bin --threshold 0.85 --format text
+
+# Annotation sharing — portable overlay export/import
+chimera overlay export server.bin -o server.overlay.json
+chimera overlay import server.bin -i server.overlay.json --mode merge
+
 # Connected devices
 chimera devices
 
@@ -443,12 +514,17 @@ pipeline directly.
 | JS bundles        | webcrack        | bundled-JS unpacking                                |
 | Hermes            | hermes-dec      | RN Hermes bytecode disassembly                      |
 | Static rules      | Semgrep         | MASVS rules over decompiled sources                 |
-| Pattern scanning  | YARA            | packer detection, malware fingerprints              |
+| Pattern scanning  | YARA / YARA-X   | packer detection, malware fingerprints (`CHIMERA_USE_YARA_X=1` for the Rust rewrite) |
 | Capabilities      | capa            | high-level behavior tagging (optional)              |
 | Dynamic           | Frida           | runtime hooks, bypass scripts, `chimera attach`     |
 | Fuzzing           | AFL++           | native-library fuzzing harness                      |
 | Unpacking         | upx             | UPX auto-unpack (UPX0 / UPX1)                       |
 | Debugger handoff  | gdb             | `chimera gdb-export` consumes `.gdbinit`            |
+| AI assistant      | Anthropic API   | `chimera ai {explain,rename,comment,refine-decomp,batch-rename}` (urllib, no SDK) |
+| Variable-name AI  | VarBERT         | S&P 2024 transformer; `chimera varbert rename` (`[varbert]` extra) |
+| Malware verdict   | EMBER 2024      | LightGBM PE classifier; `chimera classify` (`[ml]` extra) |
+| Flutter / Dart    | B(l)utter       | Dart AOT snapshot extraction; `chimera flutter-extract` (external binary) |
+| Function diff     | Jaccard shingles | BinDiff-style `chimera diff-functions`; pluggable backend hook for future jTrans / CLAP |
 
 Adapters live in [`src/chimera/adapters/`](src/chimera/adapters) and all
 implement the `BackendAdapter` interface
@@ -470,18 +546,22 @@ Layout:
 
 ```
 src/chimera/
-├── adapters/      # backend wrappers (radare2, Ghidra, jadx, Frida, ...)
-├── api/           # FastAPI routes + websocket layer (incl. annotations, decomp, findings)
+├── adapters/      # backend wrappers (radare2, Ghidra, jadx, Frida, varbert, yara-x, blutter, ...)
+├── ai/            # urllib Anthropic client + prompt templates + shared parsers
+├── api/           # FastAPI routes + websocket (annotations, decomp, ai, varbert, flutter, overlay_io, ...)
 ├── bypass/        # detection + Frida bypass orchestration
+├── cli/           # Click CLI as a package — one module per command group
 ├── core/          # engine, config, cache, resource manager, overlay
 ├── data/sigs/     # FLIRT-equivalent library function signature packs
+├── detection_engineering/  # CVSS findings, SARIF, MASVS, EMBER classifier
 ├── device/        # adb / libimobiledevice wrappers
+├── diff/          # binary-vs-binary diff + function-similarity (pluggable backends)
 ├── frameworks/    # framework detection (RN, Flutter, Unity, Xamarin, ...)
 ├── model/         # UnifiedProgramModel + SQLite schema
 ├── parsers/       # Mach-O ObjC, ARM64 register tracking, function signatures
 ├── patching/      # BinaryPatcher, recipes, recipe packs
 ├── pipelines/     # platform-specific orchestration (pe, elf, macho, android, ios, ...)
-├── report/        # JSON / HTML / SARIF / SBOM builders, decomp post-processor
+├── report/        # builder.py (data layer) + html.py (presentation layer)
 ├── unpacking/     # YARA + section + entropy detect; UPX shell-out; guidance
 └── mcp_server.py  # MCP entrypoint
 ```
