@@ -29,7 +29,7 @@ def test_manifest_cmd_prints_findings_for_debuggable_apk(tmp_path):
     fake_apk = tmp_path / "fake.apk"
     fake_apk.write_bytes(b"PK\x03\x04stub")
 
-    with patch("chimera.cli._load_cache_and_sha", return_value=(fake_cache, "deadbeef" * 8)):
+    with patch("chimera.cli.manifest_cmd._load_cache_and_sha", return_value=(fake_cache, "deadbeef" * 8)):
         result = runner.invoke(main, ["manifest", str(fake_apk)])
 
     assert result.exit_code == 0, result.output
