@@ -142,8 +142,12 @@ def ai_comment(path: str, address: str, line: int, backend: str,
               help="Decompiler whose output should be refined (default: ghidra).")
 @click.option("--project-dir", type=click.Path(), default=None)
 @click.option("--cache-dir", type=click.Path(), default=None)
+@click.option("--recompile-check/--no-recompile-check", default=False,
+              help="DecLLM-style: pipe the refined C through gcc -fsyntax-only "
+                   "and ask the model for one repair round if it fails.")
 def ai_refine_decomp(path: str, address: str, backend: str,
-                     project_dir: str | None, cache_dir: str | None):
+                     project_dir: str | None, cache_dir: str | None,
+                     recompile_check: bool):
     """LLM4Decompile-V2-style refinement of decompiler output.
 
     Reads the chosen decompiler's output for ADDRESS, asks the LLM to
@@ -151,11 +155,33 @@ def ai_refine_decomp(path: str, address: str, backend: str,
     semantics, and prints the refined C. Strictly preview — does not
     write to the overlay.
     """
-    from chimera.ai import refine_decomp_prompt, strip_fence
+    from chimera.ai import (
+        recompile_check as _recompile_check,
+        refine_decomp_fix_prompt,
+        refine_decomp_prompt,
+        strip_fence,
+    )
     code, name = _ai_decompile(path, address, project_dir, cache_dir, backend)
     text = _ai_call(refine_decomp_prompt, code,
                     function_name=name, address=address)
-    click.echo(strip_fence(text))
+    refined = strip_fence(text)
+    if recompile_check:
+        ok, errs = asyncio.run(_recompile_check(refined))
+        if not ok:
+            click.echo(f"[chimera] recompile-gate: candidate rejected — {errs.splitlines()[0] if errs else 'unknown error'}",
+                       err=True)
+            fixed = _ai_call(refine_decomp_fix_prompt, refined, errs,
+                             function_name=name)
+            fixed_code = strip_fence(fixed)
+            ok2, _ = asyncio.run(_recompile_check(fixed_code))
+            if ok2:
+                click.echo("[chimera] recompile-gate: repair round succeeded",
+                           err=True)
+                refined = fixed_code
+            else:
+                click.echo("[chimera] recompile-gate: repair failed; "
+                           "printing original candidate", err=True)
+    click.echo(refined)
 
 
 

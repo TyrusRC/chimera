@@ -104,6 +104,36 @@ def refine_decomp_prompt(
     return sys_p, user
 
 
+def refine_decomp_fix_prompt(
+    refined_code: str,
+    compiler_errors: str,
+    *,
+    function_name: str = "",
+) -> tuple[str, str]:
+    """Ask the model to fix syntax errors in already-refined pseudo-C.
+
+    Used by the DecLLM-style recompile gate (Wong et al., ISSTA 2025):
+    after `refine_decomp_prompt` produces a candidate, we feed it to
+    `gcc -fsyntax-only`; if the compiler rejects it, we send the errors
+    back to the model for one retry round. Beyond one retry the cost/
+    benefit tips toward returning the earlier candidate unchanged.
+    """
+    sys_p = (
+        ANALYST_PERSONA + " You are repairing C code that another pass of "
+        "this model produced. ONLY fix the listed compiler errors — do not "
+        "rename, re-shape, or change semantics."
+    )
+    head = f"function: {function_name}" if function_name else ""
+    user = (
+        "The C below failed to compile with `gcc -fsyntax-only`. Fix the "
+        "errors and return ONLY the corrected C between ```c fences. Do "
+        "not change anything else.\n\n"
+        f"{head}\n\nErrors:\n```\n{compiler_errors}\n```\n\n"
+        f"Code:\n```c\n{refined_code}\n```"
+    )
+    return sys_p, user
+
+
 def batch_rename_prompt(
     decomp: str,
     *,

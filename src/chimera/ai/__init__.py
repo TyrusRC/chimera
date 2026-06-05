@@ -25,8 +25,10 @@ from chimera.ai.prompts import (
     rename_prompt,
     comment_prompt,
     refine_decomp_prompt,
+    refine_decomp_fix_prompt,
     batch_rename_prompt,
 )
+from chimera.ai.recompile import recompile_check
 
 __all__ = [
     "AIClient",
@@ -37,7 +39,9 @@ __all__ = [
     "rename_prompt",
     "comment_prompt",
     "refine_decomp_prompt",
+    "refine_decomp_fix_prompt",
     "batch_rename_prompt",
     "parse_rename_json",
     "strip_fence",
+    "recompile_check",
 ]

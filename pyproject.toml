@@ -23,7 +23,7 @@ dependencies = [
 # can clash with other tooling; install it separately when you want capa
 # capabilities surfaced. Without it, the adapter degrades gracefully.
 capa = [
-    "flare-capa>=8.0",
+    "flare-capa>=9.4",
 ]
 # Dynamic instrumentation — needed for `chimera attach` and any Frida-
 # driven workflow. Optional because frida-python pulls a per-platform

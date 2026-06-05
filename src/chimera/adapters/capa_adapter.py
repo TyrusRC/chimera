@@ -44,7 +44,23 @@ class CapaAdapter(BackendAdapter):
         cmd = [self._capa_bin, "--json", "--quiet"]
         if self._rules_dir:
             cmd += ["--rules", self._rules_dir]
-        cmd.append(binary_path)
+        # capa 9.x: --backend selects the static analyzer (vivisect default,
+        # binja/ida/pyghidra optional). Honour CHIMERA_CAPA_BACKEND so users
+        # can opt into the much faster pyghidra path without rebuilding.
+        backend = options.get("backend") or os.environ.get("CHIMERA_CAPA_BACKEND")
+        if backend:
+            cmd += ["--backend", backend]
+        # capa 9.x dynamic mode: feed a sandbox report (CAPE/DRAKVUF/VMRay)
+        # via `capa -f <fmt> report.json`. The report carries the binary
+        # reference, enabling span-of-calls scope without re-running static.
+        sandbox_report = options.get("sandbox_report")
+        sandbox_format = options.get("sandbox_format")
+        if sandbox_report:
+            if sandbox_format:
+                cmd += ["-f", sandbox_format]
+            cmd.append(str(sandbox_report))
+        else:
+            cmd.append(binary_path)
 
         timeout = int(options.get("timeout", 60))
         proc = await asyncio.create_subprocess_exec(
