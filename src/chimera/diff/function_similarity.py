@@ -178,7 +178,8 @@ def _build_entries(model) -> list[_Entry]:
 
 
 def diff_models(model_a, model_b, *, threshold: float = 0.85,
-                backend: str = "jaccard") -> dict:
+                backend: str = "jaccard",
+                rerank: str | None = None) -> dict:
     """Compare functions in two models. Returns dict ready to render or JSON.
 
     Algorithm:
@@ -206,7 +207,8 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85,
                 f"similarity backend {backend!r} is not registered. "
                 f"Available: {available_backends()}"
             )
-        return _diff_with_backend(model_a, model_b, bk, threshold=threshold)
+        res = _diff_with_backend(model_a, model_b, bk, threshold=threshold)
+        return _maybe_rerank(res, model_a, model_b, rerank)
 
     entries_a = _build_entries(model_a)
     entries_b = _build_entries(model_b)
@@ -278,7 +280,7 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85,
         if e.address not in consumed_b and e.address not in used_b
     ]
 
-    return {
+    result = {
         "threshold": threshold,
         "totals": {
             "a_functions": len(entries_a),
@@ -293,6 +295,18 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85,
         "added": added,
         "removed": removed,
     }
+    return _maybe_rerank(result, model_a, model_b, rerank)
+
+
+def _maybe_rerank(result: dict, model_a, model_b, rerank: str | None) -> dict:
+    """Apply an opt-in re-ranking post-pass. None → identity, the default."""
+    if not rerank:
+        return result
+    if rerank == "revdecode":
+        # Late import — keeps the rerank module out of the Jaccard fast-path.
+        from chimera.diff.revdecode_backend import rerank_diff_result
+        return rerank_diff_result(result, model_a, model_b)
+    raise ValueError(f"unknown rerank strategy: {rerank!r}")
 
 
 def _diff_with_backend(model_a, model_b, backend: SimilarityBackend,
@@ -380,7 +394,8 @@ def _diff_with_backend(model_a, model_b, backend: SimilarityBackend,
 
 
 def diff_iterables(funcs_a: Iterable, funcs_b: Iterable, *, threshold: float = 0.85,
-                   backend: str = "jaccard") -> dict:
+                   backend: str = "jaccard",
+                   rerank: str | None = None) -> dict:
     """Convenience wrapper for tests / non-model callers.
 
     Accepts any iterable of `FunctionInfo`-shaped objects (must expose
@@ -391,4 +406,5 @@ def diff_iterables(funcs_a: Iterable, funcs_b: Iterable, *, threshold: float = 0
         def __init__(self, fs):
             self.functions = list(fs)
 
-    return diff_models(_M(funcs_a), _M(funcs_b), threshold=threshold, backend=backend)
+    return diff_models(_M(funcs_a), _M(funcs_b), threshold=threshold,
+                       backend=backend, rerank=rerank)
