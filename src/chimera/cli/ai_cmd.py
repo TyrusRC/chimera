@@ -140,9 +140,12 @@ def ai_comment(path: str, address: str, line: int, backend: str,
 @click.argument("address", type=str)
 @click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="ghidra",
               help="Decompiler whose output should be refined (default: ghidra).")
+@click.option("--postprocess/--no-postprocess", default=False,
+              help="Apply MBA simplification + PseudoFix-style structural "
+                   "refactors after the LLM refine pass (default: off).")
 @click.option("--project-dir", type=click.Path(), default=None)
 @click.option("--cache-dir", type=click.Path(), default=None)
-def ai_refine_decomp(path: str, address: str, backend: str,
+def ai_refine_decomp(path: str, address: str, backend: str, postprocess: bool,
                      project_dir: str | None, cache_dir: str | None):
     """LLM4Decompile-V2-style refinement of decompiler output.
 
@@ -152,10 +155,14 @@ def ai_refine_decomp(path: str, address: str, backend: str,
     write to the overlay.
     """
     from chimera.ai import refine_decomp_prompt, strip_fence
+    from chimera.ai.postprocess import apply_postprocess
     code, name = _ai_decompile(path, address, project_dir, cache_dir, backend)
     text = _ai_call(refine_decomp_prompt, code,
                     function_name=name, address=address)
-    click.echo(strip_fence(text))
+    refined = strip_fence(text)
+    if postprocess:
+        refined = apply_postprocess(refined)
+    click.echo(refined)
 
 
 
