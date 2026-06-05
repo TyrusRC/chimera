@@ -27,6 +27,11 @@ from chimera.ai.prompts import (
     refine_decomp_prompt,
     refine_decomp_fix_prompt,
     batch_rename_prompt,
+    verify_rename_prompt,
+)
+from chimera.ai.verify import (
+    VerifyResult,
+    verify_rename,
 )
 from chimera.ai.recompile import recompile_check
 
@@ -41,6 +46,9 @@ __all__ = [
     "refine_decomp_prompt",
     "refine_decomp_fix_prompt",
     "batch_rename_prompt",
+    "verify_rename_prompt",
+    "VerifyResult",
+    "verify_rename",
     "parse_rename_json",
     "strip_fence",
     "recompile_check",

@@ -147,9 +147,12 @@ def ai_comment(path: str, address: str, line: int, backend: str,
 @click.option("--recompile-check/--no-recompile-check", default=False,
               help="DecLLM-style: pipe the refined C through gcc -fsyntax-only "
                    "and ask the model for one repair round if it fails.")
+@click.option("--postprocess/--no-postprocess", default=False,
+              help="Apply MBA simplification + PseudoFix-style structural "
+                   "refactors after the LLM refine pass (default: off).")
 def ai_refine_decomp(path: str, address: str, backend: str, engine: str,
                      project_dir: str | None, cache_dir: str | None,
-                     recompile_check: bool):
+                     recompile_check: bool, postprocess: bool):
     """LLM4Decompile-V2-style refinement of decompiler output.
 
     Reads the chosen decompiler's output for ADDRESS, asks the LLM to
@@ -162,6 +165,7 @@ def ai_refine_decomp(path: str, address: str, backend: str, engine: str,
         refine_decomp_fix_prompt,
         strip_fence,
     )
+    from chimera.ai.postprocess import apply_postprocess
     from chimera.ai.refine_engine import get_engine
     code, name = _ai_decompile(path, address, project_dir, cache_dir, backend)
     try:
@@ -189,6 +193,8 @@ def ai_refine_decomp(path: str, address: str, backend: str, engine: str,
             else:
                 click.echo("[chimera] recompile-gate: repair failed; "
                            "printing original candidate", err=True)
+    if postprocess:
+        refined = apply_postprocess(refined)
     click.echo(refined)
 
 
@@ -202,12 +208,15 @@ def ai_refine_decomp(path: str, address: str, backend: str, engine: str,
 @click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="r2")
 @click.option("--apply/--preview", default=False,
               help="Apply suggestions to the overlay (default: preview-only).")
+@click.option("--verify/--no-verify", default=False,
+              help="Run a Sidekick-style verifier pass; refuted names "
+                   "are never auto-applied.")
 @click.option("--project-dir", type=click.Path(), default=None)
 @click.option("--cache-dir", type=click.Path(), default=None)
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]),
               default="text")
 def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
-                    backend: str, apply: bool,
+                    backend: str, apply: bool, verify: bool,
                     project_dir: str | None, cache_dir: str | None,
                     fmt: str):
     """SymGen-style batch generative function naming.
@@ -222,6 +231,7 @@ def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
         AINotConfigured,
         batch_rename_prompt,
         default_client,
+        verify_rename,
     )
     from chimera.core.config import ChimeraConfig
     from chimera.core.engine import ChimeraEngine
@@ -280,18 +290,41 @@ def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
         parsed = parse_rename_json(raw)
         if not parsed:
             continue
+        verify_reason = ""
+        verify_conf: float | None = None
+        verify_accepted = True
+        if verify:
+            try:
+                vr = verify_rename(
+                    code, parsed["name"],
+                    callers=callers, callees=callees,
+                    client=client,
+                )
+            except AIError as exc:
+                vr = None
+                verify_reason = f"verifier raised: {exc}"
+                verify_accepted = False
+            if vr is not None:
+                verify_accepted = vr.accepted
+                verify_conf = vr.confidence
+                verify_reason = vr.reason
         applied = False
-        if apply and parsed["confidence"] >= min_confidence:
+        if apply and parsed["confidence"] >= min_confidence and verify_accepted:
             overlay.rename_function(f.address, parsed["name"])
             f.name = parsed["name"]
             applied = True
-        suggestions.append({
+        entry = {
             "address": f.address,
             "current_name": f.name if not applied else f.original_name,
             "suggested_name": parsed["name"],
             "confidence": parsed["confidence"],
             "applied": applied,
-        })
+        }
+        if verify:
+            entry["verify_accepted"] = verify_accepted
+            entry["verify_reason"] = verify_reason
+            entry["verify_confidence"] = verify_conf
+        suggestions.append(entry)
     if apply:
         overlay.save()
 
