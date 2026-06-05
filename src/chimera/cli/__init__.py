@@ -26,6 +26,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     _common,
     ai_cmd,
     analyze,
+    android_sim_cmd,
     attach_cmd,
     classify_cmd,
     devices_cmd,
