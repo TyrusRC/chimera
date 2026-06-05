@@ -49,6 +49,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     serve_cmd,
     unpack_cmd,
     varbert_cmd,
+    vmp_cmd,
     yara_cmd,
 )
 
