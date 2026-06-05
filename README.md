@@ -25,11 +25,17 @@ with anti-debug recipes, a UPX auto-unpacker, packer detection
 (YARA + section-name + entropy), and a gdb symbol bridge.
 
 Optional 2024-2026 research add-ons round it out: an Anthropic-backed AI
-assistant (LLM4Decompile V2-style decompiler refinement + SymGen-style
-batch generative naming), the VarBERT variable-name recovery model
-(S&P 2024), the EMBER 2024 malware classifier, the B(l)utter Flutter /
-Dart AOT extractor, and a BinDiff-style per-function similarity diff —
-all opt-in, none on the default `analyze` hot path.
+assistant (LLM4Decompile V2-style decompiler refinement, SymGen-style
+batch generative naming, Sidekick-style adversarial rename verification,
+DecLLM recompile gate, Idioms / NDSS 2026 refine engine), the VarBERT
+variable-name recovery model (S&P 2024), the EMBER 2024 malware
+classifier, the B(l)utter Flutter / Dart AOT extractor, hermes-decomp
+for React Native HBC bundles, Oxidizer (angr) for Rust binaries, a
+Mergen VMProtect / Themida devirtualization stage, KEENHash + REVDECODE
+similarity backends with BinDiff CSV export, a Sidekick-style notebook
+for narrative findings, oatdump2binexport Android native-similarity, and
+msynth + PseudoFix decompile post-processors — all opt-in, none on the
+default `analyze` hot path.
 
 ---
 
@@ -59,9 +65,10 @@ all opt-in, none on the default `analyze` hot path.
 ### Shared workflow
 - **Static + dynamic** — Semgrep + YARA (or optional YARA-X) + capa for static; Frida for runtime confirmation.
 - **Binary-vs-binary diff** — `chimera diff <a> <b>` reports added/removed permissions, exported components, SDKs, native libraries (with sha256), manifest + NSC findings (regression / resolution).
-- **Function-similarity diff (BinDiff-style)** — `chimera diff-functions a.bin b.bin --threshold 0.85` matches functions via opcode-shingled Jaccard, reports matched/changed/added/removed. Pluggable backend hook lets a future torch-backed jTrans / CLAP embedding land without API churn.
+- **Function-similarity diff (BinDiff-style)** — `chimera diff-functions a.bin b.bin --threshold 0.85` matches functions via opcode-shingled Jaccard (default), with `--heuristic multi` combining Jaccard + call-graph degree + basic-block count + mnemonic cosine, and pluggable backends `--backend keenhash` (whole-binary embeddings, KEENHash / ISSTA 2025) and `--rerank revdecode` (Viterbi re-ranker over candidate matches, USENIX Sec 2025). `--export-bindiff out.csv` writes BinDiff-compatible CSV for downstream tools.
 - **Reports** — JSON, HTML, Markdown, SARIF v2.1.0, CycloneDX 1.6 SBOM, MASVS coverage matrix, CVSS finding draft.
-- **Annotation sharing** — `chimera overlay export <bin> -o overlay.json` and `chimera overlay import <bin> -i overlay.json --merge|--replace` move renames / comments / types between analysts. Schema includes the binary sha256 so import against a different binary surfaces a warning rather than silently corrupting addresses.
+- **Annotation sharing** — `chimera overlay export <bin> -o overlay.json` and `chimera overlay import <bin> -i overlay.json --merge|--replace` move renames / comments / types between analysts. Schema includes the binary sha256 so import against a different binary surfaces a warning rather than silently corrupting addresses. Exported payload also carries the project notebook.
+- **Notebook** — `chimera notes add --title T --body B --evidence 0xADDR ...` / `notes list [--tag T]` / `notes rm ID`, plus `/api/projects/{id}/notes`. Sidekick-style narrative findings with evidence links to addresses or lines. Stored in the project overlay; round-trips through export/import.
 - **Web UI + TUI** — FastAPI-backed UI with Monaco editor (right-click rename / comment / set-type, plus AI explain / AI rename buttons when an API key is set), Textual TUI for device interaction.
 - **MCP server** — high-level analysis tools exposed to any MCP-compatible LLM client.
 - **OWASP MASVS** — findings tagged with MASVS categories.
@@ -69,9 +76,14 @@ all opt-in, none on the default `analyze` hot path.
 ### AI-assisted RE (optional, opt-in)
 - **LLM-backed explain / rename / comment** — `chimera ai explain <bin> <addr>` and `/api/projects/{id}/ai/{explain,rename,comment}`. The Web UI exposes "AI explain" + "AI rename" buttons in the CodeView header (hidden when no key configured).
 - **LLM4Decompile-V2-style refinement** — `chimera ai refine-decomp <bin> <addr> --backend ghidra` asks the model to clean up Ghidra pseudo-C (rename `iVar1`/`FUN_xxxxx`, tighten control flow) **without inventing semantics**. Strictly preview; never writes to overlay.
+- **Pluggable refine engines** — `chimera ai engines` lists registered engines; `--engine idioms` switches to the Idioms checkpoint (Dramko et al., NDSS 2026) when `CHIMERA_IDIOMS_CHECKPOINT` and `transformers` are present. Future jTrans-refine / FidelityGPT / SK2Decompile slot in without API churn.
+- **DecLLM recompile gate** — `chimera ai refine-decomp ... --recompile-check` pipes the refined C through `gcc -fsyntax-only`; on failure the model gets one repair round with the literal compiler diagnostics. Off by default.
+- **MBA + PseudoFix post-processing** — `--postprocess` applies msynth-style mixed-boolean-arithmetic simplifications and PseudoFix-style (ASE 2025) safe structural rewrites (collapse `if (x) return a; return b;` → ternary, drop `do {} while(0)` wrappers).
+- **REALTYPE-style eval harness** — `chimera ai eval-decomp dataset.jsonl --engine claude` scores any refine engine against a JSONL of decompiled-vs-ground-truth records: recompile rate, identifier Jaccard, struct-name recall.
 - **SymGen-style batch generative naming** — `chimera ai batch-rename <bin> --max 50 --threshold 0.7 --apply` walks stripped-looking functions (FUN_/sub_/fn_), feeds callgraph neighbours as context, asks for `{name, confidence}` JSON, optionally applies high-confidence names to the overlay. Preview by default.
+- **Sidekick-style adversarial rename verifier** — `chimera ai batch-rename ... --verify` makes a second LLM call that defaults to *refute* the suggested name; refuted names are never auto-applied even with `--apply`.
 - **Configuration** — `ANTHROPIC_API_KEY` env var enables the surface; `CHIMERA_AI_MODEL` overrides the model (default `claude-sonnet-4-6`); urllib-only client, no SDK dep. Missing key → HTTP 503 with a clear message; the CLI prints an actionable install hint.
-- **Research add-ons (extras)** — VarBERT variable-name recovery (`chimera varbert rename`, `pip install "chimera[varbert]"`), EMBER 2024 malware classifier (`chimera classify <pe>`, `pip install "chimera[ml]"`), B(l)utter Flutter / Dart AOT extractor (`chimera flutter-extract <apk> -o out`, external `blutter` binary on PATH or `CHIMERA_BLUTTER_BIN`).
+- **Research add-ons (extras)** — VarBERT variable-name recovery (`chimera varbert rename`, `pip install "chimera[varbert]"`), EMBER 2024 malware classifier (`chimera classify <pe>`, `pip install "chimera[ml]"`), B(l)utter Flutter / Dart AOT extractor (`chimera flutter-extract <apk> -o out`, external `blutter` binary on PATH or `CHIMERA_BLUTTER_BIN`), hermes-decomp for Hermes HBC bundles (`chimera hermes-decompile <bundle>`, external `hermes-decomp` binary), Oxidizer Rust decompile via angr (`chimera rust-decompile <bin>`, `pip install angr`), Mergen VMProtect / Themida devirtualization (`chimera vmp-devirt <bin> --start 0x…`, external `mergen` binary), oatdump2binexport Android native similarity (`chimera android-similarity a.apk b.apk`, needs `dex2oat` + `oatdump2binexport` + `bindiff`).
 
 ## Desktop reverse engineering
 
@@ -173,19 +185,25 @@ External binaries discovered on `PATH`:
 - `gdb` — for the `gdb-export` handoff.
 - `yara-x` (`cargo install yara-x-cli`) — modern Rust YARA rewrite. Activate with `CHIMERA_USE_YARA_X=1`; falls back to legacy `yara` when absent.
 - `blutter` (build from [worawit/blutter](https://github.com/worawit/blutter)) — Flutter / Dart AOT snapshot extractor. Discovery: `PATH` or `CHIMERA_BLUTTER_BIN`.
+- `hermes-decomp` (build from [SymbioticSec/hermes-decomp](https://github.com/SymbioticSec/hermes-decomp)) — Rust-based React Native Hermes bytecode decompiler. Discovery: `PATH` or `CHIMERA_HERMES_DECOMP_BIN`.
+- `mergen` (build from [NaC-L/Mergen](https://github.com/NaC-L/Mergen)) — LLVM-IR-based VMProtect / Themida devirtualizer. Discovery: `PATH` or `CHIMERA_MERGEN_BIN`.
+- `dex2oat`, `oatdump2binexport`, `bindiff` — needed by `chimera android-similarity` (APK → OAT → BinExport → BinDiff). `oatdump2binexport` via `PATH` or `CHIMERA_OATDUMP2BINEXPORT_BIN`.
 
 Optional Python extras (gated to keep the default wheel lean):
 
 - `pip install "chimera[varbert]"` — VarBERT variable-name recovery model (Pal et al., S&P 2024). Adds `chimera varbert rename` + `/api/projects/{id}/varbert/rename`.
 - `pip install "chimera[ml]"` — LightGBM + lief for the EMBER 2024 malware classifier. Adds `chimera classify`. Drop a model at `src/chimera/detection_engineering/data/ember/model.txt` or point `CHIMERA_EMBER_MODEL` at one.
-- `pip install "chimera[capa]"` — heavyweight capability matching (separate from the base install to avoid dependency clashes).
+- `pip install "chimera[capa]"` — heavyweight capability matching (`flare-capa>=9.4` — PyGhidra backend + span-of-calls dynamic scope). `CHIMERA_CAPA_BACKEND=pyghidra` opts into the faster static analyzer.
 - `pip install "chimera[dynamic]"` — `frida-python` for `chimera attach` / Frida workflows.
+- `pip install angr` — enables `chimera rust-decompile` via Oxidizer (Liu et al., S&P 2026). Heavyweight; left out of any extras to keep environments lean.
+- `pip install transformers torch` + `CHIMERA_IDIOMS_CHECKPOINT=/path/to/squaresLab/idioms-6.7b` — enables `--engine idioms` on `ai refine-decomp` (Dramko et al., NDSS 2026).
 
 AI assistant config (no extra to install — uses urllib):
 
 - `ANTHROPIC_API_KEY` — required to enable `chimera ai ...` and the SPA's AI buttons. Without it, every AI surface fails soft (HTTP 503 with a clear hint).
 - `CHIMERA_AI_MODEL` — override the model (default `claude-sonnet-4-6`).
 - `ANTHROPIC_BASE_URL` — point at a proxy / local endpoint.
+- `CHIMERA_RECOMPILE_CC` — compiler used by the DecLLM-style `--recompile-check` (default: first of `gcc`/`clang`/`cc` on `PATH`).
 
 All optional; pipelines skip gracefully when a tool isn't installed.
 The Docker image bundles all of the external binaries above except
@@ -205,10 +223,15 @@ clashes — opt in with `--build-arg INSTALL_CAPA=1`).
   research-grade follow-up.)
 - **No native debugger UX** — debugging happens via the gdb bridge, not
   inside chimera.
-- **No symbolic execution / VMP devirtualization shipping today** — the
-  packer-detection table covers commercial protectors but the unpacker
-  side stops at UPX. VM-protectors emit manual guidance instead of an
-  auto-pwn.
+- **VMP / Themida devirtualization** ships through Mergen (LLVM-IR
+  lift; `chimera vmp-devirt`) — useful when the protected region is
+  well-bounded, not a magic auto-pwn. The packer-detection table still
+  emits manual guidance for commercial protectors that don't lift
+  cleanly.
+- **No first-class symbolic execution** — angr is reachable through the
+  Oxidizer Rust path, and the Phrack 72.15 E0 selective-symbolic-
+  instrumentation primitive is sketched out as a research shim, but
+  there's no `chimera symex` driver yet.
 - No sandbox.
 - Authenticode signatures are detected (presence) but not validated.
 - Mixed-mode .NET (C++/CLI) falls back to Ghidra.
@@ -463,9 +486,38 @@ chimera attach --pid 12345 --bypass anti_debug --interactive  # multi-bypass + R
 chimera ai explain server.bin 0x1234
 chimera ai rename  server.bin 0x1234
 chimera ai comment server.bin 0x1234 --line 12
+chimera ai engines                                                  # list refine engines
 chimera ai refine-decomp server.bin 0x1234 --backend ghidra
+chimera ai refine-decomp server.bin 0x1234 --backend ghidra \
+    --engine idioms --recompile-check --postprocess                 # full stack
+chimera ai eval-decomp dataset.jsonl --engine claude                # REALTYPE-style scoring
 chimera ai batch-rename server.bin --max 50 --threshold 0.7         # preview
-chimera ai batch-rename server.bin --max 50 --threshold 0.7 --apply # write to overlay
+chimera ai batch-rename server.bin --max 50 --threshold 0.7 \
+    --apply --verify                                                # Sidekick-style refute pass
+
+# Notebook (narrative findings with evidence)
+chimera notes add server.bin --title "AES key derivation" \
+    --body "Uses PBKDF2 with hardcoded salt" \
+    --evidence 0x1234 --evidence 0x1300 --tag crypto
+chimera notes list server.bin --tag crypto
+
+# Hermes / Rust / VMP / Android-native paths
+chimera hermes-decompile app/index.android.bundle -o out/
+chimera rust-decompile target/release/agent --limit 50
+chimera vmp-devirt packed.exe --start 0x401000 -o out/
+chimera android-similarity v1.apk v2.apk -o diff_out/
+
+# Function-similarity (BinDiff-style + multi-heuristic + backend hooks)
+chimera diff-functions a.bin b.bin --threshold 0.85
+chimera diff-functions a.bin b.bin --heuristic multi
+chimera diff-functions a.bin b.bin --backend keenhash --rerank revdecode
+chimera diff-functions a.bin b.bin --export-bindiff matches.csv
+
+# Capa with new sandbox / backend options
+chimera analyze sample.exe                                          # static (vivisect)
+CHIMERA_CAPA_BACKEND=pyghidra chimera analyze sample.exe            # faster static
+# Span-of-calls dynamic scope from a CAPE/DRAKVUF/VMRay report:
+capa -f cape report.json                                            # (until exposed as a flag)
 
 # Research add-ons (optional extras)
 chimera varbert rename  server.bin 0x1234 --variant ghidra-O2 --apply
@@ -520,11 +572,20 @@ pipeline directly.
 | Fuzzing           | AFL++           | native-library fuzzing harness                      |
 | Unpacking         | upx             | UPX auto-unpack (UPX0 / UPX1)                       |
 | Debugger handoff  | gdb             | `chimera gdb-export` consumes `.gdbinit`            |
-| AI assistant      | Anthropic API   | `chimera ai {explain,rename,comment,refine-decomp,batch-rename}` (urllib, no SDK) |
+| AI assistant      | Anthropic API   | `chimera ai {explain,rename,comment,refine-decomp,batch-rename,eval-decomp}` (urllib, no SDK) |
+| Refine engine     | Claude / Idioms | `--engine {claude,idioms}`; Idioms (NDSS 2026) via `CHIMERA_IDIOMS_CHECKPOINT`           |
+| AI verifier       | second LLM call | Sidekick-style adversarial rename refutation (`ai batch-rename --verify`)               |
+| Recompile gate    | gcc -fsyntax-only | DecLLM (ISSTA 2025) one repair round (`ai refine-decomp --recompile-check`)           |
+| Post-processors   | msynth + PseudoFix | MBA simplifier + structural refactor (`ai refine-decomp --postprocess`)              |
 | Variable-name AI  | VarBERT         | S&P 2024 transformer; `chimera varbert rename` (`[varbert]` extra) |
 | Malware verdict   | EMBER 2024      | LightGBM PE classifier; `chimera classify` (`[ml]` extra) |
 | Flutter / Dart    | B(l)utter       | Dart AOT snapshot extraction; `chimera flutter-extract` (external binary) |
-| Function diff     | Jaccard shingles | BinDiff-style `chimera diff-functions`; pluggable backend hook for future jTrans / CLAP |
+| Hermes (RN)       | hermes-dec / hermes-decomp | Disassembly + Rust-based decompile; `chimera hermes-decompile` |
+| Rust              | Oxidizer (angr) | Rust-aware decompile (S&P 2026); `chimera rust-decompile`                |
+| VMP / Themida     | Mergen          | LLVM-IR-based devirt (DEF CON 33); `chimera vmp-devirt`                  |
+| Android-native sim | dex2oat + oatdump2binexport + bindiff | OAT-level similarity (Phrack 72.13); `chimera android-similarity` |
+| Function diff     | Jaccard / multi-heuristic / KEENHash / REVDECODE | `chimera diff-functions`; backends + Viterbi re-ranker + BinDiff CSV export |
+| Notebook          | overlay-backed  | Narrative findings with evidence links; `chimera notes` + `/api/.../notes` |
 
 Adapters live in [`src/chimera/adapters/`](src/chimera/adapters) and all
 implement the `BackendAdapter` interface
