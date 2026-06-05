@@ -82,8 +82,11 @@ def diff(a: str, b: str, cache_dir: str | None, fmt: str, out_path: str | None):
 @click.option("--threshold", type=float, default=0.85,
               help="Minimum similarity to count as a match.")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+@click.option("--export-bindiff", "export_bindiff", type=click.Path(), default=None,
+              help="Also write a BinDiff-compatible CSV to this path.")
 def diff_functions(a: str, b: str, project_dir: str | None,
-                   cache_dir: str | None, threshold: float, fmt: str):
+                   cache_dir: str | None, threshold: float, fmt: str,
+                   export_bindiff: str | None):
     """BinDiff-style function similarity between two binaries.
 
     Returns four sets: matched (high-similarity pairs), changed (low-
@@ -104,6 +107,10 @@ def diff_functions(a: str, b: str, project_dir: str | None,
         return await engine.analyze(a), await engine.analyze(b)
     ma, mb = asyncio.run(_run())
     result = diff_models(ma, mb, threshold=threshold)
+    if export_bindiff:
+        from chimera.diff.bindiff_export import export_bindiff_csv
+        n = export_bindiff_csv(result, export_bindiff)
+        click.echo(f"[chimera] wrote {n} bindiff rows → {export_bindiff}", err=True)
     if fmt == "json":
         click.echo(json.dumps(result, indent=2, sort_keys=True))
         return

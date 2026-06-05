@@ -177,8 +177,19 @@ def _build_entries(model) -> list[_Entry]:
     return out
 
 
+DEFAULT_MULTI_WEIGHTS = {
+    "jaccard": 0.5,
+    "cg": 0.2,
+    "bb": 0.15,
+    "mnemonic": 0.15,
+}
+
+
 def diff_models(model_a, model_b, *, threshold: float = 0.85,
-                backend: str = "jaccard") -> dict:
+                backend: str = "jaccard",
+                rerank: str | None = None,
+                heuristic: str = "jaccard",
+                weights: dict | None = None) -> dict:
     """Compare functions in two models. Returns dict ready to render or JSON.
 
     Algorithm:
@@ -196,6 +207,20 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85,
     ktrans) can be registered at import time via
     `register_similarity_backend(...)`.
     """
+    # Multi-heuristic mode combines Jaccard with structural signals
+    # (call-graph degree, basic-block count, mnemonic frequency). Opt-in via
+    # `heuristic="multi"` — the default is unchanged. Weights are
+    # configurable; values normalise so callers don't need to sum to 1.
+    if heuristic == "multi":
+        return _maybe_rerank(
+            _diff_multi(model_a, model_b, threshold=threshold,
+                        weights=weights or DEFAULT_MULTI_WEIGHTS),
+            model_a, model_b, rerank,
+        )
+    if heuristic not in ("jaccard", "multi"):
+        raise ValueError(f"unknown heuristic {heuristic!r}; "
+                         f"expected 'jaccard' or 'multi'")
+
     # Pluggable backend dispatch — non-default backends MUST be registered
     # before this call. The Jaccard path is fully inline for speed and
     # because it's what the test suite expects by default.
@@ -206,7 +231,8 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85,
                 f"similarity backend {backend!r} is not registered. "
                 f"Available: {available_backends()}"
             )
-        return _diff_with_backend(model_a, model_b, bk, threshold=threshold)
+        res = _diff_with_backend(model_a, model_b, bk, threshold=threshold)
+        return _maybe_rerank(res, model_a, model_b, rerank)
 
     entries_a = _build_entries(model_a)
     entries_b = _build_entries(model_b)
@@ -278,7 +304,7 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85,
         if e.address not in consumed_b and e.address not in used_b
     ]
 
-    return {
+    result = {
         "threshold": threshold,
         "totals": {
             "a_functions": len(entries_a),
@@ -293,6 +319,18 @@ def diff_models(model_a, model_b, *, threshold: float = 0.85,
         "added": added,
         "removed": removed,
     }
+    return _maybe_rerank(result, model_a, model_b, rerank)
+
+
+def _maybe_rerank(result: dict, model_a, model_b, rerank: str | None) -> dict:
+    """Apply an opt-in re-ranking post-pass. None → identity, the default."""
+    if not rerank:
+        return result
+    if rerank == "revdecode":
+        # Late import — keeps the rerank module out of the Jaccard fast-path.
+        from chimera.diff.revdecode_backend import rerank_diff_result
+        return rerank_diff_result(result, model_a, model_b)
+    raise ValueError(f"unknown rerank strategy: {rerank!r}")
 
 
 def _diff_with_backend(model_a, model_b, backend: SimilarityBackend,
@@ -380,7 +418,10 @@ def _diff_with_backend(model_a, model_b, backend: SimilarityBackend,
 
 
 def diff_iterables(funcs_a: Iterable, funcs_b: Iterable, *, threshold: float = 0.85,
-                   backend: str = "jaccard") -> dict:
+                   backend: str = "jaccard",
+                   rerank: str | None = None,
+                   heuristic: str = "jaccard",
+                   weights: dict | None = None) -> dict:
     """Convenience wrapper for tests / non-model callers.
 
     Accepts any iterable of `FunctionInfo`-shaped objects (must expose
@@ -390,5 +431,234 @@ def diff_iterables(funcs_a: Iterable, funcs_b: Iterable, *, threshold: float = 0
     class _M:
         def __init__(self, fs):
             self.functions = list(fs)
+            self._by_caller: dict[str, list[str]] = {}
+            self._by_callee: dict[str, list[str]] = {}
 
-    return diff_models(_M(funcs_a), _M(funcs_b), threshold=threshold, backend=backend)
+    return diff_models(_M(funcs_a), _M(funcs_b), threshold=threshold,
+                       backend=backend, rerank=rerank,
+                       heuristic=heuristic, weights=weights)
+
+
+# ----------------------------------------------------------------------
+# Multi-heuristic scoring
+# ----------------------------------------------------------------------
+#
+# The default Jaccard score is mnemonic-shingle similarity. It performs
+# well on near-duplicate code but misses two analyst-relevant signals:
+#
+#   * Structural: a function with 1 caller + 0 callees is unlikely to be
+#     the same function as one with 8 callers + 12 callees, even if the
+#     mnemonic streams happen to overlap (boilerplate prologues).
+#   * Distributional: mnemonic *frequency* (bag-of-opcodes cosine) catches
+#     drift the shingle Jaccard misses when the compiler reorders blocks.
+#
+# Multi-mode computes Jaccard + three structural sub-scores and returns
+# the weighted sum. Weights are normalised so callers don't need to ensure
+# they sum to 1. The score is always in [0, 1].
+
+
+@dataclass
+class _MultiEntry:
+    address: str
+    name: str
+    shingles: set[str]
+    source: str
+    in_degree: int
+    out_degree: int
+    bb_count: int
+    mnem_counts: dict[str, int]
+
+
+def _basic_block_count(func) -> int:
+    """Heuristic BB count from a disassembly stream.
+
+    A basic block ends at any control-flow mnemonic (jmp/jcc/ret/call) — we
+    count those transitions. If there's no disassembly the function counts
+    as one block (the function itself). This intentionally collapses CFG
+    nuance: the multi-heuristic uses BB *ratio*, not exact equality, so a
+    rough count is enough to discriminate "tiny stub" from "big body".
+    """
+    if not func.disassembly:
+        return 1
+    n = 0
+    for op in func.disassembly:
+        m = (op.get("opcode") or "").lower()
+        if not m:
+            continue
+        if m.startswith("j") or m == "ret" or m == "call":
+            n += 1
+    return max(1, n)
+
+
+def _mnemonic_counts(func) -> dict[str, int]:
+    """Bag-of-opcodes histogram used for the cosine sub-score."""
+    out: dict[str, int] = {}
+    if not func.disassembly:
+        return out
+    for op in func.disassembly:
+        m = (op.get("opcode") or "").lower().strip()
+        if not m:
+            continue
+        out[m] = out.get(m, 0) + 1
+    return out
+
+
+def _ratio_similarity(x: int, y: int) -> float:
+    """Symmetric ratio in [0, 1]. 1.0 when x == y, 0.0 when one is zero
+    and the other is large. Used for both BB-count and degree similarity."""
+    if x == 0 and y == 0:
+        return 1.0
+    if x == 0 or y == 0:
+        return 0.0
+    return min(x, y) / max(x, y)
+
+
+def _degree_similarity(in_a: int, out_a: int, in_b: int, out_b: int) -> float:
+    """Average of in-degree and out-degree ratio similarities."""
+    return 0.5 * (_ratio_similarity(in_a, in_b) + _ratio_similarity(out_a, out_b))
+
+
+def _mnemonic_cosine(ca: dict[str, int], cb: dict[str, int]) -> float:
+    """Cosine similarity over the union of mnemonic histograms.
+
+    Always non-negative because counts are non-negative, so the result is
+    already in [0, 1] — no rescaling needed.
+    """
+    if not ca or not cb:
+        return 0.0
+    dot = 0.0
+    for k, v in ca.items():
+        if k in cb:
+            dot += v * cb[k]
+    na = sum(v * v for v in ca.values()) ** 0.5
+    nb = sum(v * v for v in cb.values()) ** 0.5
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def _normalise_weights(weights: dict) -> dict[str, float]:
+    """Drop unknown keys, clamp to non-negative, normalise to sum-to-one.
+
+    If everything is zero we fall back to the default to avoid producing
+    NaN — analysts hitting `weights={}` should still get a useful score.
+    """
+    known = ("jaccard", "cg", "bb", "mnemonic")
+    raw = {k: max(0.0, float(weights.get(k, 0.0))) for k in known}
+    total = sum(raw.values())
+    if total <= 0.0:
+        return dict(DEFAULT_MULTI_WEIGHTS)
+    return {k: v / total for k, v in raw.items()}
+
+
+def _build_multi_entries(model) -> list[_MultiEntry]:
+    out: list[_MultiEntry] = []
+    by_caller = getattr(model, "_by_caller", {}) or {}
+    by_callee = getattr(model, "_by_callee", {}) or {}
+    for f in model.functions:
+        sh, src = _fingerprint(f)
+        out.append(_MultiEntry(
+            address=f.address,
+            name=f.name or "",
+            shingles=sh,
+            source=src,
+            in_degree=len(by_callee.get(f.address, ())),
+            out_degree=len(by_caller.get(f.address, ())),
+            bb_count=_basic_block_count(f),
+            mnem_counts=_mnemonic_counts(f),
+        ))
+    return out
+
+
+def _multi_score(a: _MultiEntry, b: _MultiEntry, w: dict[str, float]) -> float:
+    """Combined weighted score in [0, 1].
+
+    Each sub-score is in [0, 1] and weights are normalised, so the result
+    is guaranteed in [0, 1] without clamping. We still clamp defensively
+    against floating-point drift around the boundary.
+    """
+    jac = _jaccard(a.shingles, b.shingles)
+    cg = _degree_similarity(a.in_degree, a.out_degree, b.in_degree, b.out_degree)
+    bb = _ratio_similarity(a.bb_count, b.bb_count)
+    mn = _mnemonic_cosine(a.mnem_counts, b.mnem_counts)
+    score = (w["jaccard"] * jac + w["cg"] * cg
+             + w["bb"] * bb + w["mnemonic"] * mn)
+    return max(0.0, min(1.0, score))
+
+
+def _diff_multi(model_a, model_b, *, threshold: float, weights: dict) -> dict:
+    """Multi-heuristic diff. Structurally parallel to the Jaccard fast-path
+    so the result schema is the same, plus a `heuristic` / `weights` field
+    so consumers can audit which mode produced the answer."""
+    w = _normalise_weights(weights)
+    entries_a = _build_multi_entries(model_a)
+    entries_b = _build_multi_entries(model_b)
+    by_name_b: dict[str, _MultiEntry] = {e.name: e for e in entries_b if e.name}
+
+    matched: list[dict] = []
+    changed: list[dict] = []
+    consumed_a: set[str] = set()
+    consumed_b: set[str] = set()
+
+    for ea in entries_a:
+        if not ea.name or ea.name not in by_name_b:
+            continue
+        eb = by_name_b[ea.name]
+        sim = _multi_score(ea, eb, w)
+        entry = {
+            "a_address": ea.address, "b_address": eb.address,
+            "a_name": ea.name, "b_name": eb.name,
+            "similarity": round(sim, 4),
+            "fingerprint": f"multi:{ea.source}",
+        }
+        consumed_a.add(ea.address)
+        consumed_b.add(eb.address)
+        (matched if sim >= threshold else changed).append(entry)
+
+    remaining_a = [e for e in entries_a if e.address not in consumed_a]
+    remaining_b = [e for e in entries_b if e.address not in consumed_b]
+    pairs: list[tuple[float, _MultiEntry, _MultiEntry]] = []
+    for ea in remaining_a:
+        for eb in remaining_b:
+            sim = _multi_score(ea, eb, w)
+            if sim >= threshold * 0.5:
+                pairs.append((sim, ea, eb))
+    pairs.sort(key=lambda t: -t[0])
+    used_a: set[str] = set()
+    used_b: set[str] = set()
+    for sim, ea, eb in pairs:
+        if ea.address in used_a or eb.address in used_b:
+            continue
+        used_a.add(ea.address)
+        used_b.add(eb.address)
+        entry = {
+            "a_address": ea.address, "b_address": eb.address,
+            "a_name": ea.name, "b_name": eb.name,
+            "similarity": round(sim, 4),
+            "fingerprint": f"multi:{ea.source}",
+        }
+        (matched if sim >= threshold else changed).append(entry)
+
+    removed = [{"address": e.address, "name": e.name}
+               for e in entries_a
+               if e.address not in consumed_a and e.address not in used_a]
+    added = [{"address": e.address, "name": e.name}
+             for e in entries_b
+             if e.address not in consumed_b and e.address not in used_b]
+    return {
+        "threshold": threshold,
+        "heuristic": "multi",
+        "weights": w,
+        "totals": {
+            "a_functions": len(entries_a),
+            "b_functions": len(entries_b),
+            "matched": len(matched),
+            "changed": len(changed),
+            "added": len(added),
+            "removed": len(removed),
+        },
+        "matched": matched,
+        "changed": changed,
+        "added": added,
+        "removed": removed,
+    }
