@@ -140,12 +140,14 @@ def ai_comment(path: str, address: str, line: int, backend: str,
 @click.argument("address", type=str)
 @click.option("--backend", type=click.Choice(["r2", "ghidra"]), default="ghidra",
               help="Decompiler whose output should be refined (default: ghidra).")
+@click.option("--engine", default="claude",
+              help="Refine engine (claude | idioms | …). See `chimera ai engines`.")
 @click.option("--project-dir", type=click.Path(), default=None)
 @click.option("--cache-dir", type=click.Path(), default=None)
 @click.option("--recompile-check/--no-recompile-check", default=False,
               help="DecLLM-style: pipe the refined C through gcc -fsyntax-only "
                    "and ask the model for one repair round if it fails.")
-def ai_refine_decomp(path: str, address: str, backend: str,
+def ai_refine_decomp(path: str, address: str, backend: str, engine: str,
                      project_dir: str | None, cache_dir: str | None,
                      recompile_check: bool):
     """LLM4Decompile-V2-style refinement of decompiler output.
@@ -158,13 +160,19 @@ def ai_refine_decomp(path: str, address: str, backend: str,
     from chimera.ai import (
         recompile_check as _recompile_check,
         refine_decomp_fix_prompt,
-        refine_decomp_prompt,
         strip_fence,
     )
+    from chimera.ai.refine_engine import get_engine
     code, name = _ai_decompile(path, address, project_dir, cache_dir, backend)
-    text = _ai_call(refine_decomp_prompt, code,
-                    function_name=name, address=address)
-    refined = strip_fence(text)
+    try:
+        eng = get_engine(engine)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    try:
+        result = eng.refine(code, function_name=name, address=address)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc))
+    refined = result.code
     if recompile_check:
         ok, errs = asyncio.run(_recompile_check(refined))
         if not ok:
@@ -299,6 +307,54 @@ def ai_batch_rename(path: str, max_functions: int, min_confidence: float,
             f"→ {s['suggested_name']!r}  conf={s['confidence']:.2f}"
         )
 
+
+
+@ai.command("engines")
+def ai_engines():
+    """List available refine-decomp engines."""
+    from chimera.ai.refine_engine import list_engines
+    for n in list_engines():
+        click.echo(n)
+
+
+@ai.command("eval-decomp")
+@click.argument("dataset", type=click.Path(exists=True))
+@click.option("--engine", default="claude",
+              help="Refine engine to evaluate.")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]),
+              default="text")
+def ai_eval_decomp(dataset: str, engine: str, fmt: str):
+    """Score a refine engine against a REALTYPE-style JSONL dataset.
+
+    Each record:
+      {"address": ..., "function_name": ..., "decomp_input": ...,
+       "expected": ..., "expected_structs": [...]}.
+    """
+    from chimera.ai.eval import evaluate, load_dataset
+    from chimera.ai.refine_engine import get_engine
+
+    try:
+        eng = get_engine(engine)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+
+    def _refine(decomp: str, fname: str, addr: str) -> str:
+        try:
+            return eng.refine(decomp, function_name=fname, address=addr).code
+        except Exception as exc:
+            click.echo(f"[chimera] WARN: {addr} refine failed: {exc}", err=True)
+            return ""
+
+    records = load_dataset(dataset)
+    summary = evaluate(records, _refine)
+    if fmt == "json":
+        click.echo(json.dumps(summary.as_dict(), indent=2))
+        return
+    click.echo(f"engine: {engine}")
+    click.echo(f"records: {summary.total}")
+    click.echo(f"recompile_rate: {summary.recompile_rate:.3f}")
+    click.echo(f"mean_identifier_jaccard: {summary.mean_identifier_jaccard:.3f}")
+    click.echo(f"mean_struct_recall: {summary.mean_struct_recall:.3f}")
 
 
 # Backwards-compat re-export for the test suite, which imports
