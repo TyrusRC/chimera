@@ -26,6 +26,11 @@ from chimera.ai.prompts import (
     comment_prompt,
     refine_decomp_prompt,
     batch_rename_prompt,
+    verify_rename_prompt,
+)
+from chimera.ai.verify import (
+    VerifyResult,
+    verify_rename,
 )
 
 __all__ = [
@@ -38,6 +43,9 @@ __all__ = [
     "comment_prompt",
     "refine_decomp_prompt",
     "batch_rename_prompt",
+    "verify_rename_prompt",
+    "VerifyResult",
+    "verify_rename",
     "parse_rename_json",
     "strip_fence",
 ]

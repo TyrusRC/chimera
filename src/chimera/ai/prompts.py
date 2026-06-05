@@ -104,6 +104,46 @@ def refine_decomp_prompt(
     return sys_p, user
 
 
+def verify_rename_prompt(
+    decomp: str,
+    *,
+    suggested_name: str,
+    callers: list[str] | None = None,
+    callees: list[str] | None = None,
+) -> tuple[str, str]:
+    """Sidekick-style refutation pass over a proposed function name.
+
+    The verifier is asked to *refute* the rename — it defaults to
+    refuted=true unless the code provides positive evidence the name is
+    semantically correct. This catches the common failure mode where
+    the primary suggester emits a confident-but-wrong name from a single
+    suggestive call inside an unrelated function.
+
+    The reply must be a single line of strict JSON so we can parse it
+    without prose-stripping heuristics on the hot path.
+    """
+    callers_s = ", ".join(callers) if callers else "(none)"
+    callees_s = ", ".join(callees) if callees else "(none)"
+    sys_p = (
+        ANALYST_PERSONA + " You are a verifier, not a generator. Your "
+        "job is to refute proposed function renames unless the code "
+        "clearly supports them. Default to refuted=true when uncertain. "
+        "False accepts corrupt overlays; false refusals merely keep "
+        "the placeholder."
+    )
+    user = (
+        "Given this code and proposed name, is the name semantically "
+        "correct? Default to refuted=true if uncertain. Respond ONLY "
+        'with JSON {"accepted": <bool>, "confidence": <0.0-1.0>, '
+        '"reason": "<one short sentence>"}.\n\n'
+        f"Proposed name: {suggested_name}\n"
+        f"Callers: {callers_s}\n"
+        f"Callees: {callees_s}\n\n"
+        f"```c\n{decomp}\n```"
+    )
+    return sys_p, user
+
+
 def batch_rename_prompt(
     decomp: str,
     *,
