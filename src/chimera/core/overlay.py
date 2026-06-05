@@ -31,7 +31,9 @@ import logging
 import os
 import tempfile
 import threading
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -70,6 +72,10 @@ class ProjectOverlay:
     comments: dict[str, dict[str, str]] = field(default_factory=dict)
     function_types: dict[str, str] = field(default_factory=dict)
     user_classifications: dict[str, str] = field(default_factory=dict)
+    # Notebook entries — narrative findings keyed by UUID. Each value carries
+    # {"id", "title", "body", "tags": [...], "evidence": [...], "created_at",
+    # "updated_at"}. Evidence items are {"address": "0x..", "line": int}.
+    notes: dict[str, dict] = field(default_factory=dict)
     _path: Optional[Path] = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -97,6 +103,7 @@ class ProjectOverlay:
             },
             function_types=dict(data.get("function_types") or {}),
             user_classifications=dict(data.get("user_classifications") or {}),
+            notes={k: dict(v) for k, v in (data.get("notes") or {}).items()},
             _path=path,
         )
 
@@ -114,6 +121,7 @@ class ProjectOverlay:
                 "comments": self.comments,
                 "function_types": self.function_types,
                 "user_classifications": self.user_classifications,
+                "notes": self.notes,
             }
             # Atomic write: same-fs tempfile + rename. A crash mid-write leaves
             # the previous version intact rather than truncating to zero bytes.
@@ -168,6 +176,104 @@ class ProjectOverlay:
             if not block:
                 return False
             return block.pop(str(line), None) is not None
+
+    # ----- notebook ------------------------------------------------------
+
+    def add_note(
+        self,
+        title: str,
+        body: str,
+        tags: Optional[list[str]] = None,
+        evidence: Optional[list[dict]] = None,
+    ) -> str:
+        """Create a notebook entry and return its UUID.
+
+        Evidence items are normalised so addresses are lowercase 0x...; that
+        keeps deep-link references stable regardless of how the caller wrote
+        them. Tags are deduplicated while preserving order.
+        """
+        note_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        norm_tags: list[str] = []
+        seen: set[str] = set()
+        for t in (tags or []):
+            if t and t not in seen:
+                seen.add(t)
+                norm_tags.append(t)
+        norm_evidence: list[dict] = []
+        for ev in (evidence or []):
+            if not isinstance(ev, dict):
+                continue
+            addr = ev.get("address")
+            if not addr:
+                continue
+            line = ev.get("line", 0)
+            try:
+                line_int = int(line)
+            except (TypeError, ValueError):
+                line_int = 0
+            norm_evidence.append({"address": _normalize_addr(addr), "line": line_int})
+        entry = {
+            "id": note_id,
+            "title": title,
+            "body": body,
+            "tags": norm_tags,
+            "evidence": norm_evidence,
+            "created_at": now,
+            "updated_at": now,
+        }
+        with self._lock:
+            self.notes[note_id] = entry
+        return note_id
+
+    def update_note(self, note_id: str, **fields) -> bool:
+        """Patch an entry in-place; return False if no such note."""
+        with self._lock:
+            entry = self.notes.get(note_id)
+            if not entry:
+                return False
+            if "title" in fields and fields["title"] is not None:
+                entry["title"] = fields["title"]
+            if "body" in fields and fields["body"] is not None:
+                entry["body"] = fields["body"]
+            if "tags" in fields and fields["tags"] is not None:
+                seen: set[str] = set()
+                norm: list[str] = []
+                for t in fields["tags"]:
+                    if t and t not in seen:
+                        seen.add(t)
+                        norm.append(t)
+                entry["tags"] = norm
+            if "evidence" in fields and fields["evidence"] is not None:
+                norm_evidence: list[dict] = []
+                for ev in fields["evidence"]:
+                    if not isinstance(ev, dict):
+                        continue
+                    addr = ev.get("address")
+                    if not addr:
+                        continue
+                    try:
+                        line_int = int(ev.get("line", 0))
+                    except (TypeError, ValueError):
+                        line_int = 0
+                    norm_evidence.append({"address": _normalize_addr(addr), "line": line_int})
+                entry["evidence"] = norm_evidence
+            entry["updated_at"] = datetime.now(timezone.utc).isoformat()
+            return True
+
+    def remove_note(self, note_id: str) -> bool:
+        with self._lock:
+            return self.notes.pop(note_id, None) is not None
+
+    def list_notes(self, tag: Optional[str] = None) -> list[dict]:
+        """Return notes (newest first by created_at), optionally tag-filtered."""
+        with self._lock:
+            entries = list(self.notes.values())
+        if tag:
+            entries = [e for e in entries if tag in (e.get("tags") or [])]
+        entries.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+        # Return shallow copies so callers can't mutate our state.
+        return [dict(e) for e in entries]
 
     # ----- accessors -----------------------------------------------------
 

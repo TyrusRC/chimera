@@ -41,6 +41,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     jni_cmd,
     manifest_cmd,
     memory_cmd,
+    notebook_cmd,
     overlay_cmd,
     patch_cmd,
     persistence_cmd,

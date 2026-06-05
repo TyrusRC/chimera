@@ -57,6 +57,7 @@ async def export_overlay(project_id: str) -> dict:
         "comments": overlay.comments,
         "function_types": overlay.function_types,
         "user_classifications": overlay.user_classifications,
+        "notes": overlay.notes,
     }
 
 
@@ -82,6 +83,7 @@ async def import_overlay(project_id: str, req: ImportRequest) -> dict:
         overlay.comments.clear()
         overlay.function_types.clear()
         overlay.user_classifications.clear()
+        overlay.notes.clear()
 
     overlay.function_names.update(payload.get("function_names") or {})
     for addr, vmap in (payload.get("variable_renames") or {}).items():
@@ -90,6 +92,10 @@ async def import_overlay(project_id: str, req: ImportRequest) -> dict:
         overlay.comments.setdefault(addr, {}).update(cmap)
     overlay.function_types.update(payload.get("function_types") or {})
     overlay.user_classifications.update(payload.get("user_classifications") or {})
+    # Notes: incoming wins on UUID collision; merge mode is additive.
+    for note_id, entry in (payload.get("notes") or {}).items():
+        if isinstance(entry, dict):
+            overlay.notes[note_id] = dict(entry)
 
     # Sync the live model so subsequent reads see imported renames.
     for addr, new_name in overlay.function_names.items():
@@ -106,5 +112,6 @@ async def import_overlay(project_id: str, req: ImportRequest) -> dict:
             "comments": len(overlay.comments),
             "function_types": len(overlay.function_types),
             "user_classifications": len(overlay.user_classifications),
+            "notes": len(overlay.notes),
         },
     }
