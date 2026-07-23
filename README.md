@@ -54,7 +54,7 @@ default `analyze` hot path.
 - **Packer detection + UPX auto-unpack** — YARA-first (UPX / ASPack / VMProtect / Themida / MPRESS / PECompact / Enigma / MEW / kkrunchy), section-name fallback (UPX0, .vmpN, .themida, .aspack, …), per-section byte-entropy heuristic on executable sections. `chimera unpack` round-trips UPX byte-identically and ships manual guidance for the VM-protectors no open-source unpacker handles cleanly.
 - **gdb bridge** — `chimera gdb-export` writes a `.gdbinit` of `$convenience` variables + a `chimera-bp` user command so `gdb` lands inside the same address space your renames refer to.
 - **PE / ELF imports scoring** — PEStudio-style buckets (process injection, anti-debug, persistence, network, crypto, evasion). Linux: persistence-string scan (cron / systemd / `LD_PRELOAD` / init.d), syscall scoring, XOR-string heuristic.
-- **.NET assemblies** — ILSpy decompilation per type when `ilspycmd` is on PATH; Ghidra fallback for mixed-mode (C++/CLI).
+- **.NET assemblies** — ILSpy decompilation per type when `ilspycmd` is on PATH; Ghidra fallback for mixed-mode (C++/CLI). NOTE: ILSpy currently writes the per-type C# to the project directory on disk; that source is not yet surfaced inline in the function model (`FunctionInfo.decompiled`) — see `REVIEW_FINDINGS.md`.
 
 ### Mobile RE
 - **Framework detection** — React Native (Hermes / JSC), Flutter, Unity IL2CPP, Xamarin, Cordova / Capacitor.
@@ -65,7 +65,7 @@ default `analyze` hot path.
 ### Shared workflow
 - **Static + dynamic** — Semgrep + YARA (or optional YARA-X) + capa for static; Frida for runtime confirmation.
 - **Binary-vs-binary diff** — `chimera diff <a> <b>` reports added/removed permissions, exported components, SDKs, native libraries (with sha256), manifest + NSC findings (regression / resolution).
-- **Function-similarity diff (BinDiff-style)** — `chimera diff-functions a.bin b.bin --threshold 0.85` matches functions via opcode-shingled Jaccard (default), with `--heuristic multi` combining Jaccard + call-graph degree + basic-block count + mnemonic cosine, and pluggable backends `--backend keenhash` (whole-binary embeddings, KEENHash / ISSTA 2025) and `--rerank revdecode` (Viterbi re-ranker over candidate matches, USENIX Sec 2025). `--export-bindiff out.csv` writes BinDiff-compatible CSV for downstream tools.
+- **Function-similarity diff (BinDiff-style)** — `chimera diff-functions a.bin b.bin --threshold 0.85` matches functions via opcode-shingled Jaccard, two-pass (same-name first, then greedy bipartite over the cross product); `--heuristic multi` adds call-graph degree + basic-block count + mnemonic cosine. `--export-bindiff out.csv` writes BinDiff-compatible CSV for downstream tools. A whole-binary KEENHash embedding backend (ISSTA 2025) and a REVDECODE Viterbi re-ranker (USENIX Sec 2025) are implemented in the library API (`chimera.diff.function_similarity.diff_models`) but are **not yet wired to `diff-functions` CLI flags**; the KEENHash offline path is a feature-hash surrogate, not the published model.
 - **Reports** — JSON, HTML, Markdown, SARIF v2.1.0, CycloneDX 1.6 SBOM, MASVS coverage matrix, CVSS finding draft.
 - **Annotation sharing** — `chimera overlay export <bin> -o overlay.json` and `chimera overlay import <bin> -i overlay.json --merge|--replace` move renames / comments / types between analysts. Schema includes the binary sha256 so import against a different binary surfaces a warning rather than silently corrupting addresses. Exported payload also carries the project notebook.
 - **Notebook** — `chimera notes add --title T --body B --evidence 0xADDR ...` / `notes list [--tag T]` / `notes rm ID`, plus `/api/projects/{id}/notes`. Sidekick-style narrative findings with evidence links to addresses or lines. Stored in the project overlay; round-trips through export/import.
@@ -83,7 +83,7 @@ default `analyze` hot path.
 - **SymGen-style batch generative naming** — `chimera ai batch-rename <bin> --max 50 --threshold 0.7 --apply` walks stripped-looking functions (FUN_/sub_/fn_), feeds callgraph neighbours as context, asks for `{name, confidence}` JSON, optionally applies high-confidence names to the overlay. Preview by default.
 - **Sidekick-style adversarial rename verifier** — `chimera ai batch-rename ... --verify` makes a second LLM call that defaults to *refute* the suggested name; refuted names are never auto-applied even with `--apply`.
 - **Configuration** — `ANTHROPIC_API_KEY` env var enables the surface; `CHIMERA_AI_MODEL` overrides the model (default `claude-sonnet-4-6`); urllib-only client, no SDK dep. Missing key → HTTP 503 with a clear message; the CLI prints an actionable install hint.
-- **Research add-ons (extras)** — VarBERT variable-name recovery (`chimera varbert rename`, `pip install "chimera[varbert]"`), EMBER 2024 malware classifier (`chimera classify <pe>`, `pip install "chimera[ml]"`), B(l)utter Flutter / Dart AOT extractor (`chimera flutter-extract <apk> -o out`, external `blutter` binary on PATH or `CHIMERA_BLUTTER_BIN`), hermes-decomp for Hermes HBC bundles (`chimera hermes-decompile <bundle>`, external `hermes-decomp` binary), Oxidizer Rust decompile via angr (`chimera rust-decompile <bin>`, `pip install angr`), Mergen VMProtect / Themida devirtualization (`chimera vmp-devirt <bin> --start 0x…`, external `mergen` binary), oatdump2binexport Android native similarity (`chimera android-similarity a.apk b.apk`, needs `dex2oat` + `oatdump2binexport` + `bindiff`).
+- **Research add-ons (extras)** — VarBERT variable-name recovery (`chimera varbert rename`, `pip install "chimera[varbert]"`), EMBER 2024 malware classifier (`chimera classify <pe>`, `pip install "chimera[ml]"`), B(l)utter Flutter / Dart AOT extractor (`chimera flutter-extract <apk> -o out`, external `blutter` binary on PATH or `CHIMERA_BLUTTER_BIN`), hermes-decomp for Hermes HBC bundles (`chimera hermes-decompile <bundle>`, external `hermes-decomp` binary), Oxidizer Rust decompile via angr (`chimera rust-decompile <bin>`, `pip install angr`), Mergen VMProtect / Themida devirtualization (`chimera vmp-devirt <bin> --start 0x…`, external `mergen` binary), oatdump2binexport Android native similarity (`chimera android-similarity a.apk b.apk`, needs `dex2oat` + `oatdump2binexport` + `bindiff`). Each degrades to a clear "not installed / unavailable" result when its external binary or model weights are absent (none ship in-repo). Several are integration scaffolding rather than full in-repo implementations — notably the BinQuery adapter (CLI path unwired), the FirmAgent loop (default hooks are no-ops), the KEENHash offline embedding (feature-hash surrogate), and the EMBER fallback feature extractor. See `REVIEW_FINDINGS.md` for the per-item status.
 
 ## Desktop reverse engineering
 
@@ -507,11 +507,13 @@ chimera rust-decompile target/release/agent --limit 50
 chimera vmp-devirt packed.exe --start 0x401000 -o out/
 chimera android-similarity v1.apk v2.apk -o diff_out/
 
-# Function-similarity (BinDiff-style + multi-heuristic + backend hooks)
+# Function-similarity (BinDiff-style; Jaccard + greedy bipartite)
 chimera diff-functions a.bin b.bin --threshold 0.85
-chimera diff-functions a.bin b.bin --heuristic multi
-chimera diff-functions a.bin b.bin --backend keenhash --rerank revdecode
+chimera diff-functions a.bin b.bin --heuristic multi   # +call-graph/BB/mnemonic signals
 chimera diff-functions a.bin b.bin --export-bindiff matches.csv
+# NOTE: the KEENHash backend and REVDECODE re-ranker exist in the library API
+# (chimera.diff.function_similarity.diff_models) but are not yet exposed as CLI
+# flags; the KEENHash offline path is a feature-hash surrogate, not the model.
 
 # Capa with new sandbox / backend options
 chimera analyze sample.exe                                          # static (vivisect)
