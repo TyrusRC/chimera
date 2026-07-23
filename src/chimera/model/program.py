@@ -44,9 +44,19 @@ class UnifiedProgramModel:
                 func.sources = [func.source_backend]
             self._functions[func.address] = func
             return
-        # Merge: keep first-seen function, record additional backend
+        # Merge: keep first-seen identity, record the additional backend, and
+        # backfill fields the first backend left empty. Native pipelines seed
+        # functions from r2's symbol table (name/address only, decompiled=None);
+        # a later Ghidra pass supplies the decompiled C / signature / disasm for
+        # the same address, which would otherwise be dropped by first-writer-wins.
         if func.source_backend and func.source_backend not in existing.sources:
             existing.sources.append(func.source_backend)
+        if existing.decompiled is None and func.decompiled:
+            existing.decompiled = func.decompiled
+        if existing.signature is None and func.signature:
+            existing.signature = func.signature
+        if existing.disassembly is None and func.disassembly:
+            existing.disassembly = func.disassembly
 
     def get_function(self, address: str) -> FunctionInfo | None:
         return self._functions.get(address)
@@ -56,6 +66,10 @@ class UnifiedProgramModel:
 
     def get_functions_by_layer(self, layer: str) -> list[FunctionInfo]:
         return [f for f in self._functions.values() if f.layer == layer]
+
+    @property
+    def call_edges(self) -> list[CallEdge]:
+        return list(self._call_edges)
 
     def add_call_edge(self, caller_addr: str, callee_addr: str, call_type: str = "direct") -> None:
         """Record a call edge. Addresses need not exist yet - unresolved edges are

@@ -53,6 +53,12 @@ class ChimeraConfig:
     # FLIRT-equivalent library function name matching. Disabled in fast/
     # triage modes; default-on otherwise.
     skip_sig_match: bool = False
+    # Escalate r2 from symbol-table triage (`isj`) to an analysis pass (`aaa`,
+    # `aflj`) so stripped binaries — whose symbol table lists ~nothing — still
+    # get functions recovered. `r2_deep` forces it on; otherwise the pipelines
+    # auto-escalate when triage recovers fewer than `r2_deep_min_functions`.
+    r2_deep: bool = False
+    r2_deep_min_functions: int = 3
     floss_timeout: int = 90
     adb_device: Optional[str] = None
     ios_udid: Optional[str] = None

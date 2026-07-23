@@ -105,8 +105,12 @@ class IlspyAdapter(BackendAdapter):
         pass
 
 
+# Cap per-type source read so a pathological assembly can't balloon the model.
+_MAX_DECOMPILED_BYTES = 256 * 1024
+
+
 def _walk_output(out_dir: Path, assembly_stem: str) -> dict:
-    """Walk an ILSpy output directory and emit per-type metadata."""
+    """Walk an ILSpy output directory and emit per-type metadata + source."""
     types: list[dict] = []
     if out_dir.exists():
         for cs_file in sorted(out_dir.rglob("*.cs")):
@@ -117,11 +121,22 @@ def _walk_output(out_dir: Path, assembly_stem: str) -> dict:
                 size = cs_file.stat().st_size
             except OSError:
                 continue
+            # Read the emitted C# so it reaches FunctionInfo.decompiled instead
+            # of being left on disk (the PE pipeline reads the "decompiled" key).
+            decompiled = None
+            try:
+                with cs_file.open("r", encoding="utf-8", errors="replace") as fh:
+                    decompiled = fh.read(_MAX_DECOMPILED_BYTES)
+                if size > _MAX_DECOMPILED_BYTES:
+                    decompiled += "\n// … truncated by chimera (type source exceeds cap)\n"
+            except OSError:
+                decompiled = None
             types.append({
                 "namespace": namespace,
                 "name": cs_file.stem,
                 "file": str(cs_file),
                 "size_bytes": size,
+                "decompiled": decompiled,
             })
     return {
         "available": True,

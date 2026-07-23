@@ -299,7 +299,18 @@ def match_functions(
     fmt = _format_for_model(model)
     sigs = db.lookup(arch, fmt)
     if not sigs:
-        return {"matched": 0, "scanned": 0, "total_sigs": db.total(), "arch_fmt": f"{arch}/{fmt}"}
+        # Tell the analyst *why* FLIRT found nothing: no pack ships for this
+        # arch/format. Only x86_64 packs are bundled today; arm64 et al. need a
+        # generated pack (scripts/build_libfn_sigs.py against that arch's libs).
+        available = sorted({f"{a}/{f}" for (a, f) in db.by_arch_fmt})
+        logger.info(
+            "FLIRT: no signature pack for %s/%s; available packs: %s",
+            arch, fmt, ", ".join(available) or "(none)",
+        )
+        return {
+            "matched": 0, "scanned": 0, "total_sigs": db.total(),
+            "arch_fmt": f"{arch}/{fmt}", "available_packs": available,
+        }
 
     matched = 0
     scanned = 0

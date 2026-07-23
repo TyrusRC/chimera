@@ -108,7 +108,27 @@ class GhidraAdapter(BackendAdapter):
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env,
         )
-        stdout, stderr = await proc.communicate()
+        # Ghidra's own -analysisTimeoutPerFile doesn't cover JVM startup/teardown
+        # hangs. Wrap in an outer wait (analysis budget + a startup margin) and
+        # kill a wedged process so it can't hold the heavy resource slot until
+        # the engine-level 1800 s timeout.
+        outer_timeout = analysis_timeout + int(options.get("startup_margin", 600))
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=outer_timeout,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            try:
+                await proc.communicate()
+            except Exception:  # noqa: BLE001
+                pass
+            return {
+                "return_code": -1,
+                "project_dir": project_dir,
+                "output_dir": str(output_dir),
+                "error": f"ghidra timed out after {outer_timeout}s (killed)",
+            }
 
         result = {
             "return_code": proc.returncode,

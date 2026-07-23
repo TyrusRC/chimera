@@ -14,7 +14,7 @@ from chimera.model.binary import BinaryInfo, Framework
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
-from chimera.pipelines.common import _rehydrate_from_cache, unpack_ipa
+from chimera.pipelines.common import _rehydrate_from_cache, ingest_ghidra_functions, unpack_ipa
 from chimera.adapters.swift_demangle import _MANGLED_RE, _MANGLED_TOKEN_RE
 from chimera.pipelines.objc_xref import build_objc_xref
 from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
@@ -223,6 +223,7 @@ async def analyze_ipa(
                 {"mode": "decompile", "project_dir": str(config.project_dir / "ghidra")},
             )
             cache.put_json(binary.sha256, "ghidra_main", ghidra_result)
+            ingest_ghidra_functions(model, ghidra_result)
 
     # Phase 5.5: Swift demangle (post-r2 + post-Ghidra).
     # Convention swap: mangled name moves to original_name; demangled becomes name.

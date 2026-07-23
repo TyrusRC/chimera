@@ -444,6 +444,134 @@ def unpack_ipa(ipa_path: Path, output_dir: Path) -> dict:
     }
 
 
+def should_deepen_r2(func_count: int, *, deep: bool = False, min_functions: int = 3) -> bool:
+    """Whether to run r2's analysis pass (`aaa`) after symbol-table triage.
+
+    Native pipelines seed functions from r2's symbol table (`isj`), which finds
+    ~nothing on a stripped binary — exactly the case RE tools exist for. Escalate
+    to `aaa`/`aflj` when the operator opted in (`deep`) or triage clearly
+    under-recovered (fewer than `min_functions`).
+    """
+    if deep:
+        return True
+    return func_count < max(1, min_functions)
+
+
+async def deepen_r2_functions(r2_adapter, path, model, *, language: str = "c",
+                              layer: str = "native") -> int:
+    """Run r2's analysis pass to recover functions the symbol table omits.
+
+    Merges results into the model (existing addresses dedup via add_function).
+    Returns the number of NEW functions added.
+    """
+    from chimera.model.function import FunctionInfo
+
+    result = await r2_adapter.analyze(str(path), {"mode": "functions"})
+    added = 0
+    for f in result.get("functions", []) or []:
+        if not isinstance(f, dict):
+            continue
+        off = f.get("offset", f.get("vaddr"))
+        if not isinstance(off, (int, str)):
+            continue
+        addr = hex(off) if isinstance(off, int) else str(off)
+        name = f.get("name") or f.get("realname") or f"FUN_{addr}"
+        is_new = model.get_function(addr) is None
+        model.add_function(FunctionInfo(
+            address=addr, name=name, original_name=name, language=language,
+            classification="unknown", layer=layer, source_backend="radare2",
+        ))
+        if is_new:
+            added += 1
+    return added
+
+
+def _norm_addr(raw) -> str:
+    """Canonicalize an entry-point address to r2's `hex(int)` form.
+
+    r2 seeds the model with `hex(offset)` ("0x401000"); Ghidra prints
+    entry points as "00401000" (optionally with a "ram:" space prefix).
+    Normalizing both to `hex(int(...,16))` lets the two backends merge on
+    the same key instead of creating duplicate function entries. Falls back
+    to the stringified input when it isn't parseable hex.
+    """
+    if isinstance(raw, int):
+        return hex(raw)
+    s = str(raw).strip()
+    if ":" in s:  # drop Ghidra address-space prefix, e.g. "ram:00401000"
+        s = s.rsplit(":", 1)[1]
+    try:
+        return hex(int(s, 16))
+    except ValueError:
+        return str(raw)
+
+
+def ingest_ghidra_functions(
+    model, ghidra_result: dict, *, language: str = "c", layer: str = "native",
+) -> int:
+    """Merge Ghidra's exported functions + decompiled C into the model.
+
+    The Ghidra post-script (`ExportFunctions.java`) writes `functions.json`
+    (name/address/size) and `decompilations.json` (address/name/code). The
+    native pipelines previously cached this blob and discarded it, so
+    `FunctionInfo.decompiled` was never populated for native code. This helper
+    replays it into the model: functions r2 already seeded (matched by
+    normalized address) get their decompiled C backfilled via the merge in
+    `UnifiedProgramModel.add_function`; Ghidra-only functions are added fresh.
+
+    Returns the number of functions that received decompiled C. Tolerant of a
+    missing/failed Ghidra result (returns 0) so callers can invoke it
+    unconditionally.
+    """
+    from chimera.model.function import FunctionInfo
+
+    if not isinstance(ghidra_result, dict):
+        return 0
+
+    code_by_addr: dict[str, str] = {}
+    for d in ghidra_result.get("decompilations", []) or []:
+        if not isinstance(d, dict):
+            continue
+        code = d.get("code")
+        addr = d.get("address")
+        if code and addr is not None:
+            code_by_addr[_norm_addr(addr)] = code
+
+    ingested = 0
+    seen: set[str] = set()
+    for f in ghidra_result.get("functions", []) or []:
+        if not isinstance(f, dict):
+            continue
+        addr_raw = f.get("address")
+        if addr_raw is None:
+            continue
+        addr = _norm_addr(addr_raw)
+        seen.add(addr)
+        code = code_by_addr.get(addr)
+        name = f.get("name") or f"FUN_{addr}"
+        model.add_function(FunctionInfo(
+            address=addr, name=name, original_name=name,
+            language=language, classification="unknown",
+            layer=layer, source_backend="ghidra", decompiled=code,
+        ))
+        if code:
+            ingested += 1
+
+    # Decompilations for functions Ghidra's function iterator didn't list
+    # (rare, but don't silently drop the C we paid to produce).
+    for addr, code in code_by_addr.items():
+        if addr in seen:
+            continue
+        model.add_function(FunctionInfo(
+            address=addr, name=f"FUN_{addr}", original_name=f"FUN_{addr}",
+            language=language, classification="unknown",
+            layer=layer, source_backend="ghidra", decompiled=code,
+        ))
+        ingested += 1
+
+    return ingested
+
+
 def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: str) -> None:
     """Replay r2_* cache entries into the model's functions + strings on a cache hit.
 
@@ -484,6 +612,15 @@ def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: st
                 language=language, classification="unknown",
                 layer=layer, source_backend="radare2",
             ))
+
+    # Second pass: replay cached Ghidra output so warm-cache runs recover the
+    # decompiled C too (r2 must be replayed first so the address merge backfills
+    # onto the existing functions rather than duplicating them).
+    for category_file in entry_dir.iterdir():
+        if not category_file.name.startswith("ghidra_"):
+            continue
+        ghidra_result = cache.get_json(sha256, category_file.name)
+        ingest_ghidra_functions(model, ghidra_result, language=language, layer=layer)
 
 
 def find_mapping_file(unpack_dir: Path, apk_path: Path | None = None) -> Path | None:

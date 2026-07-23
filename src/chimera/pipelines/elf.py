@@ -29,7 +29,12 @@ from chimera.model.binary import BinaryInfo, BinaryFormat, Framework
 from chimera.model.function import FunctionInfo, ImportEntry
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
-from chimera.pipelines.common import _rehydrate_from_cache
+from chimera.pipelines.common import (
+    _rehydrate_from_cache,
+    deepen_r2_functions,
+    ingest_ghidra_functions,
+    should_deepen_r2,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +175,19 @@ async def analyze_elf(
                 len(triage.get("functions", [])),
                 len(triage.get("strings", [])),
             )
+            # Stripped ELFs list ~nothing in the symbol table; escalate to r2's
+            # analysis pass to actually recover functions.
+            if should_deepen_r2(
+                len(triage.get("functions", [])),
+                deep=getattr(config, "r2_deep", False),
+                min_functions=getattr(config, "r2_deep_min_functions", 3),
+            ):
+                try:
+                    async with resource_mgr.heavy():
+                        n_deep = await deepen_r2_functions(r2, elf_path, model)
+                    logger.info("r2 deep analysis recovered %d additional functions", n_deep)
+                except Exception as exc:
+                    logger.warning("r2 deep analysis failed: %s", exc)
         except Exception as exc:
             logger.warning("radare2 phase failed: %s", exc)
             skipped_phases.append("radare2")
@@ -322,7 +340,8 @@ async def analyze_elf(
                             },
                         )
                     cache.put_json(sha, f"ghidra_{elf_path.name}", ghidra_result)
-                    logger.info("ghidra: deep analysis complete")
+                    n_dec = ingest_ghidra_functions(model, ghidra_result)
+                    logger.info("ghidra: deep analysis complete (%d decompiled)", n_dec)
                 except Exception as exc:
                     logger.warning("ghidra phase failed: %s", exc)
                     skipped_phases.append("ghidra:error")

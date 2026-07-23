@@ -17,6 +17,7 @@ from chimera.pipelines.common import (
     _rehydrate_from_cache,
     detect_kotlin,
     find_mapping_file,
+    ingest_ghidra_functions,
     unpack_apk,
 )
 from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
@@ -392,6 +393,7 @@ async def analyze_apk(
                     "project_dir": str(config.project_dir / "ghidra"),
                 })
                 cache.put_json(binary.sha256, f"ghidra_{lib_path.name}", ghidra_result)
+                ingest_ghidra_functions(model, ghidra_result)
 
         await asyncio.gather(*[_ghidra_analyze(lib) for lib in eligible])
 
