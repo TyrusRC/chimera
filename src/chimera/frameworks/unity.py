@@ -67,7 +67,9 @@ class UnityAnalyzer:
 
     def detect_encrypted_metadata(self, metadata_path: Path) -> bool:
         """Anti-tamper games encrypt global-metadata.dat — magic is wrong AND entropy is high."""
-        data = metadata_path.read_bytes()
+        # Only the first 64 KB is used (magic + entropy sample), so cap the read.
+        with metadata_path.open("rb") as fh:
+            data = fh.read(65536)
         if not data:
             return False
         magic_ok = data[:4] in _IL2CPP_METADATA_MAGICS

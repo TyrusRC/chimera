@@ -10,6 +10,35 @@ CLI rejects it" bugs.
 from __future__ import annotations
 
 import json
+import re
+
+_IDENT_SUB = re.compile(r"[^A-Za-z0-9_]")
+
+
+def sanitize_symbol_name(name: str, *, max_len: int = 128) -> str | None:
+    """Coerce a model-suggested symbol name into a safe C-style identifier.
+
+    Decompiled bytes — including attacker-controlled strings/symbols in a
+    malicious binary — flow verbatim into the rename prompt, so the model's
+    output is untrusted at the point it would be written to the overlay. This
+    is that trust boundary: keep only the first token, replace any non
+    `[A-Za-z0-9_]` character, cap the length, and never let a name start with
+    a digit. Returns None when nothing meaningful remains so the caller skips
+    the rename rather than committing junk.
+    """
+    if not name:
+        return None
+    tokens = name.strip().split()
+    if not tokens:
+        return None
+    s = _IDENT_SUB.sub("_", tokens[0])[:max_len]
+    if not s:
+        return None
+    if s[0].isdigit():
+        s = "_" + s[: max_len - 1]
+    if not s.strip("_"):  # all-underscore names carry no meaning
+        return None
+    return s
 
 
 def strip_fence(text: str) -> str:
@@ -50,7 +79,7 @@ def parse_rename_json(raw: str) -> dict | None:
         data = json.loads(txt)
     except json.JSONDecodeError:
         return None
-    name = str(data.get("name") or "").strip()
+    name = sanitize_symbol_name(str(data.get("name") or ""))
     try:
         conf = float(data.get("confidence", 0.0))
     except (TypeError, ValueError):

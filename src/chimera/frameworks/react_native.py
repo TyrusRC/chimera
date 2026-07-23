@@ -4,9 +4,22 @@ from __future__ import annotations
 
 import re
 import asyncio
+import os
 import shutil
 import logging
 from pathlib import Path
+
+
+def _max_scan_bytes() -> int:
+    """Cap on how many bytes the string scanners read from a bundle.
+
+    Bounds RAM + the per-byte Python scan loop on a pathologically large (or
+    maliciously padded) Hermes bundle. Override via CHIMERA_MAX_SCAN_MB.
+    """
+    try:
+        return int(os.environ.get("CHIMERA_MAX_SCAN_MB", "128")) * 1024 * 1024
+    except ValueError:
+        return 128 * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +136,8 @@ class ReactNativeAnalyzer:
 
     def _extract_hermes_strings(self, bundle_path: Path) -> list[str]:
         """Extract readable strings from Hermes bytecode."""
-        data = bundle_path.read_bytes()
+        with bundle_path.open("rb") as fh:
+            data = fh.read(_max_scan_bytes())
         strings = []
         current = []
         for byte in data:
@@ -150,7 +164,8 @@ class ReactNativeAnalyzer:
 
     def extract_utf16_strings(self, bundle_path: Path) -> list[str]:
         """Scan for UTF-16LE printable strings (hermes sometimes stores them)."""
-        data = bundle_path.read_bytes()
+        with bundle_path.open("rb") as fh:
+            data = fh.read(_max_scan_bytes())
         out: list[str] = []
         i = 0
         while i < len(data) - 1:

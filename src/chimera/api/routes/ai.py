@@ -66,6 +66,10 @@ class BatchRenameRequest(BaseModel):
     apply: bool = False
     skip_already_renamed: bool = True
     max_tokens: int = 160
+    # Adversarial verification gate. On by default so the HTTP path matches
+    # the CLI: a second model pass must accept a name before --apply commits
+    # it. Set false only for trusted, non-adversarial inputs.
+    verify: bool = True
 
 
 async def _resolve_decomp(project_id: str, address: str, backend: str) -> tuple[str, str, str]:
@@ -274,9 +278,28 @@ async def _run_batch_rename(client, model, overlay, candidates, req, project_id)
             "applied": False,
         }
         if req.apply and parsed["confidence"] >= req.min_confidence:
-            overlay.rename_function(f.address, parsed["name"])
-            f.name = parsed["name"]
-            entry["applied"] = True
+            verified = True
+            if getattr(req, "verify", True):
+                # Fail-closed: a second model pass must accept the name before
+                # it's written to the overlay. Any verifier error → not applied.
+                from chimera.ai import verify_rename
+                try:
+                    vr = await asyncio.to_thread(
+                        verify_rename, decomp_text, parsed["name"],
+                        callers, callees, client=client,
+                    )
+                    verified = bool(vr.accepted)
+                    entry["verified"] = verified
+                    if vr.reason:
+                        entry["verify_reason"] = vr.reason
+                except Exception as exc:  # noqa: BLE001 — never crash the batch
+                    logger.warning("verify failed for %s: %s", f.address, exc)
+                    verified = False
+                    entry["verified"] = False
+            if verified:
+                overlay.rename_function(f.address, parsed["name"])
+                f.name = parsed["name"]
+                entry["applied"] = True
         results.append(entry)
     if req.apply:
         overlay.save()

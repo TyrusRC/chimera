@@ -84,7 +84,13 @@ class FlutterAnalyzer:
 
     def extract_dart_strings(self, binary_path: Path) -> list[str]:
         """Extract readable strings from Dart AOT binary (string pool extraction)."""
-        data = binary_path.read_bytes()
+        import os
+        try:
+            cap = int(os.environ.get("CHIMERA_MAX_SCAN_MB", "128")) * 1024 * 1024
+        except ValueError:
+            cap = 128 * 1024 * 1024
+        with binary_path.open("rb") as fh:
+            data = fh.read(cap)
         strings = []
         current = []
         for byte in data:

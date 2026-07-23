@@ -10,14 +10,24 @@ isn't installed; 404 when the project hasn't been analyzed yet.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from chimera.pipelines.safe_extract import _is_within
+
 router = APIRouter(prefix="/api/projects/{project_id}/flutter", tags=["flutter"])
 logger = logging.getLogger(__name__)
+
+
+def _project_root(project: dict) -> Path:
+    """The directory tree a flutter extract may read from / write to."""
+    base = project.get("unpack_dir") or project.get("path") or "."
+    base_path = Path(base)
+    return (base_path.parent if base_path.is_file() else base_path).resolve()
 
 
 class ExtractRequest(BaseModel):
@@ -53,9 +63,20 @@ async def extract(project_id: str, req: ExtractRequest) -> dict:
                     "PATH or set CHIMERA_BLUTTER_BIN."),
         )
 
+    root = _project_root(project)
+    # Confine both the input override and the output dir to the project tree so
+    # this endpoint can't read an arbitrary binary or clobber arbitrary paths.
+    out_dir = Path(req.out_dir).resolve()
+    if not _is_within(root, out_dir):
+        raise HTTPException(status_code=400,
+                            detail="out_dir must be inside the project directory")
+
     libapp: Path | None
     if req.libapp_override:
-        libapp = Path(req.libapp_override)
+        libapp = Path(req.libapp_override).resolve()
+        if not _is_within(root, libapp):
+            raise HTTPException(status_code=400,
+                                detail="libapp_override must be inside the project directory")
         if not libapp.exists():
             raise HTTPException(status_code=400,
                                 detail=f"libapp_override not found: {req.libapp_override}")
@@ -71,7 +92,9 @@ async def extract(project_id: str, req: ExtractRequest) -> dict:
                 detail="No libapp.so or App.framework binary found in project tree. "
                        "Pass libapp_override.",
             )
-    result = adapter.extract(libapp, req.out_dir)
+    # blutter runs a synchronous subprocess (up to 10 min) — offload it so the
+    # extract call doesn't block the event loop for every other request.
+    result = await asyncio.to_thread(adapter.extract, libapp, str(out_dir))
     if not result.success:
         raise HTTPException(
             status_code=500,

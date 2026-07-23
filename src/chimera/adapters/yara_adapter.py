@@ -11,6 +11,7 @@ doesn't benefit from asyncio.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -91,7 +92,11 @@ class YaraAdapter(BackendAdapter):
 
         timeout = int(options.get("timeout", 30))
         try:
-            matches = rules.match(binary_path, timeout=timeout)
+            # rules.match is a blocking C call — offload so a large scan doesn't
+            # stall the async event loop for the whole timeout window.
+            matches = await asyncio.to_thread(
+                rules.match, binary_path, timeout=timeout,
+            )
         except self._yara_module.Error as exc:
             logger.warning("YARA scan failed on %s: %s", binary_path, exc)
             return {"available": True, "hits": [], "error": str(exc)}

@@ -25,7 +25,7 @@ from chimera.adapters.webcrack import WebcrackAdapter
 from chimera.adapters.yara_adapter import YaraAdapter
 from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
-from chimera.core.resource_manager import ResourceManager
+from chimera.core.resource_manager import get_resource_manager
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.common import detect_platform
 
@@ -58,7 +58,9 @@ class ChimeraEngine:
     def __init__(self, config: ChimeraConfig):
         self.config = config
         self.cache = AnalysisCache(config.cache_dir)
-        self.resource_mgr = ResourceManager(total_ram_mb=config.total_ram_mb)
+        # Process-global gate: heavy/light semaphores shared across all engines
+        # so concurrent analyses can't collectively exhaust RAM.
+        self.resource_mgr = get_resource_manager(total_ram_mb=config.total_ram_mb)
         self.registry = AdapterRegistry()
         self._register_adapters()
 

@@ -63,6 +63,35 @@ class ResourceManager:
             yield
 
 
+_SINGLETON: ResourceManager | None = None
+
+
+def get_resource_manager(total_ram_mb: int | None = None) -> ResourceManager:
+    """Return the process-wide ResourceManager, creating it once.
+
+    The heavy/light semaphores must be shared across every concurrent analysis
+    so the RAM gate is actually global — a fresh manager per request (the old
+    behavior) let N uploads each spawn their own Ghidra JVMs and blow the RAM
+    budget. First caller's `total_ram_mb` wins; later differing values are
+    ignored (logged), which is the intended single-host semantics.
+    """
+    global _SINGLETON
+    if _SINGLETON is None:
+        _SINGLETON = ResourceManager(total_ram_mb=total_ram_mb)
+    elif total_ram_mb is not None and total_ram_mb != _SINGLETON.total_ram_mb:
+        logger.debug(
+            "ResourceManager already initialised at %d MB; ignoring request for %d MB",
+            _SINGLETON.total_ram_mb, total_ram_mb,
+        )
+    return _SINGLETON
+
+
+def reset_resource_manager() -> None:
+    """Drop the singleton (test isolation only)."""
+    global _SINGLETON
+    _SINGLETON = None
+
+
 def _detect_ram_mb() -> int | None:
     """Return detected total RAM in MB, or None if all detection methods fail."""
     try:

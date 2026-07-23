@@ -16,11 +16,20 @@ logger = logging.getLogger(__name__)
 
 
 @main.command()
-@click.option("--host", default="0.0.0.0", help="Bind host")
+@click.option("--host", default="127.0.0.1",
+              help="Bind host (default localhost; use 0.0.0.0 to expose)")
 @click.option("--port", default=8080, help="Bind port")
 def serve(host: str, port: int):
     """Start the Chimera web UI server."""
+    import os
     import uvicorn
+    if host not in ("127.0.0.1", "localhost", "::1") and not os.environ.get("CHIMERA_API_TOKEN"):
+        click.secho(
+            "WARNING: binding to a non-localhost interface without "
+            "CHIMERA_API_TOKEN set — the API (including device/Frida code "
+            "execution) will be reachable UNAUTHENTICATED. Set CHIMERA_API_TOKEN.",
+            fg="red", err=True,
+        )
     click.echo(f"Chimera v{__version__} — starting web UI on http://{host}:{port}")
     uvicorn.run("chimera.api.server:app", host=host, port=port, reload=False)
 
