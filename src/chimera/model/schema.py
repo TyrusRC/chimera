@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS functions (
     signature TEXT,
     ai_renamed BOOLEAN DEFAULT FALSE,
     ai_comments TEXT,
+    -- JSON-encoded list of backends that contributed this function (merge
+    -- provenance). Nullable so existing rows/DBs read back as an empty list.
+    sources TEXT,
     UNIQUE (binary_sha256, address)
 );
 

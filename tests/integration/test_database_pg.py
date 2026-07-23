@@ -74,6 +74,7 @@ class TestDatabasePg:
             ai_renamed=True,
             ai_comments="hand-inspected",
         )
+        func.sources = ["radare2", "ghidra"]
         await db.save_function(binary.sha256, func)
         functions = await db.load_functions(binary.sha256)
         assert len(functions) == 1
@@ -83,12 +84,38 @@ class TestDatabasePg:
         # round-tripping catches codec regressions.
         assert loaded.ai_renamed is True
         assert loaded.ai_comments == "hand-inspected"
+        # A8: merge-provenance now persists (JSON-encoded TEXT column).
+        assert loaded.sources == ["radare2", "ghidra"]
 
     async def test_binary_exists(self, db):
         binary = _make_binary()
         assert await db.binary_exists("a" * 64) is False
         await db.save_binary(binary)
         assert await db.binary_exists("a" * 64) is True
+
+    async def test_save_and_load_full_model(self, db):
+        from chimera.model.function import FunctionInfo
+        from chimera.model.program import UnifiedProgramModel
+
+        binary = _make_binary()
+        model = UnifiedProgramModel(binary)
+        model.add_function(FunctionInfo(
+            address="0x1000", name="main", original_name="FUN_1000", language="c",
+            classification="unknown", layer="native", source_backend="radare2",
+        ))
+        model.add_string("0x2000", "https://evil.example", section=".rodata")
+        model.add_call_edge("0x1000", "0x1100", "direct")
+
+        await db.save_model(model)
+        loaded = await db.load_model(binary.sha256)
+
+        assert loaded is not None
+        assert len(loaded.functions) == 1
+        assert [s.value for s in loaded.get_strings()] == ["https://evil.example"]
+        assert len(loaded.call_edges) == 1
+        # load_model_by_id resolves a short project-id prefix too.
+        by_prefix = await db.load_model_by_id(binary.sha256[:16])
+        assert by_prefix is not None and len(by_prefix.functions) == 1
 
     async def test_save_binary_is_upsert(self, db):
         import dataclasses

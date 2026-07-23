@@ -6,11 +6,11 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from chimera.api.path_guard import assert_analyzable_path
 from chimera.core.config import ChimeraConfig
 from chimera.core.engine import ChimeraEngine
 
@@ -36,11 +36,42 @@ class _ProjectStore:
 
     async def get(self, pid: str) -> dict | None:
         async with self._lock:
-            return dict(self._data[pid]) if pid in self._data else None
+            if pid in self._data:
+                return dict(self._data[pid])
+        # Miss: try the durable store (no-op unless CHIMERA_PERSIST + a DB).
+        entry = await _rehydrate_from_db(pid)
+        if entry is None:
+            return None
+        async with self._lock:
+            self._data.setdefault(pid, entry)
+            return dict(self._data[pid])
 
     async def set(self, pid: str, entry: dict) -> None:
         async with self._lock:
+            self._evict_if_needed(pid)
             self._data[pid] = entry
+
+    def _evict_if_needed(self, incoming_pid: str) -> None:
+        """Bound the store so analyzed models (each large) can't grow the
+        process without limit. NOTE: this is a RAM ceiling, not persistence —
+        full Postgres-backed storage remains the durable follow-up (H2). Evicts
+        the oldest non-in-flight project first. Cap via CHIMERA_MAX_PROJECTS.
+        """
+        try:
+            cap = int(os.environ.get("CHIMERA_MAX_PROJECTS", "32"))
+        except ValueError:
+            cap = 32
+        if cap <= 0 or incoming_pid in self._data or len(self._data) < cap:
+            return
+        for pid, entry in list(self._data.items()):
+            if entry.get("status") != "analyzing":
+                del self._data[pid]
+                self._tasks.pop(pid, None)
+                return
+        # All in-flight (rare) — drop the oldest to honor the cap.
+        oldest = next(iter(self._data))
+        del self._data[oldest]
+        self._tasks.pop(oldest, None)
 
     async def update(self, pid: str, **fields) -> None:
         async with self._lock:
@@ -60,6 +91,28 @@ class _ProjectStore:
 
 
 _store = _ProjectStore(_projects)
+
+
+async def _rehydrate_from_db(pid: str) -> dict | None:
+    """Best-effort rebuild of a project entry from durable storage on a store
+    miss. Returns None (current behavior) unless persistence is enabled and the
+    model is found — so restarts don't lose analyzed functions when a DB is
+    configured."""
+    from chimera.api.persistence import get_persistence
+    model = await get_persistence().load_model(pid)
+    if model is None:
+        return None
+    return {
+        "name": Path(model.binary.path).name,
+        "path": str(model.binary.path),
+        "platform": model.binary.platform.value,
+        "format": model.binary.format.value,
+        "framework": model.binary.framework.value,
+        "function_count": len(model.functions),
+        "string_count": len(model.get_strings()),
+        "status": "complete",
+        "model": model,
+    }
 
 
 _MANIFEST_FORMATS = {"apk", "aab", "xapk", "apkm"}
@@ -87,7 +140,10 @@ def _capabilities_for(fmt: str | None) -> dict[str, bool]:
 
 class AnalyzeRequest(BaseModel):
     path: str
-    ghidra_home: Optional[str] = None
+    # NOTE: `ghidra_home` was intentionally removed. It previously flowed into
+    # the executed `<ghidra_home>/support/analyzeHeadless` path, giving anyone
+    # who could stage a directory (see the upload endpoint) code execution.
+    # Ghidra location is now server-config/env only (GHIDRA_HOME).
 
 
 class ProjectSummary(BaseModel):
@@ -119,6 +175,7 @@ async def create_project(req: AnalyzeRequest) -> dict:
     path = Path(req.path)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
+    assert_analyzable_path(path)
 
     from chimera.model.binary import BinaryInfo
     binary = BinaryInfo.from_path(path)
@@ -149,7 +206,7 @@ async def cancel_project(project_id: str) -> dict:
 async def _run_analysis(project_id: str, req: AnalyzeRequest) -> None:
     from chimera.api.websocket.analysis import update_progress
 
-    config = ChimeraConfig(ghidra_home=req.ghidra_home)
+    config = ChimeraConfig()  # ghidra_home from server env (GHIDRA_HOME), not the request
     engine = ChimeraEngine(config)
     update_progress(project_id, "starting", "Initialising engine", 5)
     try:
@@ -180,6 +237,14 @@ async def _run_analysis(project_id: str, req: AnalyzeRequest) -> None:
                 status="complete",
                 model=model,
             )
+            # Write-through to durable storage (no-op unless CHIMERA_PERSIST +
+            # a reachable DB) so analyzed functions survive a restart.
+            try:
+                from chimera.api.persistence import get_persistence
+                if await get_persistence().save_model(model):
+                    logger.info("persisted model for %s", project_id)
+            except Exception as exc:  # noqa: BLE001 — never fail analysis on persistence
+                logger.warning("persistence save error for %s: %s", project_id, exc)
             update_progress(project_id, "complete", "Analysis complete", 100)
             logger.info("Analysis complete for %s", project_id)
         except asyncio.TimeoutError:
