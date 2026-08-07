@@ -37,29 +37,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from chimera.core.addr import normalize_address as _normalize_addr
+
 logger = logging.getLogger(__name__)
 
 OVERLAY_SCHEMA = "chimera-overlay/1"
-
-
-def _normalize_addr(addr: str | int) -> str:
-    """Canonicalise to lowercase 0x... so lookup is stable across backends."""
-    if isinstance(addr, int):
-        return hex(addr)
-    s = str(addr).strip().lower()
-    if not s.startswith("0x"):
-        # Tolerate bare hex / decimal so the API accepts what r2 / ghidra emit.
-        try:
-            return hex(int(s, 16))
-        except ValueError:
-            try:
-                return hex(int(s, 10))
-            except ValueError:
-                return s
-    try:
-        return hex(int(s, 16))
-    except ValueError:
-        return s
 
 
 @dataclass

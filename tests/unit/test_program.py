@@ -141,16 +141,22 @@ def test_add_call_edge_allows_forward_reference():
     assert [f.name for f in m.get_callers("0xBBB")] == ["a"]
 
 
-def test_save_function_warns_when_sources_populated(caplog, monkeypatch):
-    """Until a sources column lands, save_function must warn on populated sources."""
+def test_save_function_persists_sources(caplog):
+    """save_function must write the encoded `sources` into the SQL params —
+    and no longer warn about dropping them (the `sources` column has landed)."""
     import logging
     from chimera.model.database import ChimeraDatabase
     from chimera.model.function import FunctionInfo
+    from chimera.model.serialize import encode_sources
+
+    captured: list[tuple] = []
 
     class _Ctx:
         async def __aenter__(self): return self
         async def __aexit__(self, *a): return False
-        async def execute(self, *a, **k): return "OK"
+        async def execute(self, *a, **k):
+            captured.append(a)
+            return "OK"
 
     class FakePool:
         def acquire(self):
@@ -169,9 +175,13 @@ def test_save_function_warns_when_sources_populated(caplog, monkeypatch):
 
     import asyncio
     asyncio.run(runner())
-    assert any(
-        "sources" in r.message and "dropped" in r.message for r in caplog.records
-    ), [r.message for r in caplog.records]
+
+    # The encoded provenance must reach the INSERT params...
+    encoded = encode_sources(["r2", "ghidra"])
+    assert any(encoded in args for args in captured), captured
+    # ...and the obsolete "sources dropped" warning must be gone.
+    assert not any("dropped" in r.message for r in caplog.records), \
+        [r.message for r in caplog.records]
 
 
 def test_get_strings_caches_compiled_regex():

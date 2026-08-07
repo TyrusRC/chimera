@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import plistlib
-import struct
 import zipfile
 from pathlib import Path
 
+from chimera.core.addr import normalize_address as _norm_addr
 from chimera.pipelines.safe_extract import safe_extract_zip
 
 logger = logging.getLogger(__name__)
@@ -53,57 +53,16 @@ def _classify_elf_context(path: Path) -> str:
 
 
 def _classify_pe_string(path: Path) -> str:
-    """Walk a PE file's headers to distinguish PE32, PE32+, and .NET PE.
+    """PE32 / PE32+ / .NET label as a string. Delegates to the model-layer
+    classifier so the header walk lives in exactly one place."""
+    from chimera.model.binary import classify_pe_bytes
 
-    Returns a STRING instead of an enum (mirrors _classify_pe from model/binary.py).
-    On malformed input, returns "pe32" as the stable default.
-    """
     try:
         with open(path, "rb") as fh:
             data = fh.read()
     except OSError:
         return "pe32"
-
-    if len(data) < 0x40 or data[:2] != b"MZ":
-        return "pe32"
-
-    # e_lfanew at 0x3C, uint32 little-endian
-    try:
-        pe_off = struct.unpack_from("<I", data, 0x3C)[0]
-    except struct.error:
-        return "pe32"
-
-    if pe_off + 24 > len(data):
-        return "pe32"
-    if data[pe_off:pe_off + 4] != b"PE\x00\x00":
-        return "pe32"
-
-    # IMAGE_FILE_HEADER is 20 bytes starting at pe_off+4.
-    # IMAGE_OPTIONAL_HEADER.Magic is uint16 LE at pe_off+24.
-    try:
-        optional_magic = struct.unpack_from("<H", data, pe_off + 24)[0]
-    except struct.error:
-        return "pe32"
-
-    # IMAGE_DATA_DIRECTORY[14] (CLR header) lives at:
-    #   PE32  (Magic 0x10b) -> pe_off + 24 + 208
-    #   PE32+ (Magic 0x20b) -> pe_off + 24 + 224
-    if optional_magic == 0x20b:
-        clr_off = pe_off + 24 + 224
-    else:
-        clr_off = pe_off + 24 + 208
-
-    if clr_off + 8 <= len(data):
-        try:
-            clr_va, clr_size = struct.unpack_from("<II", data, clr_off)
-            if clr_va != 0 and clr_size != 0:
-                return "dotnet_pe"
-        except struct.error:
-            pass
-
-    if optional_magic == 0x20b:
-        return "pe64"
-    return "pe32"
+    return classify_pe_bytes(data)
 
 
 def detect_binary_format(path: Path) -> str:
@@ -486,26 +445,6 @@ async def deepen_r2_functions(r2_adapter, path, model, *, language: str = "c",
     return added
 
 
-def _norm_addr(raw) -> str:
-    """Canonicalize an entry-point address to r2's `hex(int)` form.
-
-    r2 seeds the model with `hex(offset)` ("0x401000"); Ghidra prints
-    entry points as "00401000" (optionally with a "ram:" space prefix).
-    Normalizing both to `hex(int(...,16))` lets the two backends merge on
-    the same key instead of creating duplicate function entries. Falls back
-    to the stringified input when it isn't parseable hex.
-    """
-    if isinstance(raw, int):
-        return hex(raw)
-    s = str(raw).strip()
-    if ":" in s:  # drop Ghidra address-space prefix, e.g. "ram:00401000"
-        s = s.rsplit(":", 1)[1]
-    try:
-        return hex(int(s, 16))
-    except ValueError:
-        return str(raw)
-
-
 def ingest_ghidra_functions(
     model, ghidra_result: dict, *, language: str = "c", layer: str = "native",
 ) -> int:
@@ -581,13 +520,8 @@ def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: st
     from chimera.model.function import FunctionInfo
     from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
 
-    # cache._entry_dir is the internal helper in core/cache.py that returns
-    # cache_dir / sha256[:2] / sha256 — used because there's no public iterator.
-    entry_dir = cache._entry_dir(sha256)
-    if not entry_dir.exists():
-        return
-    for category_file in entry_dir.iterdir():
-        name = category_file.name
+    keys = cache.list_keys(sha256)
+    for name in keys:
         if not name.startswith("r2_"):
             continue
         triage = cache.get_json(sha256, name)
@@ -616,10 +550,10 @@ def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: st
     # Second pass: replay cached Ghidra output so warm-cache runs recover the
     # decompiled C too (r2 must be replayed first so the address merge backfills
     # onto the existing functions rather than duplicating them).
-    for category_file in entry_dir.iterdir():
-        if not category_file.name.startswith("ghidra_"):
+    for name in keys:
+        if not name.startswith("ghidra_"):
             continue
-        ghidra_result = cache.get_json(sha256, category_file.name)
+        ghidra_result = cache.get_json(sha256, name)
         ingest_ghidra_functions(model, ghidra_result, language=language, layer=layer)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import struct
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -104,9 +105,6 @@ class BinaryInfo:
     min_sdk: Optional[int] = None
     sub_binaries: list[BinaryInfo] = field(default_factory=list)
 
-    def __post_init__(self):
-        pass
-
     @property
     def is_mobile(self) -> bool:
         return self.format.is_mobile
@@ -176,30 +174,29 @@ def _detect_format(path: Path) -> BinaryFormat:
     return BinaryFormat.ELF
 
 
-def _classify_pe(path: Path) -> BinaryFormat:
-    """Walk a PE file's headers to distinguish PE32, PE32+, and .NET PE.
+_PE_STR_TO_FORMAT = {
+    "pe32": BinaryFormat.PE32,
+    "pe64": BinaryFormat.PE64,
+    "dotnet_pe": BinaryFormat.DOTNET_PE,
+}
 
-    Returns a stable default (PE32) on malformed input rather than raising;
-    the caller can do nothing useful with a thrown exception here, and
-    analysts dropping a corrupt binary expect best-effort triage.
+
+def classify_pe_bytes(data: bytes) -> str:
+    """Walk a PE image's headers to label it 'pe32' | 'pe64' | 'dotnet_pe'.
+
+    The single source of truth for PE classification — `_classify_pe` maps the
+    result to a `BinaryFormat`, and `pipelines.common._classify_pe_string`
+    reuses it verbatim. Returns the stable default 'pe32' on malformed input
+    rather than raising; analysts dropping a corrupt binary expect best-effort
+    triage.
     """
-    import struct
-
-    try:
-        with open(path, "rb") as fh:
-            data = fh.read()
-    except OSError:
-        return BinaryFormat.PE32
-
     if len(data) < 0x40 or data[:2] != b"MZ":
-        return BinaryFormat.PE32
+        return "pe32"
 
-    # e_lfanew at 0x3C, uint32 little-endian
+    # e_lfanew at 0x3C, uint32 little-endian. len >= 0x40 guarantees this read.
     pe_off = struct.unpack_from("<I", data, 0x3C)[0]
-    if pe_off + 24 > len(data):
-        return BinaryFormat.PE32
-    if data[pe_off:pe_off + 4] != b"PE\x00\x00":
-        return BinaryFormat.PE32
+    if pe_off + 24 > len(data) or data[pe_off:pe_off + 4] != b"PE\x00\x00":
+        return "pe32"
 
     # IMAGE_FILE_HEADER is 20 bytes starting at pe_off+4.
     # IMAGE_OPTIONAL_HEADER.Magic is uint16 LE at pe_off+24.
@@ -208,18 +205,23 @@ def _classify_pe(path: Path) -> BinaryFormat:
     # IMAGE_DATA_DIRECTORY[14] (CLR header) lives at:
     #   PE32  (Magic 0x10b) -> pe_off + 24 + 208
     #   PE32+ (Magic 0x20b) -> pe_off + 24 + 224
-    if optional_magic == 0x20b:
-        clr_off = pe_off + 24 + 224
-    else:
-        clr_off = pe_off + 24 + 208
+    clr_off = pe_off + 24 + (224 if optional_magic == 0x20b else 208)
     if clr_off + 8 <= len(data):
         clr_va, clr_size = struct.unpack_from("<II", data, clr_off)
         if clr_va != 0 and clr_size != 0:
-            return BinaryFormat.DOTNET_PE
+            return "dotnet_pe"
 
-    if optional_magic == 0x20b:
-        return BinaryFormat.PE64
-    return BinaryFormat.PE32
+    return "pe64" if optional_magic == 0x20b else "pe32"
+
+
+def _classify_pe(path: Path) -> BinaryFormat:
+    """Distinguish PE32, PE32+, and .NET PE for `_detect_format`."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return BinaryFormat.PE32
+    return _PE_STR_TO_FORMAT[classify_pe_bytes(data)]
 
 
 def _classify_zip(path: Path, suffix: str) -> BinaryFormat:

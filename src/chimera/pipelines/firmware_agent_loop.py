@@ -38,22 +38,25 @@ def _default_propose_sinks(
 ) -> list[dict]:
     """Ask the LLM for candidate sinks at `target.address`.
 
-    Best-effort: any LLM client exposing `.complete(prompt) -> str` works.
-    Returns [] when the client doesn't conform — the loop continues with
-    an empty round rather than crashing.
+    Best-effort: works with any client matching `AIClient.complete(system,
+    user) -> str`. Returns [] when the client doesn't conform — the loop
+    continues with an empty round rather than crashing.
     """
     if llm_client is None or not hasattr(llm_client, "complete"):
         return []
-    prompt = (
-        "You are a firmware vulnerability researcher. Given this function "
-        f"at {target.get('address', '?')}, list up to 5 likely sinks "
-        "(memcpy, strcpy, system, sprintf, …) you would fuzz. Reply as "
-        "JSON list of {description, address?}.\n\n"
+    system = (
+        "You are a firmware vulnerability researcher. Identify memory-safety "
+        "and command-injection sinks in decompiled code worth fuzzing."
+    )
+    user = (
+        f"Given this function at {target.get('address', '?')}, list up to 5 "
+        "likely sinks (memcpy, strcpy, system, sprintf, …) you would fuzz. "
+        "Reply as JSON list of {description, address?}.\n\n"
         f"Prior findings: {prior_findings}\n\n"
         f"Code:\n{target.get('context', '')}\n"
     )
     try:
-        raw = llm_client.complete(prompt)
+        raw = llm_client.complete(system, user)
     except Exception as exc:  # noqa: BLE001
         logger.warning("LLM sink-proposal call failed: %s", exc)
         return []
