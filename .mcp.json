@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "chimera": {
+      "type": "stdio",
+      "command": ".venv/bin/chimera",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

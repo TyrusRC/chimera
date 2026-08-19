@@ -413,11 +413,28 @@ discovered on `PATH` and gracefully skipped when absent.
 ```bash
 git clone https://github.com/TyrusRC/chimera.git
 cd chimera
-pip install -e ".[dev]"
+scripts/setup.sh       # interactive: choose native (.venv) or Docker
+```
 
-chimera info          # show backend availability
+`scripts/setup.sh --native` installs `chimera[dev]` into `.venv` (via
+`uv` when available) and offers to `apt-get install` the free system
+tools (radare2, upx-ucl, gdb). `scripts/setup.sh --docker` builds the
+bundled-toolchain image and starts Postgres instead — see
+[Docker](#docker-recommended) above. Neither is required for the other; add
+`--yes` to skip prompts.
+
+```bash
+chimera doctor         # exhaustive external-tool + env health check
+chimera info            # quick backend-availability glance
 chimera analyze app.apk
 ```
+
+`chimera doctor` sweeps every optional tool this README documents
+(Ghidra, jadx, capa, frida, blutter, ...) plus environment config
+(`ANTHROPIC_API_KEY`, `CHIMERA_DB_URL`, Docker) and prints an install
+hint for anything missing. It exits non-zero only if neither core
+decompiler (radare2, Ghidra) is available — everything else is
+optional and never fails the check.
 
 ---
 
@@ -553,6 +570,20 @@ Chimera exposes high-level tools (`analyze`, `xref`, `list_devices`,
 MCP-compatible client at `chimera mcp` and the model can drive the
 pipeline directly.
 
+**Claude Code**: the repo ships a project-scoped `.mcp.json` that
+registers `chimera mcp` (via `.venv/bin/chimera`, so no PATH setup
+needed). Run `claude` from the repo root, approve the server on first
+launch, then check it connected with `claude mcp list`. For Claude
+Desktop or another client, point it at `<repo>/.venv/bin/chimera mcp`
+(stdio) the same way.
+
+`tests/integration/test_mcp_protocol.py` drives `chimera mcp` with the
+`mcp` SDK's client (`stdio_client` / `ClientSession`) — a real
+initialize → `list_tools` → `call_tool` round trip, no API key needed.
+It's the check that the server actually speaks MCP correctly, as
+opposed to `tests/unit/test_mcp_server.py`, which only unit-tests two
+internal helper functions.
+
 ---
 
 ## Backend matrix
@@ -600,9 +631,10 @@ dropping one file and registering it in
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest                  # full suite
-pytest tests/unit       # unit tests only
+scripts/setup.sh --native   # or: pip install -e ".[dev]"
+pytest                       # full suite
+pytest tests/unit            # unit tests only
+pytest tests/integration/test_mcp_protocol.py  # MCP protocol round trip
 ```
 
 Layout:
