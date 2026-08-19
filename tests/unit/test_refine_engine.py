@@ -85,7 +85,8 @@ def test_evaluate_perfect_engine_scores_1():
             "address": "0x401000",
             "function_name": "fma",
             "decomp_input": "int FUN_401000(){return 0;}",
-            "expected": "int fma_helper(struct aes_ctx *ctx) { return ctx->state; }",
+            "expected": "struct aes_ctx { int state; }; "
+                        "int fma_helper(struct aes_ctx *ctx) { return ctx->state; }",
         },
     ]
 

@@ -65,7 +65,13 @@ async def recompile_check(code: str, *, timeout: int = 10) -> tuple[bool, str]:
     try:
         try:
             proc = await asyncio.create_subprocess_exec(
-                compiler, "-fsyntax-only", "-w", str(path),
+                # -std=gnu11 pins the language standard the prelude assumes
+                # (manual stdint typedefs, `bool` as an ordinary typedef
+                # name). Without it, a host compiler defaulting to C23 or
+                # later rejects `typedef int bool;` outright, since `bool`
+                # became a reserved keyword — a real portability bug, not
+                # a decompiled-snippet error.
+                compiler, "-std=gnu11", "-fsyntax-only", "-w", str(path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -75,7 +81,15 @@ async def recompile_check(code: str, *, timeout: int = 10) -> tuple[bool, str]:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             proc.kill()
-            await proc.wait()
+            # Cancelling communicate() while it's mid-read can leave the
+            # transport unable to notice the child has exited (a known
+            # asyncio quirk), so a plain `await proc.wait()` here can hang
+            # indefinitely even though the process is already dead. Bound
+            # it too — we already have our answer ("timed out") either way.
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
             return False, "compiler timed out"
     finally:
         path.unlink(missing_ok=True)
