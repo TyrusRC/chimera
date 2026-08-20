@@ -105,6 +105,118 @@ def test_detect_packer_clean_elf_reports_no_packer():
     assert det.packer is None
 
 
+# ------------------- structural "suspected packed" signals ------------------
+#
+# Real packers routinely evade both the YARA pack and the section-name table
+# (a renamed UPX stub, a bespoke protector). The section *table* still gives
+# them away: an executable section with no bytes on disk has to be filled by
+# a runtime stub, and a virtual size far exceeding the raw size means the
+# same. Both shapes were measured against the crackmes-RE corpus and fired
+# only on genuinely packed samples, never on clean ones.
+
+def _build_pe(sections, *, machine=0x8664):
+    """Synthesize a minimal pefile-parseable PE with the given sections.
+
+    `sections` is a list of (name, virtual_size, raw_size, characteristics).
+    Mirrors tests/fixtures/build_pe_fixture.py's layout.
+    """
+    import struct
+
+    n = len(sections)
+    BUF = 0x1000
+    OPT_HDR_SIZE = 240
+    buf = bytearray(BUF)
+    buf[0:2] = b"MZ"
+    pe_off = 0x80
+    struct.pack_into("<I", buf, 0x3C, pe_off)
+    buf[pe_off:pe_off + 4] = b"PE\x00\x00"
+    struct.pack_into("<HHIIIHH", buf, pe_off + 4,
+                     machine, n, 0, 0, 0, OPT_HDR_SIZE, 0)
+    opt = pe_off + 24
+    struct.pack_into("<HBBIIII", buf, opt, 0x20b, 0, 0, 0x200, 0, 0, 0x1000)
+    struct.pack_into("<IQ", buf, opt + 20, 0x1000, 0x140000000)
+    struct.pack_into("<II", buf, opt + 32, 0x1000, 0x200)
+    struct.pack_into("<HHHHHH", buf, opt + 40, 6, 0, 0, 0, 6, 0)
+    struct.pack_into("<IIII", buf, opt + 52, 0, 0x4000, 0x400, 0)
+    struct.pack_into("<HH", buf, opt + 68, 3, 0)
+    struct.pack_into("<I", buf, opt + 108, 16)
+    sec = opt + OPT_HDR_SIZE
+    va = 0x1000
+    raw_off = 0x400
+    for i, (name, vsize, raw_size, chars) in enumerate(sections):
+        struct.pack_into("<8sIIIIIIHHI", buf, sec + i * 40,
+                         name.encode().ljust(8, b"\x00"), vsize, va,
+                         raw_size, raw_off if raw_size else 0,
+                         0, 0, 0, 0, chars)
+        va += 0x1000
+        raw_off += raw_size
+    return bytes(buf)
+
+
+EXEC_SEC = 0x60000020  # CNT_CODE | MEM_EXECUTE | MEM_READ
+DATA_SEC = 0x40000040  # CNT_INITIALIZED_DATA | MEM_READ
+
+
+def test_detect_flags_executable_section_with_no_raw_bytes(tmp_path):
+    """An executable section with 0 bytes on disk must be filled at runtime."""
+    p = tmp_path / "packed.exe"
+    p.write_bytes(_build_pe([
+        ("CODE", 0x15000, 0, EXEC_SEC),   # allocated but empty on disk
+        (".rsrc", 0x200, 0x200, DATA_SEC),
+    ]))
+    det = detect_packer(p)
+    assert det.suspected_packed is True
+    assert any("zero_raw_exec_section" in s for s in det.signals)
+
+
+def test_detect_flags_virtual_size_far_exceeding_raw(tmp_path):
+    p = tmp_path / "packed2.exe"
+    p.write_bytes(_build_pe([
+        (".text", 0x8000, 0x200, EXEC_SEC),  # 64x larger in memory
+        (".data", 0x200, 0x200, DATA_SEC),
+    ]))
+    det = detect_packer(p)
+    assert det.suspected_packed is True
+    assert any("virtual_size_exceeds_raw" in s for s in det.signals)
+
+
+def test_detect_flags_duplicate_section_names(tmp_path):
+    p = tmp_path / "dup.exe"
+    p.write_bytes(_build_pe([
+        ("DOSX", 0x200, 0x200, EXEC_SEC),
+        ("DOSX", 0x200, 0x200, DATA_SEC),
+        ("DOSX", 0x200, 0x200, DATA_SEC),
+    ]))
+    det = detect_packer(p)
+    assert det.suspected_packed is True
+    assert any("duplicate_section_names" in s for s in det.signals)
+
+
+def test_clean_pe_is_not_flagged_as_suspected_packed(tmp_path):
+    """The signals must stay quiet on an ordinary layout — no false positives."""
+    p = tmp_path / "clean.exe"
+    p.write_bytes(_build_pe([
+        (".text", 0x200, 0x200, EXEC_SEC),
+        (".rdata", 0x200, 0x200, DATA_SEC),
+        (".data", 0x200, 0x200, DATA_SEC),
+    ]))
+    det = detect_packer(p)
+    assert det.suspected_packed is False
+    assert det.packer is None
+
+
+def test_named_packer_does_not_also_report_suspected(tmp_path):
+    """`suspected_packed` is for *unattributed* evidence only."""
+    p = tmp_path / "upx.exe"
+    p.write_bytes(_build_pe([
+        ("UPX0", 0x15000, 0, EXEC_SEC),
+        ("UPX1", 0x200, 0x200, EXEC_SEC),
+    ]))
+    det = detect_packer(p)
+    assert det.packer == "UPX"
+    assert det.suspected_packed is False
+
+
 # ------------------------------ unpacker_for -------------------------------
 
 

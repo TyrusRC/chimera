@@ -46,6 +46,11 @@ class Detection:
     signals: list[str] = field(default_factory=list)
     high_entropy_sections: int = 0
     suspicious_section_names: list[str] = field(default_factory=list)
+    #: Evidence says "packed", but nothing names *which* packer. Kept separate
+    #: from `packer` because that field drives `unpacker_for()` and must stay a
+    #: name we can actually act on — while an analyst still needs to know the
+    #: binary looks packed rather than reading `packer=(none)` as "it's clean".
+    suspected_packed: bool = False
 
 
 def detect_packer(binary_path: Path) -> Detection:
@@ -76,18 +81,23 @@ def detect_packer(binary_path: Path) -> Detection:
     high_entropy = _high_entropy_section_count(binary_path)
     if high_entropy:
         signals.append(f"high_entropy_sections={high_entropy}")
-    if packer is None and high_entropy >= 2:
-        # Two or more high-entropy executable sections is a strong tell
-        # for an unknown packer; flag it generically so the user can
-        # supply --packer manually if they recognise it.
-        packer = "unknown"
-        signals.append("high_entropy_unattributed")
+
+    structural = _pe_structural_anomalies(binary_path)
+    signals.extend(structural)
+
+    # Only claim "suspected" when we couldn't attribute a name — a named
+    # packer is already the stronger, actionable answer.
+    suspected = False
+    if packer is None and (high_entropy >= 2 or structural):
+        suspected = True
+        signals.append("packed_unattributed")
 
     return Detection(
-        packer=packer if packer != "unknown" else None,
+        packer=packer,
         signals=signals,
         high_entropy_sections=high_entropy,
         suspicious_section_names=suspicious_names,
+        suspected_packed=suspected,
     )
 
 
@@ -158,6 +168,56 @@ def _section_name_hint(path: Path) -> tuple[Optional[str], list[str]]:
     finally:
         pe.close()
     return None, suspicious
+
+
+def _pe_structural_anomalies(path: Path) -> list[str]:
+    """PE section-table shapes that imply a runtime unpacking stub.
+
+    These catch packers the YARA pack and the name table both miss (renamed
+    stubs, bespoke protectors), because they key on what a packer must *do*
+    rather than what it is called:
+
+    * an executable section with no bytes on disk has to be written at
+      runtime — there is nothing else it could be;
+    * a virtual size far exceeding the raw size means the same thing, with
+      the stub decompressing into the slack;
+    * duplicate section names come from stubs appending sections rather
+      than from any normal linker.
+
+    Deliberately *not* included: high-entropy resources. Compressed icons
+    and images make that fire constantly on clean binaries.
+    """
+    anomalies: list[str] = []
+    try:
+        import pefile
+    except ImportError:
+        return anomalies
+    if not _looks_like_pe(path):
+        return anomalies
+    try:
+        pe = pefile.PE(str(path), fast_load=True)
+    except Exception:
+        return anomalies
+    try:
+        IMAGE_SCN_MEM_EXECUTE = 0x20000000
+        names: list[str] = []
+        for sec in pe.sections:
+            name = sec.Name.decode(errors="replace").rstrip("\x00")
+            names.append(name)
+            executable = bool(sec.Characteristics & IMAGE_SCN_MEM_EXECUTE)
+            if executable and sec.SizeOfRawData == 0 and sec.Misc_VirtualSize > 0:
+                anomalies.append(f"zero_raw_exec_section:{name or '<unnamed>'}")
+            elif (sec.SizeOfRawData > 0
+                  and sec.Misc_VirtualSize > 4 * sec.SizeOfRawData):
+                anomalies.append(f"virtual_size_exceeds_raw:{name or '<unnamed>'}")
+        dupes = {n for n in names if n and names.count(n) > 1}
+        if dupes:
+            anomalies.append(f"duplicate_section_names:{','.join(sorted(dupes))}")
+    except Exception:
+        return anomalies
+    finally:
+        pe.close()
+    return anomalies
 
 
 def _high_entropy_section_count(path: Path) -> int:

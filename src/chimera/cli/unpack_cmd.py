@@ -51,6 +51,13 @@ def unpack(binary: str, packer_override: str | None, out_path: str | None,
     click.echo(f"[chimera] detection: packer={detection.packer or '(none)'} "
                f"entropy_sections={detection.high_entropy_sections} "
                f"signals={','.join(detection.signals) or '-'}")
+    if detection.suspected_packed:
+        # Without this the analyst reads "packer=(none)" as "not packed",
+        # when we in fact have structural evidence it is.
+        click.echo("[chimera] SUSPECTED PACKED (unattributed) — evidence above; "
+                   "no signature matched, so no automated unpacker applies.")
+        click.echo("[chimera] (identify it manually, then re-run with "
+                   "--packer NAME)")
 
     if detect_only:
         return
