@@ -17,13 +17,16 @@ import shutil
 from pathlib import Path
 
 from chimera.adapters.base import BackendAdapter, ResourceRequirement, ToolCategory
+from chimera.dotnet.toolpath import find_dotnet_tool
 
 logger = logging.getLogger(__name__)
 
 
 class IlspyAdapter(BackendAdapter):
     def __init__(self):
-        self._ilspy_bin = shutil.which("ilspycmd")
+        # ilspycmd installs to ~/.dotnet/tools, which is not on the default
+        # PATH — so a launched MCP server would otherwise never find it.
+        self._ilspy_bin = find_dotnet_tool("ilspycmd")
 
     def name(self) -> str:
         return "ilspy"
