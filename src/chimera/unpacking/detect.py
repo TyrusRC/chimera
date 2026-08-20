@@ -85,16 +85,9 @@ def detect_packer(binary_path: Path) -> Detection:
     structural = _pe_structural_anomalies(binary_path)
     signals.extend(structural)
 
-    # How many high-entropy executable regions it takes to mean something
-    # depends on the format's own shape. A PE routinely carries several
-    # executable sections, so two keeps the signal conservative — and the
-    # structural section checks above cover PE anyway. An ELF has exactly
-    # one executable PT_LOAD (0 of 1010 real ELF objects measured had two),
-    # so the same threshold was unreachable and this whole path was dead on
-    # ELF: a UPX-packed binary with its identifiers blanked — still running,
-    # and so past the YARA rule — reported "not packed" while carrying a
-    # 74 KB segment at entropy 7.89. Across 1432 clean ELFs no executable
-    # segment exceeded 6.65, so on ELF a single one over 7.0 is decisive.
+    # A PE carries several executable sections, so two keeps the signal
+    # conservative there; an ELF has exactly one executable PT_LOAD, where
+    # the same threshold could never be met and this path was dead.
     entropy_threshold = 1 if _looks_like_elf(binary_path) else 2
 
     # Only claim "suspected" when we couldn't attribute a name — a named
@@ -185,29 +178,17 @@ def _section_name_hint(path: Path) -> tuple[Optional[str], list[str]]:
 def _pe_structural_anomalies(path: Path) -> list[str]:
     """PE section-table shapes that imply a runtime unpacking stub.
 
-    Catches packers the YARA pack and the name table both miss (renamed
-    stubs, bespoke protectors) by keying on what a packer must *do* rather
-    than what it is called: ship a section with no bytes on disk, to be
-    filled at runtime, alongside the compressed payload.
+    Keys on what a packer must do rather than what it is called: ship a
+    section with no bytes on disk, to be filled at runtime, alongside the
+    compressed payload. Both halves are required.
 
-    Both halves are required, and nothing is gated on section
-    characteristics. That matters — packers routinely mark every section
-    CNT_INITIALIZED_DATA|R|W (0xC0000040), setting neither CNT_CODE nor
-    MEM_EXECUTE, and three unmodified UPX-labeled corpus binaries reported
-    entirely clean while any characteristics-gated rule was in play.
+    Nothing is gated on section characteristics — packers routinely mark
+    every section CNT_INITIALIZED_DATA|R|W, setting neither CNT_CODE nor
+    MEM_EXECUTE.
 
-    Requiring both halves is also what keeps it precise. Measured against a
-    labeled corpus plus the distro's own PE set, these shapes were each
-    tried and rejected for firing on clean binaries:
-
-    * zero-raw section alone — MSVC /INCREMENTAL emits `.textbss` that way
-      on ordinary debug builds (two real DLLs on this machine);
-    * virtual-size-exceeds-raw — hand-written MASM rounds VirtualSize up to
-      SectionAlignment, so a 256-byte stub reads as 16x oversized at
-      entropy 2.27;
-    * high entropy alone — a managed .NET `.text` is legitimately over 7.0,
-      as are compressed icons in `.rsrc`;
-    * duplicate section names — 0 true positives against 2 false ones.
+    Each half alone was tried and rejected for firing on clean binaries:
+    zero-raw matches MSVC /INCREMENTAL `.textbss`, and high entropy alone
+    matches managed .NET `.text` and compressed resources.
     """
     anomalies: list[str] = []
     try:
@@ -243,11 +224,8 @@ def _pe_structural_anomalies(path: Path) -> list[str]:
     return anomalies
 
 
-# Shannon entropy over n bytes is bounded by log2(n), so a small buffer of
-# varied bytes scores near-maximum for free: 256 distinct bytes measure a
-# perfect 8.0. An ordinary jump or thunk table would therefore read as
-# "packed". Below this many bytes the estimate is sample noise, so we don't
-# count it either way.
+# Shannon entropy over n bytes is bounded by log2(n): 256 distinct bytes
+# measure a perfect 8.0, so a small jump table would read as packed.
 _MIN_ENTROPY_SAMPLE = 1024
 
 

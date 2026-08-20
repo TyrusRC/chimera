@@ -17,22 +17,15 @@ _ANTI_DEBUG_STRINGS = (
     "IsDebuggerPresent", "CheckRemoteDebuggerPresent",
     "NtQueryInformationProcess", "ZwQueryInformationProcess",
     "OutputDebugString",
-    # Linux. The unambiguous spellings are listed in their own right rather
-    # than left to a substring of "ptrace": `ptrace_scope` (the Yama knob a
-    # debugger check reads) and the PTRACE_* request constants would
-    # otherwise be indistinguishable from `httptrace`, which appears in
-    # every Go binary that speaks HTTP.
+    # Listed in their own right because a boundary guard on bare `ptrace`
+    # would reject them: an `_` continues the identifier.
     "PTRACE_TRACEME", "PTRACE_ATTACH", "ptrace_scope",
     "ptrace", "PT_TRACE_ME",
 )
 
-# The MSVC C runtime emits `IsDebuggerPresent` and `OutputDebugString` into
-# ordinary release builds (CRT init, __report_gsfailure), so finding them in
-# an import table is not by itself evidence of deliberate anti-debugging —
-# measured against a labeled crackme corpus, they alone produced every false
-# positive. The other indicators have no such benign origin. We still report
-# the hit (a missed protection costs an analyst more than a checked-and-
-# dismissed one) but grade it, so nobody reads boilerplate as a finding.
+# The MSVC C runtime emits these into ordinary release builds, so finding
+# them is not by itself evidence of deliberate anti-debugging. Reported, but
+# graded, so boilerplate is not read as a finding.
 _CRT_AMBIGUOUS_ANTI_DEBUG = frozenset({"IsDebuggerPresent", "OutputDebugString"})
 
 _ANTI_VM_STRINGS = (
@@ -124,22 +117,13 @@ def _indicator_iter(model) -> list[str]:
     return [*_string_iter(model), *_import_name_iter(model)]
 
 
-# Needles short or generic enough to appear inside unrelated identifiers.
-# These must match as a standalone token on both sides. Measured collisions
-# that motivated each, on real binaries from /usr/bin and /usr/sbin:
+# Needles short or generic enough to appear inside unrelated identifiers;
+# these must match as a standalone token on both sides. Observed collisions:
+# `ptrace` in `net/http/httptrace` and `sys_ptrace`; `VMware`/`QEMU` in CPUID
+# vendor tables; `CreateServiceA/W` in Kubernetes and Samba symbol names.
 #
-#   ptrace          `net/http/httptrace` (every Go binary with an HTTP
-#                   client), `ptraceback` in the Go runtime blob, and
-#                   `sys_ptrace` (a capability name, not a call)
-#   VMware / QEMU   `HvVMwareVMwareXenVMM` and `ACC_ENV_RUNNING_ON_QEMU`
-#                   — CPUID hypervisor-vendor tables, not VM detection
-#   CreateServiceA  `CreateServiceAccount` (a Kubernetes RBAC verb) and
-#   CreateServiceW  `ndr_print_svcctl_CreateServiceW` (Samba RPC stubs)
-#
-# The guard is opt-in per needle rather than global on purpose: several
-# Win32 needles are deliberate prefixes — `OutputDebugString` has to keep
-# matching the real `OutputDebugStringA`/`W` imports — so a blanket rule
-# would trade these false positives for false negatives.
+# Opt-in per needle because several Win32 needles are deliberate prefixes —
+# `OutputDebugString` must keep matching `OutputDebugStringA`/`W`.
 _BOUNDED_NEEDLES = frozenset({"ptrace", "QEMU", "VMware",
                               "CreateServiceA", "CreateServiceW"})
 
