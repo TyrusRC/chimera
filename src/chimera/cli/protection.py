@@ -50,6 +50,10 @@ async def _detect_protections(path: str, project_dir: str | None,
         # Augment with jadx-tree scan so the analyst gets file:line evidence
         # for each detected protection — not just yes/no booleans.
         cache = AnalysisCache(config.cache_dir)
+
+        native_profile = cache.get_json(model.binary.sha256, "native_protection") or {}
+        merge_native_profile(profile, native_profile)
+
         native_protections = cache.get_json(model.binary.sha256, "native_protections") or {}
         if native_protections.get("commercial_packer"):
             profile.commercial_packer = native_protections["commercial_packer"]
@@ -95,11 +99,29 @@ async def _detect_protections(path: str, project_dir: str | None,
                               hits_by_cat.get("anti_frida"))
         _emit_protection_line("Anti-debug:         ", profile.has_anti_debug,
                               hits_by_cat.get("anti_debug"))
+        if profile.has_anti_debug and native_profile.get("anti_debug_low_confidence"):
+            click.echo("      ↳ low confidence: only CRT-ambiguous indicators "
+                       "(IsDebuggerPresent / OutputDebugString) — the MSVC "
+                       "runtime imports these on its own")
         _emit_protection_line("SSL pinning:        ", profile.has_ssl_pinning,
                               hits_by_cat.get("ssl_pinning"))
         _emit_protection_line("Integrity checks:   ", profile.has_integrity_check,
                               hits_by_cat.get("integrity"))
         click.echo(f"  Packer:              {'YES (' + (profile.packer_name or '?') + ')' if profile.has_packer else 'no'}")
+        # Native-only signals — no field on the (mobile-shaped) profile, so
+        # they'd otherwise be invisible on a PE/ELF target.
+        native_extra = [
+            label for key, label in (
+                ("has_anti_vm", "anti-VM"),
+                ("has_self_inject", "self-injection"),
+                ("has_persistence_strings", "persistence"),
+            ) if native_profile.get(key)
+        ]
+        if native_extra:
+            click.echo(f"  Native signals:      {', '.join(native_extra)}")
+        if native_profile.get("high_entropy_section_count"):
+            click.echo("  High-entropy sects:  "
+                       f"{native_profile['high_entropy_section_count']}")
         if profile.commercial_packer:
             click.echo(f"  Commercial packer:   {profile.commercial_packer}")
         if profile.crypto_algorithms:
@@ -116,6 +138,34 @@ async def _detect_protections(path: str, project_dir: str | None,
     finally:
         await engine.cleanup()
 
+
+
+def merge_native_profile(profile, native_profile: dict) -> None:
+    """Fold a cached PE/ELF `native_detector` profile into a ProtectionProfile.
+
+    The PE/ELF pipelines cache their result under "native_protection"
+    (singular); Android caches an unrelated blob under "native_protections"
+    (plural). This command previously read only the plural key, so on a
+    native target every PE/ELF signal was dropped — a binary importing
+    IsDebuggerPresent still printed "Anti-debug: no", because the mobile
+    string detector never sees a PE import table.
+
+    Merges upward only: a protection already found by another source is
+    never cleared by a native profile that missed it.
+    """
+    if not native_profile:
+        return
+    if native_profile.get("has_anti_debug"):
+        profile.has_anti_debug = True
+    if native_profile.get("has_integrity_check"):
+        profile.has_integrity_check = True
+    if native_profile.get("packer"):
+        profile.has_packer = True
+        profile.packer_name = profile.packer_name or native_profile["packer"]
+    for technique in native_profile.get("obfuscation") or []:
+        if technique not in profile.obfuscation_techniques:
+            profile.obfuscation_techniques.append(technique)
+    profile.details.extend(native_profile.get("details") or [])
 
 
 def _emit_protection_line(label: str, present: bool, hits: list | None) -> None:

@@ -356,6 +356,7 @@ async def analyze_elf(
             cache.put_json(sha, "native_protection", {
                 "packer": profile.packer,
                 "has_anti_debug": profile.has_anti_debug,
+                "anti_debug_low_confidence": profile.anti_debug_low_confidence,
                 "has_anti_vm": profile.has_anti_vm,
                 "has_self_inject": profile.has_self_inject,
                 "has_persistence_strings": profile.has_persistence_strings,

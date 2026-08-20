@@ -21,6 +21,15 @@ _ANTI_DEBUG_STRINGS = (
     "ptrace", "PT_TRACE_ME",
 )
 
+# The MSVC C runtime emits `IsDebuggerPresent` and `OutputDebugString` into
+# ordinary release builds (CRT init, __report_gsfailure), so finding them in
+# an import table is not by itself evidence of deliberate anti-debugging —
+# measured against a labeled crackme corpus, they alone produced every false
+# positive. The other indicators have no such benign origin. We still report
+# the hit (a missed protection costs an analyst more than a checked-and-
+# dismissed one) but grade it, so nobody reads boilerplate as a finding.
+_CRT_AMBIGUOUS_ANTI_DEBUG = frozenset({"IsDebuggerPresent", "OutputDebugString"})
+
 _ANTI_VM_STRINGS = (
     "VBoxGuest", "VBoxService", "VirtualBox",
     "VMware", "vmtoolsd", "vmci",
@@ -72,6 +81,10 @@ class NativeProtectionProfile:
     syscall_buckets: dict[str, int] = field(default_factory=dict)
     details: list[str] = field(default_factory=list)
     high_entropy_section_count: int = 0
+    #: True when the only anti-debug evidence is an indicator the MSVC CRT
+    #: emits on its own. The finding still stands, but needs confirming that
+    #: the API is actually called from user code before it means anything.
+    anti_debug_low_confidence: bool = False
 
 
 def _string_iter(model) -> Iterable[str]:
@@ -82,6 +95,28 @@ def _string_iter(model) -> Iterable[str]:
             v = s.get("value")
             if v:
                 yield v
+
+
+def _import_name_iter(model) -> Iterable[str]:
+    """Imported symbol names, as plain strings.
+
+    Separate from `_string_iter` because these do not live in the string
+    table: on PE an import name sits in the import directory, so a
+    strings-only scan cannot see `IsDebuggerPresent` at all. (ELF happens
+    to work either way — its imported symbol names are in `.dynstr`, which
+    is literally strings — which is why this gap only ever showed on PE.)
+    """
+    for imp in getattr(model, "imports", None) or []:
+        name = getattr(imp, "name", None)
+        if not name and isinstance(imp, dict):
+            name = imp.get("name")
+        if name:
+            yield name
+
+
+def _indicator_iter(model) -> list[str]:
+    """Everything a protection indicator could hide in: strings + imports."""
+    return [*_string_iter(model), *_import_name_iter(model)]
 
 
 def _match_any(strings: Iterable[str], needles: Iterable[str]) -> tuple[bool, list[str]]:
@@ -119,12 +154,15 @@ def scan_pe(model, header) -> NativeProtectionProfile:
             profile.high_entropy_section_count += 1
             profile.details.append(f"high entropy {sec.entropy:.2f} in {sec.name}")
 
-    # String-based heuristics
-    strings = list(_string_iter(model))
+    # Indicator heuristics — strings *and* imported symbol names.
+    strings = _indicator_iter(model)
     found, hits = _match_any(strings, _ANTI_DEBUG_STRINGS)
     profile.has_anti_debug = found
     if hits:
-        profile.details.append(f"anti_debug strings: {', '.join(hits)}")
+        profile.anti_debug_low_confidence = set(hits) <= _CRT_AMBIGUOUS_ANTI_DEBUG
+        caveat = ("  (weak — the MSVC CRT emits these; confirm they are "
+                  "actually called)" if profile.anti_debug_low_confidence else "")
+        profile.details.append(f"anti_debug strings: {', '.join(hits)}{caveat}")
     found, hits = _match_any(strings, _ANTI_VM_STRINGS)
     profile.has_anti_vm = found
     if hits:
@@ -155,11 +193,14 @@ def scan_elf(model, header) -> NativeProtectionProfile:
     # ELF doesn't expose section entropy via pyelftools directly; skip
     # entropy here (pe_header has it; elf_header could add it later).
 
-    strings = list(_string_iter(model))
+    strings = _indicator_iter(model)
     found, hits = _match_any(strings, _ANTI_DEBUG_STRINGS)
     profile.has_anti_debug = found
     if hits:
-        profile.details.append(f"anti_debug strings: {', '.join(hits)}")
+        profile.anti_debug_low_confidence = set(hits) <= _CRT_AMBIGUOUS_ANTI_DEBUG
+        caveat = ("  (weak — the MSVC CRT emits these; confirm they are "
+                  "actually called)" if profile.anti_debug_low_confidence else "")
+        profile.details.append(f"anti_debug strings: {', '.join(hits)}{caveat}")
     found, hits = _match_any(strings, _ANTI_VM_STRINGS)
     profile.has_anti_vm = found
     if hits:

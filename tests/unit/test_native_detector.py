@@ -49,10 +49,17 @@ class _ELFHdr:
     sections: list
 
 
-def _model_with_strings(values: list[str]):
+def _model_with_strings(values: list[str], imports: Optional[list[str]] = None):
     m = MagicMock()
     m.get_strings.return_value = [_StringEntry(value=v) for v in values]
+    m.imports = [_ImportEntry(dll="kernel32.dll", name=n) for n in (imports or [])]
     return m
+
+
+@dataclass
+class _ImportEntry:
+    dll: str
+    name: str
 
 
 def test_scan_pe_clean_binary():
@@ -169,3 +176,79 @@ def test_scan_pe_combined_signals():
     assert p.high_entropy_section_count >= 1
     # Details should accumulate
     assert len(p.details) >= 5
+
+
+# ------------------------ import-table based detection ----------------------
+#
+# On PE, anti-debug is an *imports* question: `IsDebuggerPresent` lives in the
+# import directory, not in the string table, so a strings-only scan misses it
+# entirely. (ELF gets away with strings because imported symbol names sit in
+# .dynstr, which literally is strings — hence this gap only ever showed on PE.)
+
+
+def test_scan_pe_detects_anti_debug_from_import_table():
+    """The API is imported, not referenced as a string — must still be found."""
+    m = _model_with_strings(["totally benign"], imports=["IsDebuggerPresent"])
+    h = _PEHdr(sections=[_Section(name=".text")])
+    p = scan_pe(m, h)
+    assert p.has_anti_debug is True
+
+
+def test_scan_pe_detects_output_debug_string_import():
+    m = _model_with_strings([], imports=["OutputDebugStringA", "GetProcAddress"])
+    h = _PEHdr(sections=[_Section(name=".text")])
+    p = scan_pe(m, h)
+    assert p.has_anti_debug is True
+
+
+def test_scan_pe_detects_self_inject_from_import_table():
+    m = _model_with_strings([], imports=["WriteProcessMemory", "CreateRemoteThread"])
+    h = _PEHdr(sections=[_Section(name=".text")])
+    p = scan_pe(m, h)
+    assert p.has_self_inject is True
+
+
+def test_scan_pe_benign_imports_do_not_trigger():
+    """No false positives from an ordinary import table."""
+    m = _model_with_strings([], imports=["GetProcAddress", "LoadLibraryA", "printf"])
+    h = _PEHdr(sections=[_Section(name=".text")])
+    p = scan_pe(m, h)
+    assert p.has_anti_debug is False
+    assert p.has_self_inject is False
+    assert p.has_anti_vm is False
+
+
+def test_scan_elf_detects_anti_debug_from_import_table():
+    m = _model_with_strings([], imports=["ptrace"])
+    h = _ELFHdr(sections=[_ELFSection(name=".text")])
+    p = scan_elf(m, h)
+    assert p.has_anti_debug is True
+
+
+def test_crt_ambiguous_anti_debug_is_graded_low_confidence():
+    """IsDebuggerPresent alone is CRT boilerplate — flag it, but grade it."""
+    m = _model_with_strings([], imports=["IsDebuggerPresent"])
+    p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
+    assert p.has_anti_debug is True
+    assert p.anti_debug_low_confidence is True
+
+
+def test_unambiguous_anti_debug_is_full_confidence():
+    """NtQueryInformationProcess has no benign CRT origin."""
+    m = _model_with_strings([], imports=["NtQueryInformationProcess"])
+    p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
+    assert p.has_anti_debug is True
+    assert p.anti_debug_low_confidence is False
+
+
+def test_mixed_indicators_are_full_confidence():
+    m = _model_with_strings([], imports=["IsDebuggerPresent", "CheckRemoteDebuggerPresent"])
+    p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
+    assert p.anti_debug_low_confidence is False
+
+
+def test_no_anti_debug_leaves_confidence_flag_unset():
+    m = _model_with_strings([], imports=["GetProcAddress"])
+    p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
+    assert p.has_anti_debug is False
+    assert p.anti_debug_low_confidence is False
