@@ -118,6 +118,10 @@ def _detect_zip_format(path: Path) -> str:
             # Generic split APK bundle (e.g. .apks from SAI)
             if any(n.endswith(".apk") for n in names):
                 return "xapk"
+            # Checked last: every Android shape above gets first refusal,
+            # since an APK is also a zip carrying compiled JVM code.
+            if any(n.endswith(".class") for n in names):
+                return "jar"
     except zipfile.BadZipFile:
         pass
     return "unknown"
@@ -139,6 +143,8 @@ def detect_platform(path: Path) -> str:
         return "linux_native"
     if fmt in memory_formats:
         return "linux_memory"
+    if fmt == "jar":
+        return "jvm"
     if fmt == "elf":
         return "android"  # JNI library context
     return "unknown"

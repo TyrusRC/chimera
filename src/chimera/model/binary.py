@@ -33,6 +33,7 @@ class BinaryFormat(Enum):
     ELF_STANDALONE = "elf_standalone"
     MEMORY_LIME = "memory_lime"
     MEMORY_RAW = "memory_raw"
+    JAR = "jar"
 
     @property
     def is_mobile(self) -> bool:
@@ -74,6 +75,7 @@ class Platform(Enum):
     WINDOWS = "windows"
     LINUX_NATIVE = "linux_native"
     LINUX_MEMORY = "linux_memory"
+    JVM = "jvm"
     UNKNOWN = "unknown"
 
 
@@ -244,6 +246,10 @@ def _classify_zip(path: Path, suffix: str) -> BinaryFormat:
         if suffix == ".apkm":
             return BinaryFormat.APKM
         return BinaryFormat.XAPK
+    # Checked last: an APK is also a zip of .class-bearing dex, so every
+    # Android shape above must get first refusal.
+    if any(n.endswith(".class") for n in names):
+        return BinaryFormat.JAR
     # Empty or unknown ZIP: fall back to suffix
     return BinaryFormat.IPA if suffix == ".ipa" else BinaryFormat.APK
 
@@ -260,6 +266,8 @@ def _guess_platform(fmt: BinaryFormat) -> Platform:
         return Platform.IOS
     if fmt in windows:
         return Platform.WINDOWS
+    if fmt == BinaryFormat.JAR:
+        return Platform.JVM
     if fmt in linux:
         return Platform.LINUX_NATIVE
     if fmt in memory:

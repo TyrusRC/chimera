@@ -41,6 +41,7 @@ class UnsupportedFormatError(Exception):
         "MACHO/DYLIB/FAT        -> macho (standalone)",
         "PE32/PE64/DOTNET       -> windows",
         "ELF                    -> linux native",
+        "JAR                    -> jvm (jadx)",
         "MEMORY_LIME/RAW        -> memory forensics",
     )
 
@@ -120,6 +121,11 @@ class ChimeraEngine:
         elif platform == "linux_native":
             from chimera.pipelines.elf import analyze_elf
             return await analyze_elf(
+                path, self.config, self.registry, self.resource_mgr, self.cache,
+            )
+        elif platform == "jvm":
+            from chimera.pipelines.jvm import analyze_jar
+            return await analyze_jar(
                 path, self.config, self.registry, self.resource_mgr, self.cache,
             )
         elif platform == "linux_memory":

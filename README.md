@@ -366,18 +366,20 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    Input[PE / ELF / Mach-O / .NET / APK / IPA] --> Detect{detect_platform}
+    Input[PE / ELF / Mach-O / .NET / APK / IPA / JAR] --> Detect{detect_platform}
     Detect -->|pe| PE[pe pipeline]
     Detect -->|elf| ELF[elf pipeline]
     Detect -->|macho| MO[mach-o pipeline]
     Detect -->|android| UnpackA[unpack_apk]
     Detect -->|ios| UnpackI[unpack_ipa]
+    Detect -->|jvm| JAR[jar pipeline]
 
     PE --> Sigs["Signature match<br/>(FLIRT-equivalent)"]
     ELF --> Sigs
     MO --> Triage
     UnpackA --> Framework[FrameworkDetector]
     UnpackI --> Framework
+    JAR --> Decompile
     Framework --> Triage["Triage<br/>radare2 + symbols"]
     Sigs --> Triage
     Triage --> Decompile["Decompile<br/>r2 · Ghidra · jadx · class-dump"]
