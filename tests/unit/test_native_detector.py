@@ -265,7 +265,7 @@ def test_ptrace_does_not_match_inside_traceback():
 
 
 def test_ptrace_still_matches_as_a_real_symbol():
-    for value in ("ptrace", "ptrace(PTRACE_TRACEME)", "sys_ptrace", "libc ptrace failed"):
+    for value in ("ptrace", "ptrace(PTRACE_TRACEME)", "libc ptrace failed"):
         m = _model_with_strings([value])
         p = scan_elf(m, _ELFHdr(sections=[_ELFSection(name=".text")]))
         assert p.has_anti_debug is True, value
@@ -277,3 +277,56 @@ def test_output_debug_string_still_matches_its_a_and_w_variants():
         m = _model_with_strings([], imports=[value])
         p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
         assert p.has_anti_debug is True, value
+
+
+def test_go_http_binaries_are_not_flagged_anti_debug():
+    """`net/http/httptrace` is in every Go binary that speaks HTTP.
+
+    A right-side-only boundary check let this satisfy `ptrace`; the guard
+    has to hold on both sides.
+    """
+    for value in ("net/http/httptrace", "httptrace.ClientTrace",
+                  "sys_ptrace"):  # capability name, not a call
+        m = _model_with_strings([value])
+        p = scan_elf(m, _ELFHdr(sections=[_ELFSection(name=".text")]))
+        assert p.has_anti_debug is False, value
+
+
+def test_yama_ptrace_scope_is_detected():
+    """The Yama knob a debugger check reads — a real indicator, not noise.
+
+    A boundary guard on bare `ptrace` rejects `ptrace_scope` (an `_`
+    continues the identifier), so it is listed as a needle in its own right.
+    """
+    m = _model_with_strings(["/proc/sys/kernel/yama/ptrace_scope"])
+    p = scan_elf(m, _ELFHdr(sections=[_ELFSection(name=".text")]))
+    assert p.has_anti_debug is True
+
+
+def test_ptrace_request_constants_are_detected():
+    for value in ("PTRACE_TRACEME", "PTRACE_ATTACH"):
+        m = _model_with_strings([value])
+        p = scan_elf(m, _ELFHdr(sections=[_ELFSection(name=".text")]))
+        assert p.has_anti_debug is True, value
+
+
+def test_hypervisor_vendor_tables_are_not_anti_vm():
+    """CPUID vendor-signature blobs are data, not VM detection logic."""
+    for value in ("HvVMwareVMwareXenVMMXenVMM", "ACC_ENV_RUNNING_ON_QEMU"):
+        m = _model_with_strings([value])
+        p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
+        assert p.has_anti_vm is False, value
+
+
+def test_real_vm_vendor_strings_still_match():
+    for value in ("VMware, Inc.", "QEMU Virtual CPU"):
+        m = _model_with_strings([value])
+        p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
+        assert p.has_anti_vm is True, value
+
+
+def test_samba_rpc_stubs_are_not_persistence():
+    for value in ("ndr_print_svcctl_CreateServiceW", "CreateServiceAccount"):
+        m = _model_with_strings([value])
+        p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
+        assert p.has_persistence_strings is False, value

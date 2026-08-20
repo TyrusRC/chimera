@@ -17,7 +17,12 @@ _ANTI_DEBUG_STRINGS = (
     "IsDebuggerPresent", "CheckRemoteDebuggerPresent",
     "NtQueryInformationProcess", "ZwQueryInformationProcess",
     "OutputDebugString",
-    # Linux
+    # Linux. The unambiguous spellings are listed in their own right rather
+    # than left to a substring of "ptrace": `ptrace_scope` (the Yama knob a
+    # debugger check reads) and the PTRACE_* request constants would
+    # otherwise be indistinguishable from `httptrace`, which appears in
+    # every Go binary that speaks HTTP.
+    "PTRACE_TRACEME", "PTRACE_ATTACH", "ptrace_scope",
     "ptrace", "PT_TRACE_ME",
 )
 
@@ -119,16 +124,24 @@ def _indicator_iter(model) -> list[str]:
     return [*_string_iter(model), *_import_name_iter(model)]
 
 
-# Needles short and generic enough to appear inside unrelated words. These
-# require the match not to continue into another identifier: `ptrace` was
-# firing on Go's runtime string blob ("stopm holding ptraceback stuck"),
-# i.e. "p" + "traceback", flagging every Go binary as anti-debug.
+# Needles short or generic enough to appear inside unrelated identifiers.
+# These must match as a standalone token on both sides. Measured collisions
+# that motivated each, on real binaries from /usr/bin and /usr/sbin:
 #
-# The guard is opt-in per needle rather than global on purpose: most Win32
-# needles are deliberate prefixes — `OutputDebugString` has to keep matching
-# the real `OutputDebugStringA`/`W` imports — so a blanket boundary rule
-# would trade this false positive for several false negatives.
-_BOUNDED_NEEDLES = frozenset({"ptrace"})
+#   ptrace          `net/http/httptrace` (every Go binary with an HTTP
+#                   client), `ptraceback` in the Go runtime blob, and
+#                   `sys_ptrace` (a capability name, not a call)
+#   VMware / QEMU   `HvVMwareVMwareXenVMM` and `ACC_ENV_RUNNING_ON_QEMU`
+#                   — CPUID hypervisor-vendor tables, not VM detection
+#   CreateServiceA  `CreateServiceAccount` (a Kubernetes RBAC verb) and
+#   CreateServiceW  `ndr_print_svcctl_CreateServiceW` (Samba RPC stubs)
+#
+# The guard is opt-in per needle rather than global on purpose: several
+# Win32 needles are deliberate prefixes — `OutputDebugString` has to keep
+# matching the real `OutputDebugStringA`/`W` imports — so a blanket rule
+# would trade these false positives for false negatives.
+_BOUNDED_NEEDLES = frozenset({"ptrace", "QEMU", "VMware",
+                              "CreateServiceA", "CreateServiceW"})
 
 _IDENT_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
@@ -136,6 +149,13 @@ _IDENT_CHARS = frozenset(
 
 
 def _contains(haystack: str, needle: str) -> bool:
+    """Substring test, with an identifier-boundary guard for short needles.
+
+    The guard is *bidirectional*. A right-side-only check still let
+    `httptrace` — present in every Go binary that speaks HTTP — satisfy
+    `ptrace`, and `sys_ptrace` (the Linux capability name, not a call)
+    do the same from the left.
+    """
     if needle not in _BOUNDED_NEEDLES:
         return needle in haystack
     start = 0
@@ -144,7 +164,9 @@ def _contains(haystack: str, needle: str) -> bool:
         if i == -1:
             return False
         end = i + len(needle)
-        if end >= len(haystack) or haystack[end] not in _IDENT_CHARS:
+        left_ok = i == 0 or haystack[i - 1] not in _IDENT_CHARS
+        right_ok = end >= len(haystack) or haystack[end] not in _IDENT_CHARS
+        if left_ok and right_ok:
             return True
         start = i + 1
 
