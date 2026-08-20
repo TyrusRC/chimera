@@ -16,24 +16,33 @@ logger = logging.getLogger(__name__)
 @main.command("dotnet-trace")
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--method", "methods", multiple=True, required=True,
-              help="Method name to hook (repeatable). Hook the inner "
-                   "comparator/key-builder, not the outer validator — "
-                   "hooking the entry validator perturbs the code path.")
-@click.option("--input", "stdin_line", default="",
-              help="Line fed to the assembly's stdin (e.g. a candidate key).")
+              help="Method to hook (repeatable). A bare name hooks that "
+                   "method in the target; TYPE::NAME (e.g. "
+                   "System.String::op_Equality) hooks a BCL method. Hook the "
+                   "inner comparator / VM memory primitive, not the outer "
+                   "validator — hooking the entry validator perturbs the path.")
+@click.option("--input", "inputs", multiple=True,
+              help="A line fed to the assembly's stdin (repeatable, in order) "
+                   "— use one per menu step to drive a menu-loop program to "
+                   "its key prompt.")
+@click.option("--neutralize-pinvoke", is_flag=True,
+              help="Stub kernel32/ntdll so a Windows-only binary runs on "
+                   "Linux; this also blanks its anti-debug imports "
+                   "(CheckRemoteDebuggerPresent, NtQueryInformationProcess).")
 @click.option("--work-dir", type=click.Path(), default=None,
               help="Working directory (default: a temp dir).")
 @click.option("--timeout", type=int, default=180)
-def dotnet_trace(path: str, methods: tuple[str, ...], stdin_line: str,
-                 work_dir: str | None, timeout: int):
+def dotnet_trace(path: str, methods: tuple[str, ...], inputs: tuple[str, ...],
+                 neutralize_pinvoke: bool, work_dir: str | None, timeout: int):
     """Run a Windows .NET assembly on Linux and trace named methods.
 
     Runs the assembly under the installed .NET Core runtime via a
     runtimeconfig shim, installs Harmony hooks on the requested methods, and
-    reports every byte[]/string they receive or return. Because Harmony
-    detours JIT'd native code rather than on-disk IL, this sees through the
-    VM-protection / anti-tamper layers that defeat static devirtualization —
-    a hooked comparator hands you the value it is comparing against.
+    reports the byte[]/string values they see plus any int/char stream they
+    move. Because Harmony detours JIT'd native code rather than on-disk IL,
+    this sees through VM-protection / anti-tamper layers that defeat static
+    devirtualization — a hooked comparator (or a VM memory-read primitive)
+    hands you the value it is checking against.
     """
     from chimera.dotnet.tracer import trace, dotnet_available
 
@@ -44,22 +53,25 @@ def dotnet_trace(path: str, methods: tuple[str, ...], stdin_line: str,
             "on first run.")
 
     wd = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="chimera_dotnet_"))
-    result = trace(Path(path), list(methods), stdin_line=stdin_line,
+    result = trace(Path(path), list(methods),
+                   stdin_lines=list(inputs) if inputs else None,
+                   neutralize_pinvoke=neutralize_pinvoke,
                    work_dir=wd, timeout=timeout)
 
     if not result.available:
         raise click.ClickException(result.error or "tracer unavailable")
 
     click.echo(f"Traced {Path(path).name}  "
-               f"(input={stdin_line!r}, hooks={result.hooks_installed})")
+               f"(inputs={list(inputs)}, hooks={result.hooks_installed})")
     if result.error:
         click.echo(f"  note: {result.error}")
 
     byte_vals = result.byte_values()
     strings = result.strings_seen()
-    if not byte_vals and not strings:
-        click.echo("  no byte[]/string values captured — check the method "
-                   "names, or the code path may not have reached them.")
+    streams = result.numeric_streams()
+    if not byte_vals and not strings and not streams:
+        click.echo("  no values captured — check the method names, or the "
+                   "code path may not have reached them.")
         return
 
     if byte_vals:
@@ -72,3 +84,12 @@ def dotnet_trace(path: str, methods: tuple[str, ...], stdin_line: str,
         click.echo("\n  string values:")
         for method, value in strings:
             click.echo(f"    {method}: {value!r}")
+    if streams:
+        click.echo("\n  int/char streams (a VM moves the bytes it compares "
+                   "through here — read the ASCII for the target):")
+        for method, chans in streams.items():
+            for chan in ("return", "args"):
+                values = chans.get(chan) or []
+                if values:
+                    click.echo(f"    {method} [{chan}]: "
+                               f"{result.reconstruct_ascii(values)!r}")

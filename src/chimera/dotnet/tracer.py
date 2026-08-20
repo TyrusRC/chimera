@@ -63,6 +63,49 @@ class TraceResult:
                     out.append((c.get("method", "?"), val.get("value", "")))
         return out
 
+    def numeric_streams(self) -> dict[str, dict[str, list[int]]]:
+        """Per-method int/char values, split into ``return`` and ``args``.
+
+        A bytecode VM shuffles the bytes it compares through memory
+        read/write primitives; hooking one and reading this stream is what
+        recovers a key the VM never materializes as a managed string. The
+        return channel is usually the clean one — a memory-read primitive
+        returns one key byte per call, while its args carry loop constants —
+        so the two are kept apart rather than interleaved.
+        """
+        out: dict[str, dict[str, list[int]]] = {}
+
+        def _num(val):
+            if not isinstance(val, dict):
+                return None
+            if val.get("type") == "int":
+                return int(val.get("value", 0))
+            if val.get("type") == "char":
+                return int(val.get("code", 0))
+            return None
+
+        for c in self.calls:
+            method = c.get("method", "?")
+            slot = out.setdefault(method, {"return": [], "args": []})
+            rv = _num(c.get("result"))
+            if rv is not None:
+                slot["return"].append(rv)
+            for a in c.get("args", []):
+                av = _num(a)
+                if av is not None:
+                    slot["args"].append(av)
+        return out
+
+    @staticmethod
+    def reconstruct_ascii(values: list[int]) -> str:
+        """Render an int stream as printable ASCII, non-printables as '.'.
+
+        The stream often interleaves a marker with each real byte (e.g.
+        0, 'N', 'N'); the dots make that structure legible rather than
+        hiding it, so the analyst reads the key straight off the line.
+        """
+        return "".join(chr(v) if 32 <= v < 127 else "." for v in values)
+
 
 def dotnet_available() -> bool:
     return shutil.which("dotnet") is not None
@@ -104,6 +147,36 @@ def _neutralize_harness_exec_stack(build_dir: Path) -> int:
     return patched
 
 
+def build_win32_stub(work_dir: Path) -> Path | None:
+    """Compile the Win32 stub shared library into `work_dir`.
+
+    A Windows .NET binary calls kernel32/ntdll, absent on Linux; the stub
+    exports those entry points as benign no-ops so the process runs to its
+    key check. Returns the .so path, or None if no C compiler is available
+    (in which case P/Invoke neutralization is simply unavailable).
+    """
+    src = _HARNESS_SRC / "win32_stub.c"
+    if not src.exists():
+        return None
+    out = work_dir / "chimera_win32_stub.so"
+    cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if cc is None:
+        logger.warning("no C compiler found; cannot build Win32 stub")
+        return None
+    try:
+        proc = subprocess.run(
+            [cc, "-shared", "-fPIC", "-o", str(out), str(src)],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("Win32 stub build failed to start: %s", exc)
+        return None
+    if proc.returncode != 0:
+        logger.warning("Win32 stub build failed: %s", proc.stderr[-500:])
+        return None
+    return out if out.exists() else None
+
+
 def build_harness(work_dir: Path) -> Path | None:
     """Build the tracer harness into `work_dir`; return the built dll path."""
     if not dotnet_available():
@@ -132,12 +205,24 @@ def build_harness(work_dir: Path) -> Path | None:
 
 
 def trace(assembly: Path, methods: list[str], *, stdin_line: str = "",
+          stdin_lines: list[str] | None = None, neutralize_pinvoke: bool = False,
           work_dir: Path, timeout: int = 180) -> TraceResult:
     """Trace `methods` in `assembly`, driving its entry point once.
+
+    `stdin_lines` supplies a menu-navigation script (one Console.ReadLine
+    per element); it takes precedence over the single `stdin_line`.
+    `neutralize_pinvoke` installs the Win32 stub so a Windows-only binary
+    runs on Linux and its anti-debug imports read as clean — equivalent to
+    passing the "@neutralize-pinvoke" spec in `methods`.
 
     Returns a TraceResult; `available=False` if the .NET SDK/runtime is
     missing or the harness could not be built.
     """
+    if stdin_lines is not None:
+        stdin_line = "\n".join(stdin_lines)
+    methods = list(methods)
+    if neutralize_pinvoke and "@neutralize-pinvoke" not in methods:
+        methods = ["@neutralize-pinvoke", *methods]
     assembly = Path(assembly)
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -157,13 +242,19 @@ def trace(assembly: Path, methods: list[str], *, stdin_line: str = "",
     (work_dir / (assembly.stem + ".runtimeconfig.json")).write_text(
         build_runtimeconfig(runtime))
 
+    env = _dotnet_env()
+    if any(m == "@neutralize-pinvoke" for m in methods):
+        stub = build_win32_stub(work_dir)
+        if stub is not None:
+            env["CHIMERA_WIN32_STUB"] = str(stub)
+
     trace_out = work_dir / "trace.jsonl"
     try:
         subprocess.run(
             ["dotnet", str(harness), str(target), str(trace_out),
              stdin_line, *methods],
             capture_output=True, text=True, timeout=timeout,
-            env=_dotnet_env(),
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return TraceResult(available=True, error="trace timed out")
