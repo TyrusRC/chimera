@@ -185,24 +185,29 @@ def _section_name_hint(path: Path) -> tuple[Optional[str], list[str]]:
 def _pe_structural_anomalies(path: Path) -> list[str]:
     """PE section-table shapes that imply a runtime unpacking stub.
 
-    These catch packers the YARA pack and the name table both miss (renamed
-    stubs, bespoke protectors), because they key on what a packer must *do*
-    rather than what it is called:
+    Catches packers the YARA pack and the name table both miss (renamed
+    stubs, bespoke protectors) by keying on what a packer must *do* rather
+    than what it is called: ship a section with no bytes on disk, to be
+    filled at runtime, alongside the compressed payload.
 
-    * an executable section with no bytes on disk has to be written at
-      runtime — there is nothing else it could be;
-    * a *code* section whose virtual size far exceeds its raw size means
-      the same thing, with the stub decompressing into the slack.
+    Both halves are required, and nothing is gated on section
+    characteristics. That matters — packers routinely mark every section
+    CNT_INITIALIZED_DATA|R|W (0xC0000040), setting neither CNT_CODE nor
+    MEM_EXECUTE, and three unmodified UPX-labeled corpus binaries reported
+    entirely clean while any characteristics-gated rule was in play.
 
-    Deliberately *not* included, each having been measured against a
-    labeled corpus and rejected:
+    Requiring both halves is also what keeps it precise. Measured against a
+    labeled corpus plus the distro's own PE set, these shapes were each
+    tried and rejected for firing on clean binaries:
 
-    * high-entropy resources — compressed icons fire constantly on clean
-      binaries;
-    * duplicate section names — scored 0 true positives against 2 false
-      positives (real linkers do emit repeated `.idata`/custom sections),
-      so it was pure noise;
-    * virtual-size-exceeds-raw on *data* sections — that is just BSS.
+    * zero-raw section alone — MSVC /INCREMENTAL emits `.textbss` that way
+      on ordinary debug builds (two real DLLs on this machine);
+    * virtual-size-exceeds-raw — hand-written MASM rounds VirtualSize up to
+      SectionAlignment, so a 256-byte stub reads as 16x oversized at
+      entropy 2.27;
+    * high entropy alone — a managed .NET `.text` is legitimately over 7.0,
+      as are compressed icons in `.rsrc`;
+    * duplicate section names — 0 true positives against 2 false ones.
     """
     anomalies: list[str] = []
     try:
@@ -216,32 +221,21 @@ def _pe_structural_anomalies(path: Path) -> list[str]:
     except Exception:
         return anomalies
     try:
-        IMAGE_SCN_CNT_CODE = 0x00000020
-        IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080
-        IMAGE_SCN_MEM_EXECUTE = 0x20000000
+        zero_raw_names: list[str] = []
+        max_entropy = 0.0
         for sec in pe.sections:
             name = sec.Name.decode(errors="replace").rstrip("\x00")
-            # A section the file itself declares as *code* while shipping no
-            # bytes on disk is a contradiction — something must write it at
-            # runtime. Executable-but-uninitialized is NOT a contradiction
-            # (that is a .bss-like region a linker may legitimately mark
-            # executable), and on a labeled corpus it was the sole source of
-            # false positives, so it is excluded.
-            declares_code = bool(sec.Characteristics & IMAGE_SCN_CNT_CODE) or (
-                bool(sec.Characteristics & IMAGE_SCN_MEM_EXECUTE)
-                and not sec.Characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA
+            if sec.SizeOfRawData == 0 and sec.Misc_VirtualSize > 0:
+                zero_raw_names.append(name or "<unnamed>")
+            data = sec.get_data()
+            if len(data) >= _MIN_ENTROPY_SAMPLE:
+                max_entropy = max(max_entropy, _entropy(data))
+
+        if zero_raw_names and max_entropy > 7.0:
+            anomalies.append(
+                f"zero_raw_beside_high_entropy:{zero_raw_names[0]}"
+                f"@{max_entropy:.2f}"
             )
-            if declares_code and sec.SizeOfRawData == 0 and sec.Misc_VirtualSize > 0:
-                anomalies.append(f"zero_raw_exec_section:{name or '<unnamed>'}")
-            elif (declares_code
-                  and sec.SizeOfRawData > 0
-                  and sec.Misc_VirtualSize > 4 * sec.SizeOfRawData):
-                # Code only. A *data* section routinely has a virtual size far
-                # past its raw size — that is how PE carries BSS, with the
-                # uninitialized tail merged into .data — and on a labeled
-                # corpus applying this to any section dropped precision to
-                # 0.56, every false positive being .data/.idata/.reloc.
-                anomalies.append(f"virtual_size_exceeds_raw:{name or '<unnamed>'}")
     except Exception:
         return anomalies
     finally:

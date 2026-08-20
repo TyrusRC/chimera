@@ -157,27 +157,34 @@ EXEC_SEC = 0x60000020  # CNT_CODE | MEM_EXECUTE | MEM_READ
 DATA_SEC = 0x40000040  # CNT_INITIALIZED_DATA | MEM_READ
 
 
-def test_detect_flags_executable_section_with_no_raw_bytes(tmp_path):
-    """An executable section with 0 bytes on disk must be filled at runtime."""
-    p = tmp_path / "packed.exe"
+def test_zero_raw_alone_does_not_flag(tmp_path):
+    """MSVC /INCREMENTAL emits a zero-raw `.textbss` on debug builds.
+
+    Two real DLLs shipped with this distro fire this shape; without the
+    high-entropy half they are ordinary debug binaries, not packed.
+    """
+    p = tmp_path / "debugbuild.exe"
     p.write_bytes(_build_pe([
-        ("CODE", 0x15000, 0, EXEC_SEC),   # allocated but empty on disk
+        (".textbss", 0x15000, 0, EXEC_SEC),
         (".rsrc", 0x200, 0x200, DATA_SEC),
     ]))
     det = detect_packer(p)
-    assert det.suspected_packed is True
-    assert any("zero_raw_exec_section" in s for s in det.signals)
+    assert det.suspected_packed is False
 
 
-def test_detect_flags_virtual_size_far_exceeding_raw(tmp_path):
-    p = tmp_path / "packed2.exe"
+def test_virtual_size_exceeding_raw_alone_does_not_flag(tmp_path):
+    """Hand-written MASM rounds VirtualSize up to SectionAlignment.
+
+    A 256-byte entry stub then reads as 16x oversized at entropy 2.27 —
+    a real corpus false positive before this rule was dropped.
+    """
+    p = tmp_path / "masm.exe"
     p.write_bytes(_build_pe([
-        (".text", 0x8000, 0x200, EXEC_SEC),  # 64x larger in memory
+        (".text", 0x8000, 0x200, EXEC_SEC),
         (".data", 0x200, 0x200, DATA_SEC),
     ]))
     det = detect_packer(p)
-    assert det.suspected_packed is True
-    assert any("virtual_size_exceeds_raw" in s for s in det.signals)
+    assert det.suspected_packed is False
 
 
 def test_data_section_bss_tail_is_not_flagged(tmp_path):
@@ -310,8 +317,8 @@ def test_upx_unpacker_raises_when_tool_missing(tmp_path, monkeypatch):
 def test_executable_bss_is_not_flagged(tmp_path):
     """Executable-but-uninitialized is a .bss-like region, not a packed stub.
 
-    Measured against the labeled corpus this shape was the only source of
-    false positives for the zero-raw signal.
+    Kept as a guard even though detection no longer reads characteristics
+    at all: without a high-entropy sibling this must stay quiet.
     """
     CNT_UNINIT = 0x00000080
     p = tmp_path / "execbss.exe"
@@ -322,20 +329,6 @@ def test_executable_bss_is_not_flagged(tmp_path):
     ]))
     det = detect_packer(p)
     assert det.suspected_packed is False
-
-
-def test_zero_raw_code_section_without_execute_bit_is_flagged(tmp_path):
-    """Packers do emit zero-raw CNT_CODE sections that lack MEM_EXECUTE."""
-    CNT_CODE = 0x00000020
-    p = tmp_path / "packed3.exe"
-    p.write_bytes(_build_pe([
-        # read|write|code, zero raw — seen verbatim on a packed corpus sample
-        ("sect_0", 0x10000, 0, 0xC0000000 | CNT_CODE),
-        (".rsrc", 0x200, 0x200, DATA_SEC),
-    ]))
-    det = detect_packer(p)
-    assert det.suspected_packed is True
-    assert any("zero_raw_exec_section" in s for s in det.signals)
 
 
 def test_tiny_high_entropy_section_is_not_counted(tmp_path):
@@ -399,3 +392,65 @@ def test_clean_elf_with_ordinary_entropy_is_not_flagged(tmp_path, monkeypatch):
     monkeypatch.setattr(D, "_high_entropy_section_count", lambda path: 0)
     monkeypatch.setattr(D, "_yara_detect", lambda path: None)
     assert D.detect_packer(p).suspected_packed is False
+
+
+# ---- characteristics-independent packer shape ----
+#
+# Real packers frequently mark every section CNT_INITIALIZED_DATA|R|W
+# (0xC0000040) — neither CNT_CODE nor MEM_EXECUTE — which defeats every
+# characteristics-gated check. Three unmodified UPX-labeled corpus binaries
+# reported entirely clean for this reason. What a packer cannot hide is the
+# shape: a section with no bytes on disk, to be filled at runtime, sitting
+# beside the compressed payload. Both halves are required, which is what
+# keeps it clean: an MSVC /INCREMENTAL `.textbss` is zero-raw too, but has
+# no high-entropy sibling.
+
+def _rand_section_pe(sections, payload_index, payload_len=4096):
+    """Build a PE whose section at `payload_index` holds random bytes."""
+    import os as _os
+    raw = bytearray(_build_pe(sections))
+    raw.extend(b"\x00" * 0x8000)
+    off = 0x400
+    for i, (_n, _v, rs, _c) in enumerate(sections):
+        if i == payload_index:
+            raw[off:off + payload_len] = _os.urandom(payload_len)
+            break
+        off += rs
+    return bytes(raw)
+
+
+DATA_RW = 0xC0000040  # CNT_INITIALIZED_DATA | READ | WRITE — no CODE, no EXEC
+
+
+def test_zero_raw_beside_high_entropy_is_flagged(tmp_path):
+    """The real packer shape, with characteristics that defeat every gate."""
+    p = tmp_path / "packed.exe"
+    p.write_bytes(_rand_section_pe([
+        ("code", 24576, 0, DATA_RW),      # nothing on disk
+        ("text", 4096, 4096, DATA_RW),    # the payload
+    ], payload_index=1, payload_len=4096))
+    det = detect_packer(p)
+    assert det.suspected_packed is True
+    assert any("zero_raw_beside_high_entropy" in s for s in det.signals)
+
+
+def test_zero_raw_without_high_entropy_is_not_flagged(tmp_path):
+    """MSVC /INCREMENTAL emits a zero-raw .textbss on ordinary debug builds."""
+    p = tmp_path / "debug.exe"
+    p.write_bytes(_build_pe([
+        (".textbss", 0x10000, 0, DATA_RW),
+        (".text", 0x400, 0x400, EXEC_SEC),
+    ]))
+    det = detect_packer(p)
+    assert not any("zero_raw_beside_high_entropy" in s for s in det.signals)
+
+
+def test_high_entropy_without_zero_raw_is_not_flagged(tmp_path):
+    """A managed .NET .text is legitimately >7.0 — needs the other half."""
+    p = tmp_path / "dotnet.exe"
+    p.write_bytes(_rand_section_pe([
+        (".text", 4096, 4096, DATA_RW),
+        (".rsrc", 512, 512, DATA_RW),
+    ], payload_index=0, payload_len=4096))
+    det = detect_packer(p)
+    assert not any("zero_raw_beside_high_entropy" in s for s in det.signals)
