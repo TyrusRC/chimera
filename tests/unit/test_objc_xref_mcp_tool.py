@@ -44,7 +44,8 @@ async def test_objc_xref_returns_methods_by_selector(monkeypatch, tmp_path):
     ))
 
     import chimera.mcp_server as mcp
-    monkeypatch.setattr(mcp, "_current_model", model)
+    import chimera.mcp_session as mcpstate
+    monkeypatch.setattr(mcpstate, "current_model", model)
 
     result = await mcp.call_tool("objc_xref", {"selector": "auth:"})
     import json
@@ -74,7 +75,8 @@ async def test_objc_xref_filters_by_class_when_provided(monkeypatch, tmp_path):
     ))
 
     import chimera.mcp_server as mcp
-    monkeypatch.setattr(mcp, "_current_model", model)
+    import chimera.mcp_session as mcpstate
+    monkeypatch.setattr(mcpstate, "current_model", model)
 
     result = await mcp.call_tool("objc_xref", {"selector": "x", "class_name": "A"})
     import json
@@ -85,7 +87,8 @@ async def test_objc_xref_filters_by_class_when_provided(monkeypatch, tmp_path):
 
 async def test_objc_xref_returns_error_when_no_model(monkeypatch):
     import chimera.mcp_server as mcp
-    monkeypatch.setattr(mcp, "_current_model", None)
+    import chimera.mcp_session as mcpstate
+    monkeypatch.setattr(mcpstate, "current_model", None)
     import json
     result = await mcp.call_tool("objc_xref", {"selector": "x"})
     payload = json.loads(result[0].text)
@@ -104,7 +107,8 @@ async def test_objc_xref_finds_method_by_imp_address(monkeypatch, tmp_path):
         is_class_method=False, type_signature=None,
     ))
     import chimera.mcp_server as mcp
-    monkeypatch.setattr(mcp, "_current_model", model)
+    import chimera.mcp_session as mcpstate
+    monkeypatch.setattr(mcpstate, "current_model", model)
 
     import json
     result = await mcp.call_tool("objc_xref", {"imp_address": "0x1abc"})
@@ -120,7 +124,8 @@ async def test_objc_xref_imp_address_not_found_returns_empty(monkeypatch, tmp_pa
     binary = _make_binary_info(tmp_path / "x.ipa", 0)
     model = UnifiedProgramModel(binary)
     import chimera.mcp_server as mcp
-    monkeypatch.setattr(mcp, "_current_model", model)
+    import chimera.mcp_session as mcpstate
+    monkeypatch.setattr(mcpstate, "current_model", model)
 
     import json
     result = await mcp.call_tool("objc_xref", {"imp_address": "0xdeadbeef"})
@@ -135,7 +140,8 @@ async def test_objc_xref_no_selector_no_imp_returns_error(monkeypatch, tmp_path)
     binary = _make_binary_info(tmp_path / "x.ipa", 0)
     model = UnifiedProgramModel(binary)
     import chimera.mcp_server as mcp
-    monkeypatch.setattr(mcp, "_current_model", model)
+    import chimera.mcp_session as mcpstate
+    monkeypatch.setattr(mcpstate, "current_model", model)
 
     import json
     result = await mcp.call_tool("objc_xref", {})

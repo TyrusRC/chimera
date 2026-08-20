@@ -5,17 +5,17 @@ import pytest
 
 
 def test_mcp_read_cache_rejects_unknown_category():
-    import chimera.mcp_server as m
+    import chimera.mcp_session as m
     # category whitelist enforcement: arbitrary strings must be rejected
     allowed = m._ALLOWED_CACHE_CATEGORIES
     assert "triage" in allowed
     # Pick a category guaranteed NOT to be in the whitelist
-    assert not m._is_allowed_category("../etc/passwd")
-    assert not m._is_allowed_category("not_a_real_category")
+    assert not m.is_allowed_category("../etc/passwd")
+    assert not m.is_allowed_category("not_a_real_category")
     # Known-good prefixes still allowed
-    assert m._is_allowed_category("triage")
-    assert m._is_allowed_category("r2_libfoo.so")
-    assert m._is_allowed_category("ghidra_main")
+    assert m.is_allowed_category("triage")
+    assert m.is_allowed_category("r2_libfoo.so")
+    assert m.is_allowed_category("ghidra_main")
 
 
 def test_frida_adapter_exposes_active_sessions():
