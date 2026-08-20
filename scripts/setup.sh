@@ -9,7 +9,7 @@
 #
 # Native mode installs `pip install -e ".[dev]"` into .venv, plus (opt-in,
 # asks first) the apt-installable subset of external tools: radare2,
-# jadx, upx-ucl, gdb. Every other external tool (Ghidra, ilspycmd, capa,
+# jadx, upx-ucl, gdb, qemu-user. Every other external tool (Ghidra, ilspycmd, capa,
 # frida, ...) has no single correct package across distros — after this
 # script runs, `chimera doctor` reports exactly what's still missing and
 # how to install it.
@@ -109,9 +109,13 @@ if command -v apt-get >/dev/null; then
     # jadx is the only backend for .jar / .apk decompilation — a JVM archive
     # has no native layer to fall back on, so without it those inputs analyze
     # to an empty model.
-    if confirm "Install apt packages (radare2, jadx, upx-ucl, gdb) via sudo apt-get?"; then
+    # qemu-user runs foreign-arch (ARM/aarch64) binaries on an x86 host — the
+    # only way to *execute* an Android/ARM crackme here, and `qemu-aarch64
+    # -cpu max` is what emulates ARMv9 FEAT_MTE/PAuth/BTI so a tag-check fault
+    # actually fires instead of silently passing.
+    if confirm "Install apt packages (radare2, jadx, upx-ucl, gdb, qemu-user) via sudo apt-get?"; then
         sudo apt-get update -qq
-        sudo apt-get install -y radare2 jadx upx-ucl gdb
+        sudo apt-get install -y radare2 jadx upx-ucl gdb qemu-user qemu-user-static
         echo "apt packages installed"
     else
         echo "Skipped apt packages — install manually, or re-run with --yes"

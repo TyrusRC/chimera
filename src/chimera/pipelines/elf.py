@@ -25,7 +25,7 @@ from chimera.adapters.registry import AdapterRegistry
 from chimera.core.cache import AnalysisCache
 from chimera.core.config import ChimeraConfig
 from chimera.core.resource_manager import ResourceManager
-from chimera.model.binary import BinaryInfo, BinaryFormat, Framework
+from chimera.model.binary import Architecture, BinaryInfo, BinaryFormat, Framework
 from chimera.model.function import FunctionInfo, ImportEntry
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
@@ -38,6 +38,16 @@ from chimera.pipelines.common import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ELF e_machine (as parsed by elf_header) → model Architecture.
+_ARCH_MAP = {
+    "arm64": Architecture.ARM64,
+    "x86_64": Architecture.X86_64,
+    "x86": Architecture.X86,
+    "arm": Architecture.ARM32,
+    "mips": Architecture.MIPS,
+    "riscv": Architecture.RISCV,
+}
 
 _XOR_SIZE_LIMIT = 50 * 1024 * 1024   # 50 MB — skip heuristic above this
 _XOR_CAP_BYTES   =  5 * 1024 * 1024   #  5 MB — read at most this much
@@ -88,6 +98,10 @@ async def analyze_elf(
                 binary.framework = Framework(cached.get("framework", "native"))
             except ValueError:
                 binary.framework = Framework.NATIVE
+            try:
+                binary.arch = Architecture(cached.get("arch", binary.arch.value))
+            except ValueError:
+                pass
             _rehydrate_from_cache(model, cache, sha, language="c", layer="native")
             return model
 
@@ -107,6 +121,10 @@ async def analyze_elf(
         from chimera.parsers.elf_header import parse_elf
         header = parse_elf(elf_path)
 
+        # ELF magic detection leaves arch UNKNOWN; the parsed e_machine is the
+        # authoritative value, so assign it now (get_info/report read it).
+        binary.arch = _ARCH_MAP.get(header.machine, binary.arch)
+
         # Add DT_NEEDED shared libraries as imports
         for lib_name in header.needed:
             model.add_import(ImportEntry(dll="", name=lib_name))
@@ -124,6 +142,10 @@ async def analyze_elf(
             "relro": header.relro,
             "nx": header.nx,
             "pie": header.pie,
+            "is_android": header.is_android,
+            "memtag": header.memtag,
+            "pac": header.pac,
+            "bti": header.bti,
             "section_count": len(header.sections),
             "has_symbols": header.has_symbols,
             "is_stripped": header.is_stripped,
@@ -176,9 +198,16 @@ async def analyze_elf(
                 len(triage.get("strings", [])),
             )
             # Stripped ELFs list ~nothing in the symbol table; escalate to r2's
-            # analysis pass to actually recover functions.
-            if should_deepen_r2(
-                len(triage.get("functions", [])),
+            # analysis pass to actually recover functions. A stripped PIE is a
+            # blind spot for the count-based gate: its PLT import stubs (imp.*)
+            # already exceed the threshold, yet none of the real code (entry,
+            # .init_array constructors, main) has a symbol — so also deepen
+            # whenever every discovered function is just an import stub.
+            tri_funcs = triage.get("functions", [])
+            only_imports = bool(tri_funcs) and all(
+                _is_import_stub(f) for f in tri_funcs)
+            if only_imports or should_deepen_r2(
+                len(tri_funcs),
                 deep=getattr(config, "r2_deep", False),
                 min_functions=getattr(config, "r2_deep_min_functions", 3),
             ):
@@ -355,7 +384,13 @@ async def analyze_elf(
     if header is not None:
         try:
             from chimera.bypass.native_detector import scan_elf
-            profile = scan_elf(model, header)
+            # Give the detector the raw image so it can fingerprint a seccomp
+            # allow-list filter sitting in .rodata (cheap; capped read).
+            try:
+                data = elf_path.read_bytes()[:_XOR_CAP_BYTES]
+            except OSError:
+                data = None
+            profile = scan_elf(model, header, data)
             cache.put_json(sha, "native_protection", {
                 "packer": profile.packer,
                 "has_anti_debug": profile.has_anti_debug,
@@ -366,6 +401,7 @@ async def analyze_elf(
                 "obfuscation": profile.obfuscation,
                 "syscall_buckets": profile.syscall_buckets,
                 "high_entropy_section_count": profile.high_entropy_section_count,
+                "hardening": profile.hardening,
                 "details": profile.details[:50],
             })
         except Exception as exc:
@@ -379,6 +415,7 @@ async def analyze_elf(
     # -----------------------------------------------------------------------
     cache.put_json(sha, "triage", {
         "platform": "linux_native",
+        "arch": binary.arch.value,
         "format": binary.format.value,
         "framework": binary.framework.value,
         "function_count": len(model.functions),
@@ -392,6 +429,12 @@ async def analyze_elf(
         len(model.functions), len(model.get_strings()), len(model.imports),
     )
     return model
+
+
+def _is_import_stub(f: dict) -> bool:
+    """True when an r2 triage function is just a PLT import thunk (imp.*)."""
+    name = (f.get("name") or f.get("realname") or "")
+    return "imp." in name  # matches "imp.puts" and "sym.imp.puts"
 
 
 def _printable_run_length_min(value: str) -> int:

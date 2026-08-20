@@ -52,6 +52,51 @@ def require_model() -> bool:
     return current_model is not None
 
 
+async def raw_disasm_at(address: str, count: int = 64) -> dict | None:
+    """Disassemble at a raw address via radare2, bypassing the function map.
+
+    The discovered-function map only holds addresses r2 turned into named
+    functions, so an `.init_array` constructor or any symbol-less code in a
+    stripped binary is unreachable through `get_function`. This gives the
+    handlers a fallback: point r2 at the binary and disassemble the address
+    directly. Returns the adapter payload, or None if r2 is unavailable / no
+    model is loaded.
+    """
+    if current_model is None:
+        return None
+    eng = get_engine()
+    r2 = eng.registry.get("radare2")
+    if not (r2 and r2.is_available()):
+        return None
+    try:
+        return await r2.analyze(str(current_model.binary.path),
+                                {"mode": "disasm_at", "address": address,
+                                 "count": count})
+    except Exception as exc:  # r2pipe/backend failure — degrade gracefully
+        logger.warning("raw_disasm_at(%s) failed: %s", address, exc)
+        return None
+
+
+async def raw_disasm_reply(address: str, extra: dict | None = None):
+    """`raw_disasm_at` shaped into a handler reply, or None on no result.
+
+    Lets get_function and get_disassembly share one raw-fallback shape: both
+    call this on a function-map miss and fall through to their own error when
+    it returns None. `extra` adds handler-specific fields (e.g. `layer`).
+    """
+    raw = await raw_disasm_at(address)
+    if not (raw and raw.get("ok") and raw.get("instructions")):
+        return None
+    payload = {
+        "address": raw["address"], "name": raw.get("name"), "raw": True,
+        "instruction_count": raw["instruction_count"],
+        "instructions": raw["instructions"],
+    }
+    if extra:
+        payload.update(extra)
+    return json_reply(payload)
+
+
 # ---------------------------------------------------------------------------
 # Cache access control
 # ---------------------------------------------------------------------------

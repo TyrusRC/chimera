@@ -55,6 +55,83 @@ class ELFHeaderInfo:
     sections: list[ELFSection] = field(default_factory=list)
     has_symbols: bool = False
     is_stripped: bool = True
+    #: True when this ELF targets Android (bionic linker or Android note).
+    is_android: bool = False
+    #: ARM AArch64 pointer-authentication (PAC) advertised in .note.gnu.property.
+    pac: bool = False
+    #: ARM branch-target-identification (BTI) advertised in .note.gnu.property.
+    bti: bool = False
+    #: ARM MTE / MemTag mode from .note.android.memtag: None, or one of
+    #: "none"/"async"/"sync", optionally suffixed with "+heap"/"+stack".
+    memtag: str | None = None
+
+
+def _decode_memtag(desc: bytes) -> str:
+    """Decode an Android `.note.android.memtag` descriptor (first LE u32).
+
+    Bits [1:0] = mode (0 none, 1 async, 2 sync); bit2 = heap; bit3 = stack.
+    """
+    if len(desc) < 4:
+        return "none"
+    val = int.from_bytes(desc[:4], "little")
+    mode = {0: "none", 1: "async", 2: "sync", 3: "sync"}.get(val & 0b11, "none")
+    scopes = []
+    if val & 0b100:
+        scopes.append("heap")
+    if val & 0b1000:
+        scopes.append("stack")
+    return mode + ("+" + "+".join(scopes) if scopes else "")
+
+
+def _scan_notes(elf, info: ELFHeaderInfo) -> None:
+    """Read `.note.android.memtag` (MTE) and `.note.gnu.property` (BTI/PAC).
+
+    Parses raw note payloads rather than a pyelftools note API so behaviour
+    is stable across pyelftools versions. Note layout (per ELF spec):
+    namesz(4) descsz(4) type(4), then name and desc, each 4-byte aligned.
+    """
+    for sec in elf.iter_sections():
+        if sec["sh_type"] != "SHT_NOTE":
+            continue
+        data = sec.data()
+        off = 0
+        while off + 12 <= len(data):
+            namesz, descsz, ntype = (
+                int.from_bytes(data[off:off + 4], "little"),
+                int.from_bytes(data[off + 4:off + 8], "little"),
+                int.from_bytes(data[off + 8:off + 12], "little"),
+            )
+            name_start = off + 12
+            name = data[name_start:name_start + namesz].rstrip(b"\x00")
+            desc_start = name_start + ((namesz + 3) & ~3)
+            desc = data[desc_start:desc_start + descsz]
+            off = desc_start + ((descsz + 3) & ~3)
+
+            if sec.name == ".note.android.ident" or name == b"Android":
+                info.is_android = True
+            if sec.name == ".note.android.memtag":
+                info.memtag = _decode_memtag(desc)
+            if name == b"GNU" and ntype == 5:  # NT_GNU_PROPERTY_TYPE_0
+                _parse_gnu_property(desc, info)
+
+
+def _parse_gnu_property(desc: bytes, info: ELFHeaderInfo) -> None:
+    """Extract AArch64 BTI/PAC from a .note.gnu.property descriptor.
+
+    Property array entries: pr_type(4) pr_datasz(4) pr_data(pr_datasz),
+    padded to 8 bytes. GNU_PROPERTY_AARCH64_FEATURE_1_AND == 0xc0000000;
+    its first data word carries bit0=BTI, bit1=PAC.
+    """
+    p = 0
+    while p + 8 <= len(desc):
+        pr_type = int.from_bytes(desc[p:p + 4], "little")
+        pr_datasz = int.from_bytes(desc[p + 4:p + 8], "little")
+        pdata = desc[p + 8:p + 8 + pr_datasz]
+        if pr_type == 0xC0000000 and len(pdata) >= 4:
+            feat = int.from_bytes(pdata[:4], "little")
+            info.bti = bool(feat & 0b1)
+            info.pac = bool(feat & 0b10)
+        p += 8 + ((pr_datasz + 7) & ~7)
 
 
 def parse_elf(path: Path) -> ELFHeaderInfo:
@@ -127,6 +204,16 @@ def parse_elf(path: Path) -> ELFHeaderInfo:
         # PT_INTERP presence (PIE has it; libraries don't).
         if e_type == "ET_DYN" and info.dynamic_linker is not None:
             info.pie = True
+
+        # Android: bionic dynamic linker, or an Android-owned note.
+        if info.dynamic_linker and "/system/bin/linker" in info.dynamic_linker:
+            info.is_android = True
+
+        # MTE / BTI / PAC live in ELF notes.
+        try:
+            _scan_notes(elf, info)
+        except Exception:
+            pass
 
         # Sections + symbols
         for sec in elf.iter_sections():

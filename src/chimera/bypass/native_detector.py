@@ -79,6 +79,10 @@ class NativeProtectionProfile:
     syscall_buckets: dict[str, int] = field(default_factory=dict)
     details: list[str] = field(default_factory=list)
     high_entropy_section_count: int = 0
+    #: Exploit-mitigation / hardening posture (ELF only). Keys present only
+    #: for a signal that fired: mte, pac, bti, stack_canary, fortify, relro,
+    #: nx, pie, seccomp. See `detect_elf_hardening`.
+    hardening: dict = field(default_factory=dict)
     #: True when the only anti-debug evidence is an indicator the MSVC CRT
     #: emits on its own. The finding still stands, but needs confirming that
     #: the API is actually called from user code before it means anything.
@@ -215,7 +219,66 @@ def scan_pe(model, header) -> NativeProtectionProfile:
     return profile
 
 
-def scan_elf(model, header) -> NativeProtectionProfile:
+# A classic seccomp allow-list filter ends in two BPF return instructions:
+# SECCOMP_RET_ALLOW (0x7fff0000) and SECCOMP_RET_KILL_PROCESS (0x80000000).
+# Match the *whole* 8-byte sock_filter for each — BPF_RET|K (code=0x0006,
+# jt=0, jf=0) followed by the little-endian return value — not just the bare
+# 4-byte `k`. `0x80000000` alone is a common word (INT_MIN, a sign bit); the
+# full `\x06\x00\x00\x00\x00\x00\x00\x80` instruction is not, so this keeps
+# the fingerprint specific enough to avoid false positives.
+# sock_filter is {u16 code, u8 jt, u8 jf, u32 k} little-endian. BPF_RET|K is
+# code=0x0006, jt=jf=0; then the 4-byte return value.
+_SECCOMP_RET_ALLOW = b"\x06\x00\x00\x00" + (0x7FFF0000).to_bytes(4, "little")
+_SECCOMP_RET_KILL = b"\x06\x00\x00\x00" + (0x80000000).to_bytes(4, "little")
+
+
+def detect_elf_hardening(header, import_names: Iterable[str],
+                         data: bytes | None = None) -> dict:
+    """Summarise an ELF's exploit-mitigation posture.
+
+    Reads structural facts already parsed into `header` (RELRO/NX/PIE and the
+    ARM MTE/BTI/PAC notes), plus imported-symbol tells (`__stack_chk_fail`
+    for the stack canary, any `__*_chk` for FORTIFY_SOURCE), and — when raw
+    `data` is supplied — a seccomp allow-list filter fingerprint. Only keys
+    for signals that actually fired are returned, so an empty dict means "no
+    notable hardening seen".
+    """
+    names = set(import_names or ())
+    h: dict = {}
+    if getattr(header, "memtag", None):
+        h["mte"] = header.memtag                 # e.g. "sync+heap+stack"
+    if getattr(header, "pac", False):
+        h["pac"] = True
+    if getattr(header, "bti", False):
+        h["bti"] = True
+    relro = getattr(header, "relro", "none")
+    if relro and relro != "none":
+        h["relro"] = relro                       # "partial" | "full"
+    if getattr(header, "nx", False):
+        h["nx"] = True
+    if getattr(header, "pie", False):
+        h["pie"] = True
+    if "__stack_chk_fail" in names:
+        h["stack_canary"] = True
+    if any(n.endswith("_chk") for n in names):
+        h["fortify"] = True
+    if data and _SECCOMP_RET_ALLOW in data and _SECCOMP_RET_KILL in data:
+        h["seccomp"] = "allowlist (kill on violation)"
+    return h
+
+
+def render_hardening(hardening: dict) -> str:
+    """One-line human rendering of a `detect_elf_hardening` dict.
+
+    Boolean signals show as a bare name (`pie`); valued ones as `key=value`
+    (`mte=sync+heap+stack`). Shared by the detector's details line and the
+    detect-protections CLI so the two never drift.
+    """
+    return ", ".join(f"{k}={v}" if v is not True else k
+                     for k, v in hardening.items())
+
+
+def scan_elf(model, header, data: bytes | None = None) -> NativeProtectionProfile:
     """Detect Linux ELF protections."""
     profile = NativeProtectionProfile()
 
@@ -228,6 +291,11 @@ def scan_elf(model, header) -> NativeProtectionProfile:
 
     # ELF doesn't expose section entropy via pyelftools directly; skip
     # entropy here (pe_header has it; elf_header could add it later).
+
+    profile.hardening = detect_elf_hardening(
+        header, list(_import_name_iter(model)), data)
+    if profile.hardening:
+        profile.details.append("hardening: " + render_hardening(profile.hardening))
 
     strings = _indicator_iter(model)
     found, hits = _match_any(strings, _ANTI_DEBUG_STRINGS)

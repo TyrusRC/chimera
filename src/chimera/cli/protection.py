@@ -122,6 +122,10 @@ async def _detect_protections(path: str, project_dir: str | None,
         if native_profile.get("high_entropy_section_count"):
             click.echo("  High-entropy sects:  "
                        f"{native_profile['high_entropy_section_count']}")
+        hardening = native_profile.get("hardening") or {}
+        if hardening:
+            from chimera.bypass.native_detector import render_hardening
+            click.echo(f"  Hardening:           {render_hardening(hardening)}")
         if profile.commercial_packer:
             click.echo(f"  Commercial packer:   {profile.commercial_packer}")
         if profile.crypto_algorithms:

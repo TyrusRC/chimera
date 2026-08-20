@@ -153,7 +153,12 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error("No analysis loaded.")
         func = mcpstate.current_model.get_function(arguments["address"])
         if not func:
-            return mcpstate.error(f"Function {arguments['address']} not found.")
+            # Not a discovered function — for stripped binaries the analyst
+            # often has a raw address (an .init_array constructor, an xref).
+            # Fall back to disassembling that address directly.
+            reply = await mcpstate.raw_disasm_reply(arguments["address"])
+            return reply or mcpstate.error(
+                f"Function {arguments['address']} not found.")
         instructions = getattr(func, "disassembly", None) or []
         return mcpstate.json_reply({
             "address": func.address, "name": func.name,

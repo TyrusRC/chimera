@@ -111,6 +111,8 @@ def _adapter_groups():
 _BINARY_CHECKS: list[tuple[str, str]] = [
     ("upx", "apt-get install upx-ucl"),
     ("gdb", "apt-get install gdb"),
+    ("qemu-aarch64", "apt-get install qemu-user qemu-user-static  — run ARM/aarch64 "
+     "binaries on an x86 host; `qemu-aarch64 -cpu max` emulates ARMv9 MTE/PAuth/BTI"),
     ("dex2oat", "ships with the Android platform build tools / AOSP"),
     ("bindiff", "download from github.com/google/bindiff"),
     ("dotnet", "needed for .NET decompile (ilspy) and `chimera dotnet-trace` "

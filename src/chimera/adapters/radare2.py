@@ -44,6 +44,8 @@ class Radare2Adapter(BackendAdapter):
                 return self._imports(r2)
             elif mode == "decompile":
                 return self._decompile_one(r2, options)
+            elif mode == "disasm_at":
+                return self._disasm_at(r2, options)
             elif mode == "full":
                 return self._full(r2)
             else:
@@ -79,6 +81,60 @@ class Radare2Adapter(BackendAdapter):
             "address": str(addr),
             "code": code,
             "lines": code.count("\n") + 1,
+        }
+
+    def _disasm_at(self, r2, options: dict) -> dict:
+        """Disassemble at a raw address, even with no symbol there.
+
+        For stripped binaries an analyst often has an address from elsewhere
+        (an .init_array entry, an xref, a crash) that never became a named
+        function, so the discovered-function map has no entry for it. This
+        runs a targeted `af` to give r2 a function boundary, then `pdfj`; if
+        that yields nothing (address mid-code, or af declined), it falls back
+        to a fixed-count linear `pdj`. No `aaa` — stays sub-second.
+
+        `options["address"]` is a hex string; `options["count"]` bounds the
+        linear fallback (default 64 instructions).
+        """
+        addr = options.get("address")
+        if not addr:
+            return {"ok": False, "error": "address required"}
+        count = int(options.get("count", 64))
+        try:
+            r2.cmd(f"af @ {addr}")
+            raw = _cmd_json(r2, f"pdfj @ {addr}")
+            ops = raw.get("ops") if isinstance(raw, dict) else None
+            name = raw.get("name") if isinstance(raw, dict) else None
+            if not ops:
+                lin = _cmd_json(r2, f"pdj {count} @ {addr}")
+                ops = lin if isinstance(lin, list) else []
+                name = None
+        except Exception as exc:
+            return {"ok": False, "error": f"r2 pipe error: {exc!s}"}
+        instructions = [
+            {
+                # r2 versions disagree on the key: `pdfj` emits "addr",
+                # `pdj` emits "offset". Accept whichever is present.
+                "offset": hex(op.get("offset") or op.get("addr") or 0),
+                "bytes": op.get("bytes", ""),
+                "disasm": (op.get("disasm") or op.get("opcode") or "").strip(),
+            }
+            for op in ops
+        ]
+        # r2 will seek anywhere and "disassemble" unmapped memory or data as a
+        # run of `invalid` ops (bytes read back as 0xff). Reject that so a bad
+        # address reports not-found instead of a screen of garbage.
+        if not instructions or all(
+                i["disasm"] in ("", "invalid") for i in instructions):
+            return {"ok": False, "address": str(addr),
+                    "error": "no valid instructions at address "
+                             "(unmapped, or not code)"}
+        return {
+            "ok": True,
+            "address": str(addr),
+            "name": name,
+            "instruction_count": len(instructions),
+            "instructions": instructions,
         }
 
     async def cleanup(self) -> None:

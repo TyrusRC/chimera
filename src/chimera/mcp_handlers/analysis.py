@@ -112,7 +112,12 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error("No analysis loaded.")
         func = mcpstate.current_model.get_function(arguments["address"])
         if not func:
-            return mcpstate.error(f"Function {arguments['address']} not found.")
+            # Stripped binary: no symbol at this address (e.g. an .init_array
+            # constructor). Disassemble it raw so it is still reachable.
+            reply = await mcpstate.raw_disasm_reply(
+                arguments["address"], {"layer": "native"})
+            return reply or mcpstate.error(
+                f"Function {arguments['address']} not found.")
         callees = mcpstate.current_model.get_callees(func.address)
         callers = mcpstate.current_model.get_callers(func.address)
         return mcpstate.json_reply({
@@ -268,6 +273,9 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "ssl_pinning": profile.has_ssl_pinning,
             "integrity": profile.has_integrity_check,
             "packer": profile.has_packer, "packer_name": profile.packer_name,
+            # ELF exploit-mitigation posture (RELRO/NX/PIE, stack canary,
+            # FORTIFY, and ARM MTE/PAC/BTI + seccomp). Empty on non-ELF.
+            "hardening": native.get("hardening") or {},
             "has_any_protection": profile.has_any_protection,
             "bypass_order": profile.bypass_order(),
             "details": profile.details[:20],
