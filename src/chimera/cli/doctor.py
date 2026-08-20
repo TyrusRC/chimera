@@ -113,6 +113,8 @@ _BINARY_CHECKS: list[tuple[str, str]] = [
     ("gdb", "apt-get install gdb"),
     ("dex2oat", "ships with the Android platform build tools / AOSP"),
     ("bindiff", "download from github.com/google/bindiff"),
+    ("dotnet", "needed for .NET decompile (ilspy) and `chimera dotnet-trace` "
+     "— install the .NET SDK from dotnet.microsoft.com"),
     ("docker", "see docs.docker.com/get-docker"),
     ("node", "needed only for the web UI dev server — see nodejs.org"),
 ]
