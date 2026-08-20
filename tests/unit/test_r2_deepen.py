@@ -62,3 +62,24 @@ def test_deepen_adds_only_new_functions():
     assert added == 1
     assert model.get_function("0x2000") is not None
     assert len(model.functions) == 2
+
+
+# A real `aflj` record, trimmed. r2 keys the address as `addr` here — NOT
+# `offset`/`vaddr` (those are `isj`/symbol-table spellings). Deepening exists
+# precisely to escalate past the symbol table on stripped binaries, so it only
+# ever sees this shape; reading the wrong key silently dropped every recovered
+# function and reported "0 additional functions" on real stripped ELF/PE.
+AFLJ_REAL = [
+    {"addr": 4199712, "name": "entry0", "size": 38, "type": "fcn", "nbbs": 1},
+    {"addr": 4200005, "name": "main", "size": 255, "type": "fcn", "nbbs": 12},
+    {"addr": 4204656, "name": "fcn.00402870", "size": 4607, "type": "fcn"},
+]
+
+
+def test_deepen_reads_aflj_addr_key():
+    """Regression: r2's `aflj` spells the address `addr`, not `offset`."""
+    model = _model()
+    added = asyncio.run(deepen_r2_functions(_FakeR2(AFLJ_REAL), "/x", model))
+    assert added == 3
+    assert model.get_function(hex(4200005)) is not None  # main
+    assert {f.name for f in model.functions} == {"entry0", "main", "fcn.00402870"}

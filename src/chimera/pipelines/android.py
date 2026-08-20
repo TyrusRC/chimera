@@ -18,6 +18,7 @@ from chimera.pipelines.common import (
     detect_kotlin,
     find_mapping_file,
     ingest_ghidra_functions,
+    r2_func_address,
     unpack_apk,
 )
 from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
@@ -35,10 +36,7 @@ def _valid_r2_string(s: object) -> bool:
 
 
 def _valid_r2_function(f: object) -> bool:
-    if not isinstance(f, dict):
-        return False
-    off = f.get("offset", f.get("vaddr"))
-    return isinstance(off, (int, str))
+    return r2_func_address(f) is not None
 
 
 async def analyze_apk(

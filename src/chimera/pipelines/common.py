@@ -403,6 +403,31 @@ def unpack_ipa(ipa_path: Path, output_dir: Path) -> dict:
     }
 
 
+# r2 spells a function's address differently depending on which command
+# produced the record: the analysis pass (`aflj`) emits `addr`, the symbol
+# table (`isj`) emits `vaddr`, and op-level JSON uses `offset`. The key sets
+# are disjoint, so one reader can accept all three. Pipelines consume *both*
+# symbol-table triage and the deepened analysis pass, and a reader that knows
+# only one spelling silently drops the entire other result set rather than
+# erroring — which is exactly how stripped binaries came back with 0 functions.
+_R2_ADDR_KEYS = ("addr", "offset", "vaddr")
+
+
+def r2_func_address(f: object) -> str | None:
+    """Normalized hex address of an r2 function record, or None if absent."""
+    if not isinstance(f, dict):
+        return None
+    for key in _R2_ADDR_KEYS:
+        off = f.get(key)
+        if isinstance(off, bool):  # bool is an int subclass — never an address
+            continue
+        if isinstance(off, int):
+            return hex(off)
+        if isinstance(off, str) and off:
+            return off
+    return None
+
+
 def should_deepen_r2(func_count: int, *, deep: bool = False, min_functions: int = 3) -> bool:
     """Whether to run r2's analysis pass (`aaa`) after symbol-table triage.
 
@@ -428,12 +453,9 @@ async def deepen_r2_functions(r2_adapter, path, model, *, language: str = "c",
     result = await r2_adapter.analyze(str(path), {"mode": "functions"})
     added = 0
     for f in result.get("functions", []) or []:
-        if not isinstance(f, dict):
+        addr = r2_func_address(f)
+        if addr is None:
             continue
-        off = f.get("offset", f.get("vaddr"))
-        if not isinstance(off, (int, str)):
-            continue
-        addr = hex(off) if isinstance(off, int) else str(off)
         name = f.get("name") or f.get("realname") or f"FUN_{addr}"
         is_new = model.get_function(addr) is None
         model.add_function(FunctionInfo(
@@ -536,10 +558,9 @@ def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: st
                 section=s.get("section", None),
             )
         for f in triage.get("functions", []):
-            if not _valid_r2_function(f):
+            addr = r2_func_address(f)
+            if addr is None:
                 continue
-            off = f.get("offset", f.get("vaddr"))
-            addr = hex(off) if isinstance(off, int) else str(off)
             fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
             model.add_function(FunctionInfo(
                 address=addr, name=fname, original_name=fname,
