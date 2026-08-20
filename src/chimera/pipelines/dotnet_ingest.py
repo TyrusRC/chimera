@@ -67,6 +67,28 @@ def _iter_sources(sources_dir: Path):
     yield from sorted(root.rglob("*.cs"))
 
 
+def _types_from_text(model, text, source_label, added, max_types):
+    ns_match = _NAMESPACE_RE.search(text)
+    namespace = ns_match.group(1) if ns_match else ""
+    for kind, name in _TYPE_RE.findall(text):
+        if added >= max_types:
+            break
+        fqcn = f"{namespace}.{name}" if namespace else name
+        model.add_function(FunctionInfo(
+            address=f"dotnet:{fqcn}",
+            name=name,
+            original_name=fqcn,
+            language="csharp",
+            classification="unknown",
+            layer="dotnet",
+            source_backend="ilspy",
+            metadata={"kind": kind, "namespace": namespace,
+                      "file": source_label},
+        ))
+        added += 1
+    return added
+
+
 def ingest_ilspy_types(
     model: UnifiedProgramModel,
     sources_dir: Path,
@@ -80,23 +102,7 @@ def ingest_ilspy_types(
             text = path.read_text(errors="replace")
         except OSError:
             continue
-        namespace = (_NAMESPACE_RE.search(text) or [None, ""])[1] if _NAMESPACE_RE.search(text) else ""
-        for kind, name in _TYPE_RE.findall(text):
-            if added >= max_types:
-                break
-            fqcn = f"{namespace}.{name}" if namespace else name
-            model.add_function(FunctionInfo(
-                address=f"dotnet:{fqcn}",
-                name=name,
-                original_name=fqcn,
-                language="csharp",
-                classification="unknown",
-                layer="dotnet",
-                source_backend="ilspy",
-                metadata={"kind": kind, "namespace": namespace,
-                          "file": str(path)},
-            ))
-            added += 1
+        added = _types_from_text(model, text, str(path), added, max_types)
     return added
 
 
@@ -113,28 +119,33 @@ def ingest_ilspy_methods(
             text = path.read_text(errors="replace")
         except OSError:
             continue
-        ns_match = _NAMESPACE_RE.search(text)
-        namespace = ns_match.group(1) if ns_match else ""
-        for match in _METHOD_RE.finditer(text):
-            if added >= max_methods:
-                break
-            _mods, ret, name, params = match.groups()
-            if name in _KEYWORDS or ret in _KEYWORDS:
-                continue
-            line = text.count("\n", 0, match.start()) + 1
-            model.add_function(FunctionInfo(
-                address=f"dotnet:{namespace}::{name}@{line}" if namespace
-                        else f"dotnet:{name}@{line}",
-                name=name,
-                original_name=f"{namespace}.{name}" if namespace else name,
-                language="csharp",
-                classification="unknown",
-                layer="dotnet",
-                source_backend="ilspy",
-                metadata={"returns": ret, "params": params.strip(),
-                          "file": str(path), "line": line},
-            ))
-            added += 1
+        added = _methods_from_text(model, text, str(path), added, max_methods)
+    return added
+
+
+def _methods_from_text(model, text, source_label, added, max_methods):
+    ns_match = _NAMESPACE_RE.search(text)
+    namespace = ns_match.group(1) if ns_match else ""
+    for match in _METHOD_RE.finditer(text):
+        if added >= max_methods:
+            break
+        _mods, ret, name, params = match.groups()
+        if name in _KEYWORDS or ret in _KEYWORDS:
+            continue
+        line = text.count("\n", 0, match.start()) + 1
+        model.add_function(FunctionInfo(
+            address=f"dotnet:{namespace}::{name}@{line}" if namespace
+                    else f"dotnet:{name}@{line}",
+            name=name,
+            original_name=f"{namespace}.{name}" if namespace else name,
+            language="csharp",
+            classification="unknown",
+            layer="dotnet",
+            source_backend="ilspy",
+            metadata={"returns": ret, "params": params.strip(),
+                      "file": source_label, "line": line},
+        ))
+        added += 1
     return added
 
 
@@ -158,15 +169,22 @@ def ingest_ilspy_strings(
             text = path.read_text(errors="replace")
         except OSError:
             continue
-        for raw in _STRING_RE.findall(text):
-            if added >= max_strings:
-                return added
-            if not (min_len <= len(raw) <= max_len) or raw in seen:
-                continue
-            seen.add(raw)
-            model.add_string(address=f"dotnet:{path.name}", value=raw,
-                             section="ilspy")
-            added += 1
+        added = _strings_from_text(model, text, path.name, added, seen,
+                                   max_strings, min_len, max_len)
+    return added
+
+
+def _strings_from_text(model, text, source_label, added, seen,
+                       max_strings, min_len, max_len):
+    for raw in _STRING_RE.findall(text):
+        if added >= max_strings:
+            return added
+        if not (min_len <= len(raw) <= max_len) or raw in seen:
+            continue
+        seen.add(raw)
+        model.add_string(address=f"dotnet:{source_label}", value=raw,
+                         section="ilspy")
+        added += 1
     return added
 
 
@@ -177,4 +195,38 @@ def ingest_ilspy_sources(model: UnifiedProgramModel, sources_dir: Path) -> tuple
     strings = ingest_ilspy_strings(model, sources_dir)
     logger.info("ilspy ingest: %d types, %d methods, %d strings",
                 types, methods, strings)
+    return types, methods, strings
+
+
+def rehydrate_ilspy_from_cache(model: UnifiedProgramModel, cache,
+                               sha256: str) -> tuple[int, int, int]:
+    """Replay cached ILSpy output into the model on a warm cache hit.
+
+    The PE pipeline caches the decompiled C# under `ilspy_<name>` with the
+    full source inline, so a second analysis re-ingests the managed types,
+    methods and strings from the blob — no dependency on the on-disk .cs,
+    which may have been cleaned up. Without this a warm cache returns only
+    the native functions, which is how an MCP-driven re-analysis dropped a
+    .NET binary from 183 functions back to 15.
+    """
+    types = methods = strings = 0
+    seen: set[str] = set()
+    for key in cache.list_keys(sha256):
+        if not key.startswith("ilspy_"):
+            continue
+        blob = cache.get_json(sha256, key)
+        if not isinstance(blob, dict):
+            continue
+        for entry in blob.get("types", []) or []:
+            text = entry.get("decompiled")
+            if not text:
+                continue
+            label = entry.get("file", key)
+            types = _types_from_text(model, text, label, types, 10000)
+            methods = _methods_from_text(model, text, label, methods, 50000)
+            strings = _strings_from_text(model, text, label, strings, seen,
+                                         5000, 4, 512)
+    if types or methods or strings:
+        logger.info("ilspy rehydrate: %d types, %d methods, %d strings",
+                    types, methods, strings)
     return types, methods, strings

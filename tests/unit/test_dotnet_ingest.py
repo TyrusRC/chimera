@@ -109,3 +109,39 @@ def test_handles_a_single_file_path_not_only_a_dir(tmp_path):
     f.write_text(SAMPLE)
     m = _model()
     assert ingest_ilspy_types(m, f) == 2
+
+
+def test_rehydrate_from_cache_blob(tmp_path):
+    """A warm cache must replay the managed types/methods, not just natives.
+
+    The PE pipeline caches ilspy output; on a cache hit it must re-ingest
+    it, or a second analysis of a .NET binary loses everything managed —
+    the exact failure the MCP server hit (183 -> 15 functions).
+    """
+    from chimera.core.cache import AnalysisCache
+    from chimera.pipelines.dotnet_ingest import rehydrate_ilspy_from_cache
+
+    cache = AnalysisCache(tmp_path / "cache")
+    sha = "b" * 64
+    cache.put_json(sha, "ilspy_App.exe", {
+        "available": True, "assembly": "App",
+        "type_count": 1,
+        "types": [{"namespace": "Zexty.Validator", "name": "KeyChecker",
+                   "file": "/gone/App.decompiled.cs", "decompiled": SAMPLE}],
+    })
+    m = _model()
+    types, methods, strings = rehydrate_ilspy_from_cache(m, cache, sha)
+    assert types == 2 and methods >= 3 and strings >= 2
+    names = {f.name for f in m.functions}
+    assert "KeyChecker" in names and "Validate" in names
+    assert "N0VAX-7C4DE-Q9R2K" in {s.value for s in m.get_strings()}
+
+
+def test_rehydrate_is_a_noop_without_ilspy_entries(tmp_path):
+    from chimera.core.cache import AnalysisCache
+    from chimera.pipelines.dotnet_ingest import rehydrate_ilspy_from_cache
+    cache = AnalysisCache(tmp_path / "cache")
+    sha = "c" * 64
+    cache.put_json(sha, "triage", {"format": "dotnet_pe"})
+    m = _model()
+    assert rehydrate_ilspy_from_cache(m, cache, sha) == (0, 0, 0)

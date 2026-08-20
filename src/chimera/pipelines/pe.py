@@ -89,6 +89,11 @@ async def analyze_pe(
             except ValueError:
                 binary.framework = Framework.NATIVE
             _rehydrate_from_cache(model, cache, sha, language="c", layer="native")
+            # Managed (.NET) functions come from ilspy, which the native
+            # rehydration above does not replay — do it here, or a warm cache
+            # drops a .NET binary back to its native stub only.
+            from chimera.pipelines.dotnet_ingest import rehydrate_ilspy_from_cache
+            rehydrate_ilspy_from_cache(model, cache, sha)
             return model
 
     # -----------------------------------------------------------------------
