@@ -257,7 +257,13 @@ def trace(assembly: Path, methods: list[str], *, stdin_line: str = "",
             env=env,
         )
     except subprocess.TimeoutExpired:
-        return TraceResult(available=True, error="trace timed out")
+        # The harness appends each call to the trace file live, so a run that
+        # spins (a menu loop reprinting on stdin EOF is the common case) has
+        # still written everything captured before the kill. Parse it rather
+        # than throwing the recovered data away; just flag that it was cut.
+        result = _parse_trace(trace_out)
+        result.error = "trace timed out (showing what was captured first)"
+        return result
     except (OSError, subprocess.SubprocessError) as exc:
         return TraceResult(available=True, error=f"trace failed: {exc}")
 

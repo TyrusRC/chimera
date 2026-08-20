@@ -243,6 +243,29 @@ def all_tools() -> list[Tool]:
                  "campaign_id": {"type": "string", "description": "Campaign ID from start_fuzz result"},
              }, "required": ["campaign_id"]}),
 
+        # --- .NET dynamic tracing ---
+        Tool(name="dotnet_trace",
+             description=(
+                 "Run a Windows .NET assembly on Linux and hook methods at "
+                 "runtime with Harmony, to defeat VM-protection / anti-tamper "
+                 "that beats static analysis. Harmony detours JIT'd native "
+                 "code, not on-disk IL, so an IL-integrity check does not see "
+                 "the hooks. Hook the inner comparator or the VM memory-read "
+                 "primitive, not the outer validator. Reports byte[]/string "
+                 "values seen plus any int/char stream a method moves — a VM "
+                 "read primitive's return stream reconstructs the target key. "
+                 "Does not modify the target file."),
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Absolute path to the .NET assembly (.exe/.dll)"},
+                 "methods": {"type": "array", "items": {"type": "string"},
+                             "description": "Methods to hook: a bare name hooks it in the target; TYPE::NAME (e.g. System.String::op_Equality) hooks a BCL method."},
+                 "inputs": {"type": "array", "items": {"type": "string"},
+                            "description": "Lines fed to stdin in order — one per menu step to reach the key prompt."},
+                 "neutralize_pinvoke": {"type": "boolean", "default": True,
+                                        "description": "Stub kernel32/ntdll so a Windows binary runs on Linux and its anti-debug imports read clean."},
+                 "timeout": {"type": "integer", "default": 120},
+             }, "required": ["path", "methods"]}),
+
         # --- Configuration ---
         Tool(name="get_config",
              description="Get or modify Chimera analysis configuration. Call with no params to read current config.",

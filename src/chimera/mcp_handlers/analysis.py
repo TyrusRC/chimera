@@ -250,8 +250,16 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         if not mcpstate.require_model():
             return mcpstate.error("No analysis loaded. Call analyze first.")
         from chimera.bypass.detector import ProtectionDetector
+        from chimera.cli.protection import merge_native_profile
         strings = [s.value for s in mcpstate.current_model.get_strings()]
         profile = ProtectionDetector().detect_from_strings(strings, mcpstate.current_model.binary.platform.value)
+        # The mobile string detector never sees a PE/ELF import table, so on a
+        # native (incl. .NET) target it misses anti-debug imports like
+        # CheckRemoteDebuggerPresent. Fold in the PE/ELF pipeline's cached
+        # native_detector profile, exactly as the `protection` CLI does.
+        native = engine.cache.get_json(
+            mcpstate.current_model.binary.sha256, "native_protection") or {}
+        merge_native_profile(profile, native)
         return mcpstate.json_reply({
             "root_detection": profile.has_root_detection,
             "jailbreak_detection": profile.has_jailbreak_detection,
@@ -334,6 +342,53 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
                            "Hooks DexClassLoader, InMemoryDexClassLoader, System.load/loadLibrary (Android) "
                            "or dlopen, NSBundle.load (iOS).",
             "script": script,
+        })
+
+    # ── dotnet_trace ────────────────────────────────────────────────────
+    if name == "dotnet_trace":
+        import tempfile
+        from chimera.dotnet.tracer import trace, dotnet_available
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        if not dotnet_available():
+            return mcpstate.error(
+                "the .NET SDK is not installed — `dotnet` not found on PATH.")
+
+        methods = arguments.get("methods") or []
+        inputs = arguments.get("inputs") or []
+        wd = Path(tempfile.mkdtemp(prefix="chimera_dotnet_mcp_"))
+        result = trace(
+            Path(path), list(methods),
+            stdin_lines=list(inputs) if inputs else None,
+            neutralize_pinvoke=arguments.get("neutralize_pinvoke", True),
+            work_dir=wd, timeout=int(arguments.get("timeout", 120)),
+        )
+        if not result.available:
+            return mcpstate.error(result.error or "tracer unavailable")
+
+        streams = {
+            method: {
+                chan: {
+                    "ascii": result.reconstruct_ascii(vals),
+                    "ints": vals,
+                }
+                for chan, vals in chans.items() if vals
+            }
+            for method, chans in result.numeric_streams().items()
+        }
+        return mcpstate.json_reply({
+            "traced": Path(path).name,
+            "hooks_installed": result.hooks_installed,
+            "inputs": list(inputs),
+            "note": result.error,
+            "byte_values": [
+                {"method": m, "ascii": a, "hex": h}
+                for m, a, h in result.byte_values()
+            ],
+            "strings": [{"method": m, "value": v} for m, v in result.strings_seen()],
+            "numeric_streams": streams,
         })
 
     # ── pull_app ────────────────────────────────────────────────────────
