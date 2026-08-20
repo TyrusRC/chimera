@@ -25,10 +25,11 @@ logger = logging.getLogger(__name__)
               help="A line fed to the assembly's stdin (repeatable, in order) "
                    "— use one per menu step to drive a menu-loop program to "
                    "its key prompt.")
-@click.option("--neutralize-pinvoke", is_flag=True,
+@click.option("--neutralize-pinvoke/--no-neutralize-pinvoke", default=True,
               help="Stub kernel32/ntdll so a Windows-only binary runs on "
                    "Linux; this also blanks its anti-debug imports "
-                   "(CheckRemoteDebuggerPresent, NtQueryInformationProcess).")
+                   "(CheckRemoteDebuggerPresent, NtQueryInformationProcess). "
+                   "On by default — nearly every Windows target needs it.")
 @click.option("--work-dir", type=click.Path(), default=None,
               help="Working directory (default: a temp dir).")
 @click.option("--timeout", type=int, default=180)

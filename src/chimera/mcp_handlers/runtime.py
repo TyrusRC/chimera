@@ -1,4 +1,4 @@
-"""Fuzzing control and server configuration.
+"""Dynamic execution: fuzzing, .NET runtime tracing, and server config.
 
 Returns None when the tool is not one of this module's, so the server can
 try the next handler group.
@@ -6,6 +6,7 @@ try the next handler group.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from mcp.types import TextContent
 
@@ -61,5 +62,52 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "ios_udid": config.ios_udid,
         })
 
-    # ── objc_xref ───────────────────────────────────────────────────────
+    # ── dotnet_trace ────────────────────────────────────────────────────
+    if name == "dotnet_trace":
+        import tempfile
+        from chimera.dotnet.tracer import trace, dotnet_available
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        if not dotnet_available():
+            return mcpstate.error(
+                "the .NET SDK is not installed — `dotnet` not found on PATH.")
+
+        methods = arguments.get("methods") or []
+        inputs = arguments.get("inputs") or []
+        wd = Path(tempfile.mkdtemp(prefix="chimera_dotnet_mcp_"))
+        result = trace(
+            Path(path), list(methods),
+            stdin_lines=list(inputs) if inputs else None,
+            neutralize_pinvoke=arguments.get("neutralize_pinvoke", True),
+            work_dir=wd, timeout=int(arguments.get("timeout", 120)),
+        )
+        if not result.available:
+            return mcpstate.error(result.error or "tracer unavailable")
+
+        streams = {
+            method: {
+                chan: {
+                    "ascii": result.reconstruct_ascii(vals),
+                    "ints": vals,
+                }
+                for chan, vals in chans.items() if vals
+            }
+            for method, chans in result.numeric_streams().items()
+        }
+        return mcpstate.json_reply({
+            "traced": Path(path).name,
+            "hooks_installed": result.hooks_installed,
+            "inputs": list(inputs),
+            "note": result.error,
+            "byte_values": [
+                {"method": m, "ascii": a, "hex": h}
+                for m, a, h in result.byte_values()
+            ],
+            "strings": [{"method": m, "value": v} for m, v in result.strings_seen()],
+            "numeric_streams": streams,
+        })
+
+
     return None

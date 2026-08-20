@@ -54,7 +54,7 @@ default `analyze` hot path.
 - **Packer detection + UPX auto-unpack** — YARA-first (UPX / ASPack / VMProtect / Themida / MPRESS / PECompact / Enigma / MEW / kkrunchy), section-name fallback (UPX0, .vmpN, .themida, .aspack, …), per-section byte-entropy heuristic on executable sections. `chimera unpack` round-trips UPX byte-identically and ships manual guidance for the VM-protectors no open-source unpacker handles cleanly.
 - **gdb bridge** — `chimera gdb-export` writes a `.gdbinit` of `$convenience` variables + a `chimera-bp` user command so `gdb` lands inside the same address space your renames refer to.
 - **PE / ELF imports scoring** — PEStudio-style buckets (process injection, anti-debug, persistence, network, crypto, evasion). Linux: persistence-string scan (cron / systemd / `LD_PRELOAD` / init.d), syscall scoring, XOR-string heuristic.
-- **.NET assemblies** — ILSpy decompilation when `ilspycmd` is on PATH; Ghidra fallback for mixed-mode (C++/CLI). The decompiled C# is ingested into the model as one entry per type and per method, plus its string literals. For VM-protected / anti-tamper'd assemblies that defeat static devirtualization, `chimera dotnet-trace` runs the binary on Linux (via a .NET Core shim) and hooks named methods at runtime with Harmony — a hooked comparator hands back the value it checks against.
+- **.NET assemblies** — ILSpy decompilation when `ilspycmd` is on PATH; Ghidra fallback for mixed-mode (C++/CLI). The decompiled C# is ingested into the model as one entry per type and per method, plus its string literals. For VM-protected / anti-tamper'd assemblies that defeat static devirtualization, `chimera dotnet-trace` runs the binary on Linux (via a .NET Core shim) and hooks methods at runtime with Harmony, which detours JIT'd native code rather than on-disk IL — so an IL-integrity check never sees the hook. It runs Windows-only binaries by stubbing their kernel32/ntdll imports (which also blanks the anti-debug those imports carry — CheckRemoteDebuggerPresent, NtQueryInformationProcess), drives a scripted stdin through any menu to the key prompt, hooks bare or fully-qualified (`System.String::op_Equality`) methods, and reconstructs a key straight from the int/char stream a bytecode-VM's memory primitive moves — the value a hooked comparator never materializes as a string. Exposed over MCP as `dotnet_trace`; the target file is never modified.
 
 ### Mobile RE
 - **Framework detection** — React Native (Hermes / JSC), Flutter, Unity IL2CPP, Xamarin, Cordova / Capacitor.
@@ -523,9 +523,12 @@ chimera notes list server.bin --tag crypto
 # Hermes / Rust / VMP / Android-native paths
 chimera hermes-decompile app/index.android.bundle -o out/
 chimera rust-decompile target/release/agent --limit 50
-# Recover a key from a VM-protected .NET validator by hooking its
-# comparator at runtime (needs the .NET SDK):
+# Recover a key from a VM-protected .NET validator at runtime (needs the
+# .NET SDK). Runs a Windows binary on Linux, walks the menu via repeated
+# --input, and reads the target off a hooked comparator / VM memory
+# primitive. --neutralize-pinvoke (default on) stubs kernel32/ntdll:
 chimera dotnet-trace validator.exe --method CompareKey --input GUESS
+chimera dotnet-trace keygenme.exe --input 7 --input AAAAA-BBBB --method ReadByte
 chimera vmp-devirt packed.exe --start 0x401000 -o out/
 chimera android-similarity v1.apk v2.apk -o diff_out/
 
@@ -571,9 +574,10 @@ chimera mcp
 ### MCP integration
 
 Chimera exposes high-level tools (`analyze`, `xref`, `list_devices`,
-`pull_app`, `run_semgrep`, `apply_bypass`, …) over MCP. Point any
-MCP-compatible client at `chimera mcp` and the model can drive the
-pipeline directly.
+`pull_app`, `run_semgrep`, `detect_protections`, `dotnet_trace`, …) over
+MCP. Point any MCP-compatible client at `chimera mcp` and the model can
+drive the pipeline directly — from static triage to running a
+VM-protected .NET binary and reading its key back at runtime.
 
 **Claude Code**: the repo ships a project-scoped `.mcp.json` that
 registers `chimera mcp` (via `.venv/bin/chimera`, so no PATH setup

@@ -5,7 +5,8 @@ import json
 
 import pytest
 
-from chimera.dotnet.tracer import TraceResult, _parse_trace, installed_core_runtime
+from chimera.dotnet.tracer import installed_core_runtime
+from chimera.dotnet.trace_result import TraceResult, parse_trace
 
 
 def test_parse_trace_reads_calls_and_hook_count(tmp_path):
@@ -21,7 +22,7 @@ def test_parse_trace_reads_calls_and_hook_count(tmp_path):
                                "ascii": "XYZ"}}),
         json.dumps({"event": "done"}),
     ]))
-    r = _parse_trace(trace)
+    r = parse_trace(trace)
     assert r.available is True
     assert r.hooks_installed == 2
     assert len(r.calls) == 2
@@ -38,7 +39,7 @@ def test_byte_values_collects_args_and_returns(tmp_path):
                     "result": {"type": "byte[]", "len": 3, "hex": "58595A",
                                "ascii": "XYZ"}}),
     ]))
-    vals = _parse_trace(trace).byte_values()
+    vals = parse_trace(trace).byte_values()
     assert ("cmp", "ABC", "414243") in vals
     assert ("target", "XYZ", "58595A") in vals
 
@@ -46,13 +47,13 @@ def test_byte_values_collects_args_and_returns(tmp_path):
 def test_parse_trace_tolerates_garbage_lines(tmp_path):
     trace = tmp_path / "t.jsonl"
     trace.write_text("not json\n" + json.dumps({"event": "done"}) + "\nalso bad\n")
-    r = _parse_trace(trace)
+    r = parse_trace(trace)
     assert r.available is True
     assert r.calls == []
 
 
 def test_parse_trace_reports_missing_output(tmp_path):
-    r = _parse_trace(tmp_path / "does_not_exist.jsonl")
+    r = parse_trace(tmp_path / "does_not_exist.jsonl")
     assert r.error is not None
 
 
@@ -61,7 +62,7 @@ def test_strings_seen_collects_string_operands(tmp_path):
     trace.write_text(json.dumps({"event": "call", "method": "v",
         "args": [{"type": "string", "value": "KEY-123"}],
         "result": {"type": "null"}}))
-    assert ("v", "KEY-123") in _parse_trace(trace).strings_seen()
+    assert ("v", "KEY-123") in parse_trace(trace).strings_seen()
 
 
 def test_numeric_streams_splits_return_and_args(tmp_path):
@@ -77,7 +78,7 @@ def test_numeric_streams_splits_return_and_args(tmp_path):
                     "args": [{"type": "int", "value": 908506164}],
                     "result": {"type": "char", "value": "E", "code": 69}}),
     ]))
-    streams = _parse_trace(trace).numeric_streams()
+    streams = parse_trace(trace).numeric_streams()
     assert streams["read"]["return"] == [78, 69]
     assert streams["read"]["args"] == [908506164, 908506164]
 
