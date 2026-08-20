@@ -252,3 +252,28 @@ def test_no_anti_debug_leaves_confidence_flag_unset():
     p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
     assert p.has_anti_debug is False
     assert p.anti_debug_low_confidence is False
+
+
+def test_ptrace_does_not_match_inside_traceback():
+    """Go's runtime blob contains 'ptraceback' — p + traceback, not ptrace.
+
+    This flagged every Go binary as anti-debug.
+    """
+    m = _model_with_strings(["stopm holding ptraceback stuck sched"])
+    p = scan_elf(m, _ELFHdr(sections=[_ELFSection(name=".text")]))
+    assert p.has_anti_debug is False
+
+
+def test_ptrace_still_matches_as_a_real_symbol():
+    for value in ("ptrace", "ptrace(PTRACE_TRACEME)", "sys_ptrace", "libc ptrace failed"):
+        m = _model_with_strings([value])
+        p = scan_elf(m, _ELFHdr(sections=[_ELFSection(name=".text")]))
+        assert p.has_anti_debug is True, value
+
+
+def test_output_debug_string_still_matches_its_a_and_w_variants():
+    """The prefix needles must keep matching real Win32 import names."""
+    for value in ("OutputDebugStringA", "OutputDebugStringW"):
+        m = _model_with_strings([], imports=[value])
+        p = scan_pe(m, _PEHdr(sections=[_Section(name=".text")]))
+        assert p.has_anti_debug is True, value

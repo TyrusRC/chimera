@@ -119,6 +119,36 @@ def _indicator_iter(model) -> list[str]:
     return [*_string_iter(model), *_import_name_iter(model)]
 
 
+# Needles short and generic enough to appear inside unrelated words. These
+# require the match not to continue into another identifier: `ptrace` was
+# firing on Go's runtime string blob ("stopm holding ptraceback stuck"),
+# i.e. "p" + "traceback", flagging every Go binary as anti-debug.
+#
+# The guard is opt-in per needle rather than global on purpose: most Win32
+# needles are deliberate prefixes — `OutputDebugString` has to keep matching
+# the real `OutputDebugStringA`/`W` imports — so a blanket boundary rule
+# would trade this false positive for several false negatives.
+_BOUNDED_NEEDLES = frozenset({"ptrace"})
+
+_IDENT_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+)
+
+
+def _contains(haystack: str, needle: str) -> bool:
+    if needle not in _BOUNDED_NEEDLES:
+        return needle in haystack
+    start = 0
+    while True:
+        i = haystack.find(needle, start)
+        if i == -1:
+            return False
+        end = i + len(needle)
+        if end >= len(haystack) or haystack[end] not in _IDENT_CHARS:
+            return True
+        start = i + 1
+
+
 def _match_any(strings: Iterable[str], needles: Iterable[str]) -> tuple[bool, list[str]]:
     """Return (any_match, list_of_unique_hits)."""
     needle_set = set(needles)
@@ -127,7 +157,7 @@ def _match_any(strings: Iterable[str], needles: Iterable[str]) -> tuple[bool, li
         if not s:
             continue
         for n in needle_set:
-            if n in s:
+            if _contains(s, n):
                 hits.add(n)
         if len(hits) == len(needle_set):
             break

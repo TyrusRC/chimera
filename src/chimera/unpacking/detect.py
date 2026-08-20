@@ -179,13 +179,18 @@ def _pe_structural_anomalies(path: Path) -> list[str]:
 
     * an executable section with no bytes on disk has to be written at
       runtime — there is nothing else it could be;
-    * a virtual size far exceeding the raw size means the same thing, with
-      the stub decompressing into the slack;
-    * duplicate section names come from stubs appending sections rather
-      than from any normal linker.
+    * a *code* section whose virtual size far exceeds its raw size means
+      the same thing, with the stub decompressing into the slack.
 
-    Deliberately *not* included: high-entropy resources. Compressed icons
-    and images make that fire constantly on clean binaries.
+    Deliberately *not* included, each having been measured against a
+    labeled corpus and rejected:
+
+    * high-entropy resources — compressed icons fire constantly on clean
+      binaries;
+    * duplicate section names — scored 0 true positives against 2 false
+      positives (real linkers do emit repeated `.idata`/custom sections),
+      so it was pure noise;
+    * virtual-size-exceeds-raw on *data* sections — that is just BSS.
     """
     anomalies: list[str] = []
     try:
@@ -199,20 +204,34 @@ def _pe_structural_anomalies(path: Path) -> list[str]:
     except Exception:
         return anomalies
     try:
+        IMAGE_SCN_CNT_CODE = 0x00000020
+        IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080
         IMAGE_SCN_MEM_EXECUTE = 0x20000000
         names: list[str] = []
         for sec in pe.sections:
             name = sec.Name.decode(errors="replace").rstrip("\x00")
             names.append(name)
-            executable = bool(sec.Characteristics & IMAGE_SCN_MEM_EXECUTE)
-            if executable and sec.SizeOfRawData == 0 and sec.Misc_VirtualSize > 0:
+            # A section the file itself declares as *code* while shipping no
+            # bytes on disk is a contradiction — something must write it at
+            # runtime. Executable-but-uninitialized is NOT a contradiction
+            # (that is a .bss-like region a linker may legitimately mark
+            # executable), and on a labeled corpus it was the sole source of
+            # false positives, so it is excluded.
+            declares_code = bool(sec.Characteristics & IMAGE_SCN_CNT_CODE) or (
+                bool(sec.Characteristics & IMAGE_SCN_MEM_EXECUTE)
+                and not sec.Characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA
+            )
+            if declares_code and sec.SizeOfRawData == 0 and sec.Misc_VirtualSize > 0:
                 anomalies.append(f"zero_raw_exec_section:{name or '<unnamed>'}")
-            elif (sec.SizeOfRawData > 0
+            elif (declares_code
+                  and sec.SizeOfRawData > 0
                   and sec.Misc_VirtualSize > 4 * sec.SizeOfRawData):
+                # Code only. A *data* section routinely has a virtual size far
+                # past its raw size — that is how PE carries BSS, with the
+                # uninitialized tail merged into .data — and on a labeled
+                # corpus applying this to any section dropped precision to
+                # 0.56, every false positive being .data/.idata/.reloc.
                 anomalies.append(f"virtual_size_exceeds_raw:{name or '<unnamed>'}")
-        dupes = {n for n in names if n and names.count(n) > 1}
-        if dupes:
-            anomalies.append(f"duplicate_section_names:{','.join(sorted(dupes))}")
     except Exception:
         return anomalies
     finally:
