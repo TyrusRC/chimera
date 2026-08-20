@@ -237,8 +237,18 @@ def _pe_structural_anomalies(path: Path) -> list[str]:
     return anomalies
 
 
+# Shannon entropy over n bytes is bounded by log2(n), so a small buffer of
+# varied bytes scores near-maximum for free: 256 distinct bytes measure a
+# perfect 8.0. An ordinary jump or thunk table would therefore read as
+# "packed". Below this many bytes the estimate is sample noise, so we don't
+# count it either way.
+_MIN_ENTROPY_SAMPLE = 1024
+
+
 def _high_entropy_section_count(path: Path) -> int:
     """Return the number of executable sections with byte-entropy > 7.0.
+
+    Sections smaller than `_MIN_ENTROPY_SAMPLE` are skipped — see above.
 
     PE: walks IMAGE_SECTION_HEADER.Characteristics for ``IMAGE_SCN_MEM_EXECUTE``.
     ELF: walks program headers; any PT_LOAD with PF_X flag.
@@ -268,6 +278,8 @@ def _pe_high_entropy_count(path: Path) -> int:
             if not (sec.Characteristics & IMAGE_SCN_MEM_EXECUTE):
                 continue
             data = sec.get_data()
+            if len(data) < _MIN_ENTROPY_SAMPLE:
+                continue
             if _entropy(data) > 7.0:
                 count += 1
     finally:
@@ -290,6 +302,8 @@ def _elf_high_entropy_count(path: Path) -> int:
                 if not (seg["p_flags"] & 0x1):  # PF_X
                     continue
                 data = seg.data()
+                if len(data) < _MIN_ENTROPY_SAMPLE:
+                    continue
                 if _entropy(data) > 7.0:
                     count += 1
     except Exception:

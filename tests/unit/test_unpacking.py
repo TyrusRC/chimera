@@ -336,3 +336,22 @@ def test_zero_raw_code_section_without_execute_bit_is_flagged(tmp_path):
     det = detect_packer(p)
     assert det.suspected_packed is True
     assert any("zero_raw_exec_section" in s for s in det.signals)
+
+
+def test_tiny_high_entropy_section_is_not_counted(tmp_path):
+    """Shannon entropy is bounded by log2(n) — small samples reach 8.0 free.
+
+    A 256-byte executable section holding a jump/thunk table of distinct
+    bytes scores a perfect 8.0 while being entirely ordinary code, so the
+    estimate is only trustworthy over a large enough sample.
+    """
+    import struct
+    body = bytes(range(256))          # 256 distinct bytes -> entropy 8.0
+    p = tmp_path / "tiny.exe"
+    raw = bytearray(_build_pe([
+        (".text", len(body), len(body), EXEC_SEC),
+    ]))
+    raw[0x400:0x400 + len(body)] = body
+    p.write_bytes(bytes(raw))
+    det = detect_packer(p)
+    assert det.high_entropy_sections == 0
