@@ -35,6 +35,7 @@ from chimera.pipelines.common import (
     _rehydrate_from_cache,
     deepen_r2_functions,
     ingest_ghidra_functions,
+    r2_func_address,
     should_deepen_r2,
 )
 
@@ -168,8 +169,7 @@ async def analyze_pe(
             for f in triage.get("functions", []):
                 if not _valid_r2_function(f):
                     continue
-                offset = f.get("offset", f.get("vaddr", 0))
-                addr = hex(offset) if isinstance(offset, int) else str(offset)
+                addr = r2_func_address(f) or "0x0"
                 fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
                 model.add_function(FunctionInfo(
                     address=addr,

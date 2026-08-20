@@ -46,13 +46,22 @@ async def analyze_jar(
     skipped_phases: list[str] = []
 
     if cache.has(sha):
-        cached = cache.get_json(sha, "triage")
-        if cached:
+        cached = cache.get_json(sha, "triage") or {}
+        cached_sources = cached.get("sources_dir")
+        # Only a run that actually produced sources is worth replaying. A
+        # run with jadx missing (or a since-deleted output tree) cached an
+        # empty result, and treating that as a hit made the emptiness
+        # permanent: install jadx, re-run, still get zero functions. Fall
+        # through and re-analyze instead.
+        if cached_sources and Path(cached_sources).exists():
             logger.info("Cache hit for %s — reusing triage", sha[:12])
-            sources_dir = cached.get("sources_dir")
-            if sources_dir and Path(sources_dir).exists():
-                _ingest(model, Path(sources_dir), config)
+            _ingest(model, Path(cached_sources), config)
             return model
+        if cached:
+            logger.info(
+                "Cached analysis for %s recovered nothing — re-analyzing",
+                sha[:12],
+            )
 
     logger.info("JVM pipeline: %s [%s]", jar_path.name, binary.format.value)
 

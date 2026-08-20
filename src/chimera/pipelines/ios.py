@@ -14,7 +14,12 @@ from chimera.model.binary import BinaryInfo, Framework
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
-from chimera.pipelines.common import _rehydrate_from_cache, ingest_ghidra_functions, unpack_ipa
+from chimera.pipelines.common import (
+    _rehydrate_from_cache,
+    ingest_ghidra_functions,
+    r2_func_address,
+    unpack_ipa,
+)
 from chimera.adapters.swift_demangle import _MANGLED_RE, _MANGLED_TOKEN_RE
 from chimera.pipelines.objc_xref import build_objc_xref
 from chimera.pipelines.react_native import analyze_react_native_bundle, find_rn_bundle
@@ -139,8 +144,7 @@ async def analyze_ipa(
                 for f in triage.get("functions", []):
                     if not _valid_r2_function(f):
                         continue
-                    offset = f.get("offset", f.get("vaddr", 0))
-                    addr = hex(offset) if isinstance(offset, int) else str(offset)
+                    addr = r2_func_address(f) or "0x0"
                     fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
                     model.add_function(FunctionInfo(
                         address=addr,

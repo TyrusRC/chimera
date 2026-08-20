@@ -127,3 +127,45 @@ def test_jar_pipeline_survives_a_jadx_failure(tmp_path):
     jar = _make_jar(tmp_path / "app.jar")
     model = _run(jar, _StubRegistry(_Exploding()), tmp_path)
     assert len(model.functions) == 0
+
+
+def test_a_failed_run_does_not_poison_the_cache(tmp_path):
+    """Installing jadx after a jadx-less run must actually take effect.
+
+    The first run caches a triage blob with no sources_dir. Treating that
+    as a valid cache hit made the empty result permanent — the user fixes
+    their setup, re-runs, and still gets 0 functions forever.
+    """
+    jar = _make_jar(tmp_path / "app.jar")
+    config = ChimeraConfig(cache_dir=tmp_path / "cache", project_dir=tmp_path / "proj")
+    cache = AnalysisCache(config.cache_dir)
+
+    # Run 1: no jadx available.
+    cold = asyncio.run(analyze_jar(
+        jar, config, _StubRegistry(_StubJadx(available=False)),
+        get_resource_manager(), cache,
+    ))
+    assert len(cold.functions) == 0
+
+    # Run 2: jadx now present. Must re-analyze, not replay the empty blob.
+    working = _StubJadx({"com/example/Main.java": JAVA_CLASS})
+    warm = asyncio.run(analyze_jar(
+        jar, config, _StubRegistry(working), get_resource_manager(), cache,
+    ))
+    assert working.calls == 1, "jadx should have been invoked on the retry"
+    assert len(warm.functions) > 0
+
+
+def test_successful_run_is_still_served_from_cache(tmp_path):
+    """The retry path must not defeat caching for runs that did work."""
+    jar = _make_jar(tmp_path / "app.jar")
+    config = ChimeraConfig(cache_dir=tmp_path / "cache", project_dir=tmp_path / "proj")
+    cache = AnalysisCache(config.cache_dir)
+    jadx = _StubJadx({"com/example/Main.java": JAVA_CLASS})
+
+    first = asyncio.run(analyze_jar(jar, config, _StubRegistry(jadx),
+                                    get_resource_manager(), cache))
+    second = asyncio.run(analyze_jar(jar, config, _StubRegistry(jadx),
+                                     get_resource_manager(), cache))
+    assert jadx.calls == 1, "second run must be served from cache"
+    assert len(second.functions) == len(first.functions) > 0

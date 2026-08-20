@@ -207,10 +207,8 @@ def _pe_structural_anomalies(path: Path) -> list[str]:
         IMAGE_SCN_CNT_CODE = 0x00000020
         IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080
         IMAGE_SCN_MEM_EXECUTE = 0x20000000
-        names: list[str] = []
         for sec in pe.sections:
             name = sec.Name.decode(errors="replace").rstrip("\x00")
-            names.append(name)
             # A section the file itself declares as *code* while shipping no
             # bytes on disk is a contradiction — something must write it at
             # runtime. Executable-but-uninitialized is NOT a contradiction

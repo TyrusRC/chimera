@@ -38,7 +38,7 @@ from chimera.model.binary import BinaryInfo, BinaryFormat, Framework, Platform
 from chimera.model.function import FunctionInfo
 from chimera.model.program import UnifiedProgramModel
 from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
-from chimera.pipelines.common import _rehydrate_from_cache
+from chimera.pipelines.common import _rehydrate_from_cache, r2_func_address
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +117,7 @@ async def analyze_macho(
             for f in triage.get("functions", []):
                 if not _valid_r2_function(f):
                     continue
-                offset = f.get("offset", f.get("vaddr", 0))
-                addr = hex(offset) if isinstance(offset, int) else str(offset)
+                addr = r2_func_address(f) or "0x0"
                 fname = f.get("name") or f.get("realname") or f"FUN_{addr}"
                 model.add_function(FunctionInfo(
                     address=addr,
