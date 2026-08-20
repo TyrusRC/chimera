@@ -85,10 +85,22 @@ def detect_packer(binary_path: Path) -> Detection:
     structural = _pe_structural_anomalies(binary_path)
     signals.extend(structural)
 
+    # How many high-entropy executable regions it takes to mean something
+    # depends on the format's own shape. A PE routinely carries several
+    # executable sections, so two keeps the signal conservative — and the
+    # structural section checks above cover PE anyway. An ELF has exactly
+    # one executable PT_LOAD (0 of 1010 real ELF objects measured had two),
+    # so the same threshold was unreachable and this whole path was dead on
+    # ELF: a UPX-packed binary with its identifiers blanked — still running,
+    # and so past the YARA rule — reported "not packed" while carrying a
+    # 74 KB segment at entropy 7.89. Across 1432 clean ELFs no executable
+    # segment exceeded 6.65, so on ELF a single one over 7.0 is decisive.
+    entropy_threshold = 1 if _looks_like_elf(binary_path) else 2
+
     # Only claim "suspected" when we couldn't attribute a name — a named
     # packer is already the stronger, actionable answer.
     suspected = False
-    if packer is None and (high_entropy >= 2 or structural):
+    if packer is None and (high_entropy >= entropy_threshold or structural):
         suspected = True
         signals.append("packed_unattributed")
 

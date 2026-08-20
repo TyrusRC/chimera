@@ -355,3 +355,47 @@ def test_tiny_high_entropy_section_is_not_counted(tmp_path):
     p.write_bytes(bytes(raw))
     det = detect_packer(p)
     assert det.high_entropy_sections == 0
+
+
+# ---------------- format-aware entropy threshold (ELF) ----------------
+#
+# Requiring two high-entropy executable regions is a PE-shaped rule: a PE
+# routinely has several executable sections, but an ELF has exactly one
+# executable PT_LOAD — 0 of 1010 real ELF objects measured had two — so on
+# ELF the threshold was unreachable and the entropy path was dead code.
+# A UPX-packed ELF whose identifiers have been blanked (still a working
+# binary, defeating the YARA rule) therefore reported "not packed" while
+# carrying a 74 KB segment at entropy 7.89. Across 1432 clean ELFs no
+# executable segment exceeded 6.65, so one segment over 7.0 is decisive.
+
+
+def test_elf_needs_only_one_high_entropy_segment(tmp_path, monkeypatch):
+    from chimera.unpacking import detect as D
+    p = tmp_path / "packed.elf"
+    p.write_bytes(b"\x7fELF" + b"\x00" * 512)
+    monkeypatch.setattr(D, "_high_entropy_section_count", lambda path: 1)
+    monkeypatch.setattr(D, "_yara_detect", lambda path: None)
+    det = D.detect_packer(p)
+    assert det.suspected_packed is True
+    assert det.packer is None
+
+
+def test_pe_still_requires_two_high_entropy_sections(tmp_path, monkeypatch):
+    """PE keeps the conservative threshold — structural checks cover it."""
+    from chimera.unpacking import detect as D
+    p = tmp_path / "x.exe"
+    p.write_bytes(_build_pe([(".text", 0x200, 0x200, EXEC_SEC)]))
+    monkeypatch.setattr(D, "_high_entropy_section_count", lambda path: 1)
+    monkeypatch.setattr(D, "_yara_detect", lambda path: None)
+    assert D.detect_packer(p).suspected_packed is False
+    monkeypatch.setattr(D, "_high_entropy_section_count", lambda path: 2)
+    assert D.detect_packer(p).suspected_packed is True
+
+
+def test_clean_elf_with_ordinary_entropy_is_not_flagged(tmp_path, monkeypatch):
+    from chimera.unpacking import detect as D
+    p = tmp_path / "clean.elf"
+    p.write_bytes(b"\x7fELF" + b"\x00" * 512)
+    monkeypatch.setattr(D, "_high_entropy_section_count", lambda path: 0)
+    monkeypatch.setattr(D, "_yara_detect", lambda path: None)
+    assert D.detect_packer(p).suspected_packed is False
