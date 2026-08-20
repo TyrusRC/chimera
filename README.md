@@ -54,7 +54,7 @@ default `analyze` hot path.
 - **Packer detection + UPX auto-unpack** — YARA-first (UPX / ASPack / VMProtect / Themida / MPRESS / PECompact / Enigma / MEW / kkrunchy), section-name fallback (UPX0, .vmpN, .themida, .aspack, …), per-section byte-entropy heuristic on executable sections. `chimera unpack` round-trips UPX byte-identically and ships manual guidance for the VM-protectors no open-source unpacker handles cleanly.
 - **gdb bridge** — `chimera gdb-export` writes a `.gdbinit` of `$convenience` variables + a `chimera-bp` user command so `gdb` lands inside the same address space your renames refer to.
 - **PE / ELF imports scoring** — PEStudio-style buckets (process injection, anti-debug, persistence, network, crypto, evasion). Linux: persistence-string scan (cron / systemd / `LD_PRELOAD` / init.d), syscall scoring, XOR-string heuristic.
-- **.NET assemblies** — ILSpy decompilation per type when `ilspycmd` is on PATH; Ghidra fallback for mixed-mode (C++/CLI). NOTE: ILSpy currently writes the per-type C# to the project directory on disk; that source is not yet surfaced inline in the function model (`FunctionInfo.decompiled`).
+- **.NET assemblies** — ILSpy decompilation when `ilspycmd` is on PATH; Ghidra fallback for mixed-mode (C++/CLI). The decompiled C# is ingested into the model as one entry per type and per method, plus its string literals. For VM-protected / anti-tamper'd assemblies that defeat static devirtualization, `chimera dotnet-trace` runs the binary on Linux (via a .NET Core shim) and hooks named methods at runtime with Harmony — a hooked comparator hands back the value it checks against.
 
 ### Mobile RE
 - **Framework detection** — React Native (Hermes / JSC), Flutter, Unity IL2CPP, Xamarin, Cordova / Capacitor.
@@ -523,6 +523,9 @@ chimera notes list server.bin --tag crypto
 # Hermes / Rust / VMP / Android-native paths
 chimera hermes-decompile app/index.android.bundle -o out/
 chimera rust-decompile target/release/agent --limit 50
+# Recover a key from a VM-protected .NET validator by hooking its
+# comparator at runtime (needs the .NET SDK):
+chimera dotnet-trace validator.exe --method CompareKey --input GUESS
 chimera vmp-devirt packed.exe --start 0x401000 -o out/
 chimera android-similarity v1.apk v2.apk -o diff_out/
 
