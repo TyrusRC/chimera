@@ -83,3 +83,36 @@ def test_deepen_reads_aflj_addr_key():
     assert added == 3
     assert model.get_function(hex(4200005)) is not None  # main
     assert {f.name for f in model.functions} == {"entry0", "main", "fcn.00402870"}
+
+
+def test_deepened_functions_survive_a_cache_round_trip(tmp_path):
+    """Deepening must be persisted, or a warm cache silently loses it.
+
+    The pipelines cache only the symbol-table triage blob. Deepened
+    functions were added to the model but never written, so the second
+    run of a stripped binary rehydrated 0 functions — undoing the whole
+    escalation path for every run after the first.
+    """
+    from chimera.core.cache import AnalysisCache
+    from chimera.pipelines.common import _rehydrate_from_cache
+
+    cache = AnalysisCache(tmp_path / "cache")
+    sha = "a" * 64
+    model = _model()
+    added = asyncio.run(deepen_r2_functions(
+        _FakeR2(AFLJ_REAL), "/x", model, cache=cache, sha256=sha,
+        cache_key="r2_deep_crackme",
+    ))
+    assert added == 3
+
+    # A fresh model, rehydrated purely from cache, must see the same set.
+    warm = _model()
+    _rehydrate_from_cache(warm, cache, sha, language="c", layer="native")
+    assert {f.name for f in warm.functions} == {"entry0", "main", "fcn.00402870"}
+
+
+def test_deepen_without_a_cache_still_works():
+    """The cache args are optional — callers without one are unaffected."""
+    model = _model()
+    added = asyncio.run(deepen_r2_functions(_FakeR2(AFLJ_REAL), "/x", model))
+    assert added == 3

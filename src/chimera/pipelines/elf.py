@@ -184,7 +184,10 @@ async def analyze_elf(
             ):
                 try:
                     async with resource_mgr.heavy():
-                        n_deep = await deepen_r2_functions(r2, elf_path, model)
+                        n_deep = await deepen_r2_functions(
+                            r2, elf_path, model, cache=cache, sha256=sha,
+                            cache_key=f"r2_deep_{elf_path.name}",
+                        )
                     logger.info("r2 deep analysis recovered %d additional functions", n_deep)
                 except Exception as exc:
                     logger.warning("r2 deep analysis failed: %s", exc)

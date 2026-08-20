@@ -8,6 +8,8 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Header, Footer, Static, DataTable, Input, Log, TabbedContent, TabPane
 
+from chimera.pipelines.common import r2_func_address
+
 logger = logging.getLogger(__name__)
 
 
@@ -201,8 +203,10 @@ class ChimeraApp(App):
                     continue
                 lib = entry.name[len("r2_"):]
                 for f in (blob.get("functions") or [])[:50]:
-                    addr = f.get("offset", f.get("vaddr", 0))
-                    addr = hex(addr) if isinstance(addr, int) else str(addr)
+                    # These blobs hold both symbol-table (`vaddr`) and
+                    # analysis-pass (`addr`) records; the shared reader
+                    # knows every spelling r2 uses.
+                    addr = r2_func_address(f) or "0x0"
                     fn_table.add_row(addr, f.get("name", "?"), "native",
                                      "c", f"r2/{lib}")
                     rows += 1

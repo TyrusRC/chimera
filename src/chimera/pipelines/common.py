@@ -448,15 +448,30 @@ def should_deepen_r2(func_count: int, *, deep: bool = False, min_functions: int 
 
 
 async def deepen_r2_functions(r2_adapter, path, model, *, language: str = "c",
-                              layer: str = "native") -> int:
+                              layer: str = "native", cache=None,
+                              sha256: str | None = None,
+                              cache_key: str | None = None) -> int:
     """Run r2's analysis pass to recover functions the symbol table omits.
 
     Merges results into the model (existing addresses dedup via add_function).
     Returns the number of NEW functions added.
+
+    When `cache`/`sha256`/`cache_key` are supplied the raw result is stored
+    too. That is not an optimisation — without it a warm cache rehydrates
+    only the symbol-table triage blob, so the second analysis of a stripped
+    binary comes back with zero functions and the whole escalation path
+    silently applies to the first run only. `_rehydrate_from_cache` picks the
+    entry up by its `r2_` prefix.
     """
     from chimera.model.function import FunctionInfo
 
     result = await r2_adapter.analyze(str(path), {"mode": "functions"})
+    if cache is not None and sha256 and cache_key:
+        try:
+            cache.put_json(sha256, cache_key,
+                           {"functions": result.get("functions", []) or []})
+        except Exception as exc:  # cache is best-effort, never fatal
+            logger.warning("caching deepened r2 functions failed: %s", exc)
     added = 0
     for f in result.get("functions", []) or []:
         addr = r2_func_address(f)
