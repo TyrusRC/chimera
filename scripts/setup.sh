@@ -9,7 +9,7 @@
 #
 # Native mode installs `pip install -e ".[dev]"` into .venv, plus (opt-in,
 # asks first) the apt-installable subset of external tools: radare2,
-# upx-ucl, gdb. Every other external tool (Ghidra, jadx, ilspycmd, capa,
+# jadx, upx-ucl, gdb. Every other external tool (Ghidra, ilspycmd, capa,
 # frida, ...) has no single correct package across distros — after this
 # script runs, `chimera doctor` reports exactly what's still missing and
 # how to install it.
@@ -106,9 +106,12 @@ else
 fi
 
 if command -v apt-get >/dev/null; then
-    if confirm "Install apt packages (radare2, upx-ucl, gdb) via sudo apt-get?"; then
+    # jadx is the only backend for .jar / .apk decompilation — a JVM archive
+    # has no native layer to fall back on, so without it those inputs analyze
+    # to an empty model.
+    if confirm "Install apt packages (radare2, jadx, upx-ucl, gdb) via sudo apt-get?"; then
         sudo apt-get update -qq
-        sudo apt-get install -y radare2 upx-ucl gdb
+        sudo apt-get install -y radare2 jadx upx-ucl gdb
         echo "apt packages installed"
     else
         echo "Skipped apt packages — install manually, or re-run with --yes"
