@@ -417,8 +417,14 @@ async def analyze_pe(
                         decompiled=t.get("decompiled"),
                     ))
                 cache.put_json(sha, f"ilspy_{pe_path.name}", ilspy_result)
-                logger.info("ilspy: %d types decompiled",
-                            len(ilspy_result.get("types", [])))
+                # ilspycmd emits one .cs per assembly, so the loop above
+                # records the file. Parse it so the types, methods and
+                # string literals inside — nearly everything on a managed
+                # binary — reach the model too.
+                from chimera.pipelines.dotnet_ingest import ingest_ilspy_sources
+                n_t, n_m, n_s = ingest_ilspy_sources(model, ilspy_output)
+                logger.info("ilspy: %d files, %d types, %d methods, %d strings",
+                            len(ilspy_result.get("types", [])), n_t, n_m, n_s)
             except Exception as exc:
                 logger.warning("ilspy phase failed: %s", exc)
                 skipped_phases.append("ilspy:error")
