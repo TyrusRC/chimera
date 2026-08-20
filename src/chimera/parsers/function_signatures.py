@@ -304,8 +304,12 @@ def match_functions(
         # generated pack (scripts/build_libfn_sigs.py against that arch's libs).
         available = sorted({f"{a}/{f}" for (a, f) in db.by_arch_fmt})
         logger.info(
-            "FLIRT: no signature pack for %s/%s; available packs: %s",
-            arch, fmt, ", ".join(available) or "(none)",
+            "FLIRT: no signature pack for %s/%s; available packs: %s. "
+            "Generate one with: scripts/build_libfn_sigs.py --format %s "
+            "--library <lib> --out src/chimera/data/sigs/<name>-%s.json "
+            "(no PE pack ships — it would have to be built from the "
+            "platform's own runtime libraries)",
+            arch, fmt, ", ".join(available) or "(none)", fmt, arch,
         )
         return {
             "matched": 0, "scanned": 0, "total_sigs": db.total(),
