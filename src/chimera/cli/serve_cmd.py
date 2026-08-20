@@ -49,5 +49,9 @@ def tui(cache_dir: str | None):
 def mcp():
     """Start the Chimera MCP server (for Claude Code / LLM integration)."""
     from chimera.mcp_server import main as mcp_main
-    click.echo("Starting Chimera MCP server...")
+    # stdout IS the JSONRPC transport for a stdio MCP server — anything
+    # else written there corrupts the stream, and the client reports
+    # "Failed to parse JSONRPC message from server" on connect. Status
+    # goes to stderr, which the protocol leaves free for exactly this.
+    click.echo("Starting Chimera MCP server...", err=True)
     asyncio.run(mcp_main())
