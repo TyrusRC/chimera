@@ -71,6 +71,12 @@ pybytecode = [
 pdf = [
     "pycryptodome>=3.20",
 ]
+# Capstone x64 disassembly fallback for get_disassembly / get_function when a
+# disassembler's call-graph walk is defeated (an ILT-heavy /INCREMENTAL PE64).
+# Without it, that fallback is simply unavailable and the prior behaviour holds.
+disasm = [
+    "capstone>=5.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

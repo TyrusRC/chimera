@@ -66,15 +66,44 @@ async def raw_disasm_at(address: str, count: int = 64) -> dict | None:
         return None
     eng = get_engine()
     r2 = eng.registry.get("radare2")
-    if not (r2 and r2.is_available()):
+    if r2 and r2.is_available():
+        try:
+            res = await r2.analyze(str(current_model.binary.path),
+                                   {"mode": "disasm_at", "address": address,
+                                    "count": count})
+            if res and res.get("ok") and res.get("instructions"):
+                return res
+        except Exception as exc:  # r2pipe/backend failure — degrade gracefully
+            logger.warning("raw_disasm_at(%s) failed: %s", address, exc)
+    # Fallback: r2 unavailable, or its call-graph walk was defeated (an
+    # ILT-heavy /INCREMENTAL PE64 returns nothing here). Disassemble the bytes
+    # directly with capstone and resolve ILT thunk call targets.
+    return _capstone_disasm_at(address, count)
+
+
+def _capstone_disasm_at(address: str, count: int) -> dict | None:
+    if current_model is None:
+        return None
+    if not current_model.binary.format.value.startswith("pe"):
         return None
     try:
-        return await r2.analyze(str(current_model.binary.path),
-                                {"mode": "disasm_at", "address": address,
-                                 "count": count})
-    except Exception as exc:  # r2pipe/backend failure — degrade gracefully
-        logger.warning("raw_disasm_at(%s) failed: %s", address, exc)
+        va = int(address, 16)
+    except (TypeError, ValueError):
         return None
+    from chimera.parsers.pe_disasm import disassemble_at
+    insns = disassemble_at(current_model.binary.path, va, count)
+    if not insns:
+        return None
+
+    def fmt(i: dict) -> str:
+        s = f"0x{i['address']:x}: {i['mnemonic']} {i['op_str']}".rstrip()
+        if "resolved_target" in i:
+            s += f"  ; -> 0x{i['resolved_target']:x}"
+        return s
+
+    return {"ok": True, "address": address, "name": None, "backend": "capstone",
+            "instruction_count": len(insns),
+            "instructions": [fmt(i) for i in insns]}
 
 
 async def raw_disasm_reply(address: str, extra: dict | None = None):
