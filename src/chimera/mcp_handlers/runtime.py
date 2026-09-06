@@ -137,4 +137,21 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             max_insns=int(arguments.get("max_insns", 200_000)))
         return mcpstate.json_reply(result)
 
+    if name == "run_under_wine":
+        from chimera.dynamic.wine import run_under_wine
+
+        exe = arguments["exe"]
+        if not Path(exe).exists():
+            return mcpstate.error(f"file not found: {exe}")
+        result = run_under_wine(
+            exe,
+            arguments.get("args") or (),
+            prefix=arguments.get("prefix"),
+            headless=not arguments.get("xvfb", False),
+            xvfb=bool(arguments.get("xvfb", False)),
+            timeout=float(arguments.get("timeout", 30)),
+            memory_scan=arguments.get("memory_scan"),
+        )
+        return mcpstate.json_reply(result)
+
     return None

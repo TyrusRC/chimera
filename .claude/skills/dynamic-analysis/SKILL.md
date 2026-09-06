@@ -28,8 +28,11 @@ assume from one.
 
 ## Running Windows PEs on Linux under Wine (safe, headless, scriptable)
 
-Wine turns a Windows CTF/malware binary into a runnable oracle on Linux. Keep
-it isolated and observable:
+Wine turns a Windows CTF/malware binary into a runnable oracle on Linux.
+**`run_under_wine` (MCP) / `chimera run-under-wine` packages all of the below in
+one call** (isolated prefix warmed up once, headless/Xvfb, memory-scan needle) —
+reach for it first; the manual recipe here is for when you need to vary a step.
+Keep it isolated and observable:
 
 - **Isolated prefix, quiet, no network side effects:**
   `WINEPREFIX=<scratch>/wp WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=d"`.
@@ -71,14 +74,26 @@ a reading problem — and even the author generated it, so there is a **uniform
 per-state pattern** to script:
 
 1. Find the state-handler dispatch (an array of RVAs, or a jump table). Its
-   length is the state count.
-2. Disassemble one handler; read the transition idiom (typically
-   `cmp <input>, <char>` / `je L`; at `L`, `mov <state_var>, <next_state>`).
-   Bound each handler by its dispatch-restart jump, not a guessed size.
-3. Script the extraction over all reachable states (capstone if the built-in
-   disassembler can't, e.g. an ILT binary — see re-workflow), build the graph,
-   then BFS/search for the accepting input of the required length.
-4. Confirm dynamically: feed the recovered input to the real binary.
+   length is the state count. **Use `find_dispatch_tables` (MCP) / `chimera
+   dispatch-tables`** — it recovers the array validated against executable
+   sections (so it works even when the handlers aren't in `.pdata`); the biggest
+   table is the one you want.
+2. Disassemble one handler (`disassemble_many` bulk-does the table's targets;
+   capstone if the built-in disassembler can't, e.g. an ILT binary — see
+   re-workflow); read the transition idiom (typically `cmp <input>, <char>` /
+   `je L`; at `L`, `mov <state_var>, <next_state>`). Bound each handler by its
+   dispatch-restart jump, not a guessed size.
+3. Build the edge list, then **`pathfind` (MCP) / `chimera pathfind`** for the
+   accepting input — pass `exact_length` for the fixed-length-password shape.
+4. Confirm dynamically: feed the recovered input to the real binary (for a
+   Windows PE, **`run_under_wine` / `chimera run-under-wine`**).
+
+**On-chain / embedded bytecode:** if the "algorithm" turns out to be EVM
+smart-contract bytecode (deployed on a chain, or stashed as a hex const — a
+"web3" wrapper is often just this), don't deploy to a testnet. **`evm_tour`
+(MCP) / `chimera evm`** disassembles it, recovers the function selectors, and
+*executes* a leaf `pure`/`view` function against calldata (bounded interpreter,
+no node) so you can verify a formula by running it.
 
 **Gotcha:** capstone prints small immediates as bare decimals (`2`, not `0x2`);
 parse with `int(x, 16)` and don't require a `0x` prefix.

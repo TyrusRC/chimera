@@ -368,6 +368,45 @@ def all_tools() -> list[Tool]:
                               "description": "Directory to write any inline images to."},
              }, "required": ["path"]}),
 
+        Tool(name="evm_tour",
+             description="Statically triage EVM smart-contract bytecode (as a hex string or a path to a hex/binary file) WITHOUT an Ethereum node: split a constructor (deploy) blob to its runtime, strip the solc metadata trailer, recover the dispatcher's 4-byte function selectors, and disassemble. Optionally pass calldata (selector||abi-encoded args) to EXECUTE a leaf pure/view function through a bounded stack-machine interpreter and get the returned bytes — verify an on-chain formula by execution instead of deploying to a testnet. The interpreter models stack/memory/calldata only (no storage, external calls, gas or logs); such an opcode errors rather than returning a wrong answer.",
+             inputSchema={"type": "object", "properties": {
+                 "source": {"type": "string", "description": "EVM bytecode as a hex string (0x-optional), or a path to a file containing hex or raw bytecode."},
+                 "calldata": {"type": "string",
+                              "description": "Optional hex calldata (selector||abi-args). When given, runs the runtime as a pure function and returns the output bytes instead of the tour."},
+             }, "required": ["source"]}),
+
+        Tool(name="find_dispatch_tables",
+             description="Scan a PE for arrays of code pointers (a state-handler dispatch table or jump table) and validate each entry against the real function starts from the .pdata table — so it works even when a disassembler's call-graph walk is ILT-defeated. The largest table's length is typically the state/handler count of a generated state machine or VM interpreter. Returns candidate tables (section, base VA, entry count, pointer size 8=absolute-VA/4=RVA), largest first.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the PE file."},
+             }, "required": ["path"]}),
+
+        Tool(name="pathfind",
+             description="Shortest labelled path through a graph/FSM edge list from a start node to an accepting node — the reusable core of 'find the input that drives this state machine to accept' (e.g. recover a password from a disassembled validator). Edges map a node to [label, next_node] transitions; the concatenated edge labels ARE the accepting input. Pure BFS, no binary needed. Use exact_length to require a path of exactly N edges (the 'N-char password' shape where shorter accepts must be rejected).",
+             inputSchema={"type": "object", "properties": {
+                 "edges": {"type": "object", "description": "Map of node -> list of [label, next_node] pairs."},
+                 "start": {"description": "The start node."},
+                 "accept": {"description": "An accepting node, or a list of accepting nodes."},
+                 "exact_length": {"type": "integer", "description": "Require exactly this many edges."},
+                 "max_depth": {"type": "integer", "description": "Bound the search to this many edges."},
+             }, "required": ["edges", "start", "accept"]}),
+
+        Tool(name="run_under_wine",
+             description="Run a Windows PE on this Linux host under Wine as a dynamic oracle — isolated throwaway WINEPREFIX, debug output silenced. Console apps run headless (stdout captured); set xvfb for GUI apps (virtual display). A memory_scan needle is searched (ASCII + UTF-16LE) in the process memory to lift a MessageBox/window answer. Executes the binary; never raises on the common failures (wine absent, missing exe) — returns an error dict. Returns {ran, returncode, stdout, stderr, timed_out, wineprefix, memory_hits, error}.",
+             inputSchema={"type": "object", "properties": {
+                 "exe": {"type": "string", "description": "Path to the Windows PE to run."},
+                 "args": {"type": "array", "items": {"type": "string"},
+                          "description": "Command-line arguments."},
+                 "xvfb": {"type": "boolean", "default": False,
+                          "description": "Run under a virtual display (for GUI apps)."},
+                 "timeout": {"type": "number", "default": 30,
+                             "description": "Kill after N seconds."},
+                 "memory_scan": {"type": "string",
+                             "description": "Needle to search (ASCII+UTF-16LE) in process memory."},
+                 "prefix": {"type": "string", "description": "Reuse an existing WINEPREFIX."},
+             }, "required": ["exe"]}),
+
         # --- Configuration ---
         Tool(name="get_config",
              description="Get or modify Chimera analysis configuration. Call with no params to read current config.",

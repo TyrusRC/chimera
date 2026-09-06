@@ -359,5 +359,37 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "script": script,
         })
 
-    # ── pull_app ────────────────────────────────────────────────────────
+    # ── find_dispatch_tables (path-based, no loaded model needed) ─────────
+    if name == "find_dispatch_tables":
+        from chimera.parsers.pe_dispatch import find_dispatch_tables
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        tables = find_dispatch_tables(path)
+        # The biggest tables are what matter; small runs in .text are mostly
+        # noise, so cap the payload and report the total.
+        return mcpstate.json_reply({
+            "total_candidates": len(tables),
+            "tables": tables[:50],
+        })
+
+    # ── pathfind (pure graph search; no binary at all) ────────────────────
+    if name == "pathfind":
+        from chimera.pathfind import pathfind
+
+        raw_edges = arguments.get("edges", {})
+        edges = {k: [tuple(e) for e in v] for k, v in raw_edges.items()}
+        accept = arguments.get("accept")
+        if accept is None:
+            return mcpstate.error("pathfind needs an 'accept' node or list")
+        result = pathfind(
+            edges, arguments.get("start"), accept,
+            max_depth=arguments.get("max_depth"),
+            exact_length=arguments.get("exact_length"),
+        )
+        if result is None:
+            return mcpstate.json_reply({"found": False})
+        return mcpstate.json_reply({"found": True, **result.to_dict()})
+
     return None

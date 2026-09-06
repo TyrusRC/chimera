@@ -49,4 +49,39 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         )
         return mcpstate.json_reply(tour.to_dict())
 
+    if name == "evm_tour":
+        from chimera.parsers.evm import (
+            EvmRevert, EvmUnsupported, evm_tour, run_pure, split_deploy_runtime,
+        )
+
+        source = arguments["source"]
+        p = Path(source)
+        try:
+            is_file = p.exists()
+        except OSError:                    # bytecode hex is longer than a filename
+            is_file = False
+        if is_file:
+            raw = p.read_bytes()
+            text = raw.decode("ascii", "ignore").strip()
+            code = (bytes.fromhex(text[2:] if text.startswith("0x") else text)
+                    if text and all(c in "0123456789abcdefABCDEF" for c in text)
+                    else raw)
+        else:
+            try:
+                code = bytes.fromhex(source[2:] if source.startswith("0x") else source)
+            except ValueError:
+                return mcpstate.error(f"not a file and not valid hex: {source[:40]}")
+
+        calldata = arguments.get("calldata")
+        if calldata is not None:
+            runtime, _ = split_deploy_runtime(code)
+            cd = bytes.fromhex(calldata[2:] if calldata.startswith("0x") else calldata)
+            try:
+                out = run_pure(runtime, cd)
+            except (EvmUnsupported, EvmRevert, ValueError) as exc:
+                return mcpstate.error(f"pure-run failed: {exc}")
+            return mcpstate.json_reply({"return": "0x" + (out or b"").hex()})
+
+        return mcpstate.json_reply(evm_tour(code).to_dict())
+
     return None
