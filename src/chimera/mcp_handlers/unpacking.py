@@ -35,4 +35,18 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             ]
         return mcpstate.json_reply(payload)
 
+    if name == "pdf_tour":
+        from chimera.unpacking.pdf import pdf_tour
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+
+        tour = pdf_tour(
+            path,
+            password=str(arguments.get("password", "")).encode(),
+            extract_images_dir=arguments.get("extract_images_dir"),
+        )
+        return mcpstate.json_reply(tour.to_dict())
+
     return None
