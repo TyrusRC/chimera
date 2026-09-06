@@ -132,10 +132,15 @@ ARG INSTALL_CAPA=0
 # works out of the box. Set INSTALL_FRIDA=0 to skip if you want a smaller
 # image and don't need dynamic instrumentation.
 ARG INSTALL_FRIDA=1
+# Unicorn (the `emulate` extra) is default-on so `chimera emulate` and the
+# MCP emulate_function tool work out of the box — it's a single lightweight
+# wheel with no heavy deps. Set INSTALL_EMULATE=0 to skip it.
+ARG INSTALL_EMULATE=1
 RUN --mount=type=cache,target=/root/.cache/pip \
     extras=""; \
     if [ "$INSTALL_CAPA" = "1" ]; then extras="${extras},capa"; fi; \
     if [ "$INSTALL_FRIDA" = "1" ]; then extras="${extras},dynamic"; fi; \
+    if [ "$INSTALL_EMULATE" = "1" ]; then extras="${extras},emulate"; fi; \
     extras="$(echo "$extras" | sed 's/^,//')"; \
     if [ -n "$extras" ]; then \
         pip install ".[${extras}]"; \
