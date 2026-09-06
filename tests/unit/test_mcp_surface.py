@@ -39,6 +39,7 @@ EXPECTED_TOOLS = {
     "rename_function", "set_comment", "set_function_type",
     "set_classification", "add_note", "list_annotations", "batch_annotate",
     "emulate_function",
+    "detect_gpu",
 }
 
 

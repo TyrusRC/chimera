@@ -344,6 +344,11 @@ def all_tools() -> list[Tool]:
                  "max_insns": {"type": "integer", "default": 200000},
              }, "required": ["address"]}),
 
+        # --- Host hardware ---
+        Tool(name="detect_gpu",
+             description="Report the host's GPU and GPU-capable crackers (hashcat/john) and whether GPU-accelerated cracking is available. Call this before attempting any hash-crack, password/keyspace brute-force, or encrypted-archive attack to decide whether to offload to the GPU. Returns gpus, cracker info, a 'usable' verdict, and a hint. Read-only; needs no loaded binary.",
+             inputSchema={"type": "object", "properties": {}}),
+
         # --- Configuration ---
         Tool(name="get_config",
              description="Get or modify Chimera analysis configuration. Call with no params to read current config.",

@@ -16,7 +16,8 @@ cache/
 .coverage
 node_modules/
 web/dist/
-.claude/
+.claude/*
+!.claude/skills/
 e2e/material/
 .worktrees/
 
