@@ -109,5 +109,32 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "numeric_streams": streams,
         })
 
+    # ── emulate_function ────────────────────────────────────────────────
+    if name == "emulate_function":
+        from chimera.dynamic.emulate import emulate_function, unicorn_available
+        if not unicorn_available():
+            return mcpstate.error(
+                'unicorn not installed — pip install "chimera[emulate]"')
+        if not mcpstate.require_model():
+            return mcpstate.error("No analysis loaded. Call analyze(path=...) first.")
+        model = mcpstate.current_model
+        path = mcpstate.analysis_config.get("path") or str(model.binary.path)
+        arch = arguments.get("arch") or model.binary.arch.value
+        if arch.startswith("arm64"):
+            arch = "arm64"          # arm64e emulates as arm64
+        try:
+            args = tuple(int(a) for a in (arguments.get("args") or []))
+        except (TypeError, ValueError):
+            return mcpstate.error("'args' must be a list of integers.")
+        read_back = []
+        for r in (arguments.get("read_back") or []):
+            addr = r.get("address")
+            addr = int(addr, 16) if isinstance(addr, str) else int(addr)
+            read_back.append((addr, int(r.get("length", 16))))
+        result = emulate_function(
+            path, arguments["address"], arch=arch, args=args,
+            read_back=tuple(read_back),
+            max_insns=int(arguments.get("max_insns", 200_000)))
+        return mcpstate.json_reply(result)
 
     return None

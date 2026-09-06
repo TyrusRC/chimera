@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 def varbert():
     """Pal et al. 2024 — recover variable names from decompiled output.
 
-    Requires the optional `varbert-api` package. Install with
-    `pip install "chimera[varbert]"` or `pip install varbert-api`.
+    Requires the optional `varbert-api` package (not on PyPI). Install
+    from source: pip install "git+https://github.com/binsync/varbert_api".
     """
 
 
@@ -49,8 +49,8 @@ def varbert_rename(path: str, address: str, variant: str, apply: bool,
     adapter = VarBertAdapter(model_variant=variant)
     if not adapter.is_available():
         raise click.ClickException(
-            "VarBERT not installed. Run "
-            "`pip install \"chimera[varbert]\"` or `pip install varbert-api`."
+            "VarBERT not installed (varbert-api is not on PyPI). Install from "
+            "source: pip install \"git+https://github.com/binsync/varbert_api\"."
         )
 
     code, _name = _ai_decompile(path, address, project_dir, cache_dir, backend)

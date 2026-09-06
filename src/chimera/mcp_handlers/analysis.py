@@ -136,11 +136,14 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error("No analysis loaded.")
         pattern = arguments.get("pattern")
         limit = arguments.get("limit", 100)
+        offset = arguments.get("offset", 0)
         all_strings = mcpstate.current_model.get_strings(pattern=pattern)
+        page = all_strings[offset:offset + limit]
         return mcpstate.json_reply({
-            "total": len(all_strings),
+            "total": len(all_strings), "offset": offset, "limit": limit,
+            "has_more": offset + limit < len(all_strings),
             "strings": [{"address": s.address, "value": s.value, "section": s.section}
-                        for s in all_strings[:limit]],
+                        for s in page],
         })
 
     # ── get_callgraph ───────────────────────────────────────────────────
@@ -149,10 +152,13 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error("No analysis loaded.")
         address = arguments["address"]
         depth = min(arguments.get("depth", 2), 10)
+        # Cap the node count so a deep/high-fanout graph can't blow up the
+        # caller's context — matters most when a small model drives.
+        max_nodes = min(arguments.get("max_nodes", 200), 1000)
         nodes, edges = [], []
         visited = set()
         def walk(addr, d):
-            if addr in visited or d > depth:
+            if addr in visited or d > depth or len(nodes) >= max_nodes:
                 return
             visited.add(addr)
             func = mcpstate.current_model.get_function(addr)
@@ -167,7 +173,8 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
                 if d < 1:
                     walk(c.address, d + 1)
         walk(address, 0)
-        return mcpstate.json_reply({"nodes": nodes, "edges": edges, "center": address})
+        return mcpstate.json_reply({"nodes": nodes, "edges": edges, "center": address,
+                                    "truncated": len(nodes) >= max_nodes})
 
     # ── get_manifest ────────────────────────────────────────────────────
     if name == "get_manifest":

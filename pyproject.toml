@@ -12,7 +12,10 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "textual>=0.89",
-    "mcp>=1.0",
+    # Pin below 2.x: the mcp 2.x low-level Server API dropped the
+    # @server.list_tools()/@server.call_tool() decorators mcp_server.py
+    # relies on, so an unpinned install breaks the MCP server on import.
+    "mcp>=1.27,<2",
     "yara-python>=4.5",
     "pefile>=2024.8.26",
     "pyelftools>=0.31",
@@ -31,14 +34,15 @@ capa = [
 dynamic = [
     "frida>=16.0",
 ]
-# VarBERT (Pal et al., IEEE S&P 2024) variable-name recovery. Optional
-# because the Transformer model weights are large and the binding pulls
-# in torch; default installs skip it. Without this extra, the adapter's
-# `is_available()` returns False and `chimera varbert rename` prints a
-# clear "install with pip install chimera[varbert]" message.
-varbert = [
-    "varbert-api>=0.1",
-]
+# VarBERT (Pal et al., IEEE S&P 2024) variable-name recovery. The
+# `varbert-api` binding is NOT published on PyPI — it installs from source
+# (https://github.com/binsync/varbert_api) and pulls torch + large model
+# weights. Listing it as a normal extra makes `uv sync` / `uv lock` fail
+# ("varbert-api not found in the registry"), so it is intentionally kept
+# out of the resolvable extras. Install it yourself with:
+#   pip install "git+https://github.com/binsync/varbert_api"
+# The adapter's `is_available()` stays False until `varbert_api` imports.
+varbert = []
 # EMBER 2024 malware classifier (futurecomputing4ai/EMBER2024). LightGBM
 # is the only required runtime; `ember` (PyPI: 'ember') gives the full
 # 2381-dim feature vector while `lief` is needed for any PE parsing.
@@ -47,6 +51,12 @@ ml = [
     "lightgbm>=4.0",
     "lief>=0.14",
     "numpy>=1.26",
+]
+# Single-function emulation (`chimera emulate`, MCP emulate_function). Unicorn
+# is a per-platform wheel, so it's opt-in; without it the adapter/tool degrade
+# to a clear "not installed" result.
+emulate = [
+    "unicorn>=2.0",
 ]
 dev = [
     "pytest>=8.0",

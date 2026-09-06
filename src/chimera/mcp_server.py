@@ -16,7 +16,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
 from chimera import mcp_session as mcpstate
-from chimera.mcp_handlers import analysis, artifacts, device, runtime
+from chimera.mcp_handlers import analysis, annotations, artifacts, device, runtime
 from chimera.mcp_schemas import all_tools
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ server = Server("chimera")
 #: Tried in order; the first group that owns `name` answers. Each returns
 #: None for a tool it does not handle, so adding a group is a one-line
 #: change here rather than an edit to a shared dispatch chain.
-_HANDLER_GROUPS = (analysis, artifacts, device, runtime)
+_HANDLER_GROUPS = (analysis, annotations, artifacts, device, runtime)
 
 
 @server.list_tools()

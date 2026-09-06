@@ -45,12 +45,15 @@ def all_tools() -> list[Tool]:
              description="Search strings extracted from the binary. Supports regex patterns.",
              inputSchema={"type": "object", "properties": {
                  "pattern": {"type": "string", "description": "Regex pattern to filter strings"},
+                 "offset": {"type": "integer", "default": 0},
                  "limit": {"type": "integer", "default": 100},
              }}),
         Tool(name="get_callgraph",
              description="Get call graph around a function (callers + callees) up to specified depth.",
              inputSchema={"type": "object", "properties": {
                  "address": {"type": "string"}, "depth": {"type": "integer", "default": 2},
+                 "max_nodes": {"type": "integer", "default": 200,
+                               "description": "Cap on nodes returned; response sets truncated=true if hit."},
              }, "required": ["address"]}),
         Tool(name="get_manifest",
              description="Get the decoded AndroidManifest.xml content (Android only). Useful for reviewing permissions, components, intent-filters.",
@@ -136,9 +139,11 @@ def all_tools() -> list[Tool]:
              description="List all cached analysis artifacts and on-disk outputs for the current binary.",
              inputSchema={"type": "object", "properties": {}}),
         Tool(name="get_disassembly",
-             description="Get disassembly instructions for a function by address.",
+             description="Get disassembly instructions for a function by address. Paged: use offset/limit for long functions.",
              inputSchema={"type": "object", "properties": {
                  "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
+                 "offset": {"type": "integer", "default": 0},
+                 "limit": {"type": "integer", "default": 200},
              }, "required": ["address"]}),
         Tool(name="get_class_headers",
              description="Read ObjC class-dump headers from iOS analysis. Lists header files or reads a specific header.",
@@ -265,6 +270,79 @@ def all_tools() -> list[Tool]:
                                         "description": "Stub kernel32/ntdll so a Windows binary runs on Linux and its anti-debug imports read clean."},
                  "timeout": {"type": "integer", "default": 120},
              }, "required": ["path", "methods"]}),
+
+        # --- Annotate (write-back) ---
+        # These persist the driving model's findings into the per-binary
+        # overlay.json (atomic) and update the live model. Read them back
+        # with get_function / list_annotations. This is the only write path
+        # in the MCP surface — everything else is read-only.
+        Tool(name="rename_function",
+             description="Rename the function at ADDRESS. Persists to the project overlay and updates the live model, so the next get_function shows the new name. Survives restart.",
+             inputSchema={"type": "object", "properties": {
+                 "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
+                 "name": {"type": "string", "description": "New function name"},
+             }, "required": ["address", "name"]}),
+        Tool(name="set_comment",
+             description="Attach a comment at ADDRESS (line 0 = function header). Persisted to the overlay. Use it to record what a routine does as you understand it.",
+             inputSchema={"type": "object", "properties": {
+                 "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
+                 "text": {"type": "string", "description": "Comment body"},
+                 "line": {"type": "integer", "default": 0,
+                          "description": "Line/offset within the function; 0 = header/global comment"},
+             }, "required": ["address", "text"]}),
+        Tool(name="set_function_type",
+             description="Pin a C-style signature on the function at ADDRESS (e.g. 'int decode_license(char*)'). Persisted; updates the live model's signature.",
+             inputSchema={"type": "object", "properties": {
+                 "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
+                 "signature": {"type": "string", "description": "Free-form C signature"},
+             }, "required": ["address", "signature"]}),
+        Tool(name="set_classification",
+             description="Override the classification of the function at ADDRESS (e.g. 'crypto', 'anti_debug', 'license_check'). Persisted; updates the live model.",
+             inputSchema={"type": "object", "properties": {
+                 "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
+                 "classification": {"type": "string", "description": "Classification label"},
+             }, "required": ["address", "classification"]}),
+        Tool(name="add_note",
+             description="Record a narrative finding in the project notebook, optionally with evidence links to addresses. Survives export/import. Use it to write up how a protection works or how you cracked it.",
+             inputSchema={"type": "object", "properties": {
+                 "title": {"type": "string"},
+                 "body": {"type": "string", "default": ""},
+                 "tags": {"type": "array", "items": {"type": "string"}},
+                 "evidence": {"type": "array", "items": {"type": "object", "properties": {
+                     "address": {"type": "string"}, "line": {"type": "integer"}}},
+                     "description": "Evidence items: {address, line}"},
+             }, "required": ["title"]}),
+        Tool(name="list_annotations",
+             description="List every annotation recorded for the loaded binary: renames, comments, types, classifications, notes. Use it to audit what you've already recorded before continuing.",
+             inputSchema={"type": "object", "properties": {}}),
+        Tool(name="batch_annotate",
+             description="Apply many annotations in one atomic write — far fewer round-trips than one call each when documenting a whole binary. Each op is {op, address, ...}: op='rename' needs 'name'; 'comment' needs 'text' (+optional 'line'); 'type' needs 'signature'; 'classify' needs 'classification'; 'rename_variable' needs 'original'+'new_name'. One bad op is reported, the rest still apply.",
+             inputSchema={"type": "object", "properties": {
+                 "ops": {"type": "array", "items": {"type": "object", "properties": {
+                     "op": {"type": "string",
+                            "enum": ["rename", "comment", "type", "classify", "rename_variable"]},
+                     "address": {"type": "string"},
+                     "name": {"type": "string"}, "text": {"type": "string"},
+                     "line": {"type": "integer"}, "signature": {"type": "string"},
+                     "classification": {"type": "string"},
+                     "original": {"type": "string"}, "new_name": {"type": "string"},
+                 }, "required": ["op"]}},
+             }, "required": ["ops"]}),
+
+        # --- Emulation ---
+        Tool(name="emulate_function",
+             description="Emulate the function at ADDRESS in isolation (Unicorn) with integer args and read back memory it writes — resolve a hash, run a string-decrypt or checksum routine without running the whole binary. Self-contained leaf routines only: a call into an import/syscall hits unmapped memory and stops. Needs the 'emulate' extra; arch defaults to the loaded binary's (x86_64/arm64).",
+             inputSchema={"type": "object", "properties": {
+                 "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
+                 "args": {"type": "array", "items": {"type": "integer"},
+                          "description": "Integer arguments in register order (rdi.. / x0..)."},
+                 "arch": {"type": "string", "enum": ["x86_64", "arm64"],
+                          "description": "Override the arch; defaults to the loaded binary's."},
+                 "read_back": {"type": "array", "items": {"type": "object", "properties": {
+                     "address": {"type": "string"}, "length": {"type": "integer"}}},
+                     "description": "Memory regions to return after the run: {address, length}."},
+                 "max_insns": {"type": "integer", "default": 200000},
+             }, "required": ["address"]}),
 
         # --- Configuration ---
         Tool(name="get_config",

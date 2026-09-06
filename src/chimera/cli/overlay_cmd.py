@@ -109,3 +109,69 @@ def overlay_import(path: str, project_dir: str | None, in_path: str, mode: str):
         f"{len(target.comments)} commented addrs, "
         f"{len(target.function_types)} typed"
     )
+
+
+# ----------------------------------------------------------------------
+# overlay propagate — carry annotations from an old build to a new one
+# ----------------------------------------------------------------------
+
+
+@overlay.command("propagate")
+@click.argument("old", type=click.Path(exists=True))
+@click.argument("new", type=click.Path(exists=True))
+@click.option("--project-dir", type=click.Path(), default=None)
+@click.option("--threshold", type=float, default=0.85,
+              help="Minimum function similarity to carry an annotation.")
+@click.option("--heuristic", type=click.Choice(["jaccard", "multi"]), default="jaccard")
+@click.option("--apply/--preview", default=False,
+              help="Write carried annotations into NEW's overlay (default: preview).")
+def overlay_propagate(old: str, new: str, project_dir: str | None,
+                      threshold: float, heuristic: str, apply: bool):
+    """Move renames/comments/types from OLD's overlay onto NEW via similarity.
+
+    A rebuild shifts every address; this matches OLD→NEW functions with
+    `diff-functions` and carries each annotation onto its matched twin.
+    Only matches at or above --threshold carry; the rest are reported so
+    nothing is lost silently. Preview by default; --apply persists.
+    """
+    import asyncio
+
+    from chimera.core.config import ChimeraConfig
+    from chimera.core.engine import ChimeraEngine
+    from chimera.core.overlay import ProjectOverlay
+    from chimera.diff.function_similarity import diff_models
+    from chimera.diff.overlay_propagate import apply_plan, build_plan
+
+    kwargs: dict = {}
+    if project_dir:
+        kwargs["project_dir"] = Path(project_dir)
+    cfg = ChimeraConfig(**kwargs)
+
+    async def _run():
+        engine = ChimeraEngine(cfg)
+        return await engine.analyze(old), await engine.analyze(new)
+    ma, mb = asyncio.run(_run())
+
+    overlay_a = ProjectOverlay.load(cfg.project_dir, ma.binary.sha256)
+    result = diff_models(ma, mb, threshold=threshold, heuristic=heuristic)
+    plan = build_plan(overlay_a, result["matched"], min_similarity=threshold)
+    s = plan.summary()
+
+    click.echo(f"[chimera] propagate {Path(old).name} → {Path(new).name}")
+    click.echo(f"  carried:             {s['carried']}")
+    click.echo(f"  skipped (drifted):   {s['skipped_low_similarity']}")
+    click.echo(f"  skipped (unmatched): {s['skipped_unmatched']}")
+    for c in plan.carried[:20]:
+        click.echo(f"    ~ {c.a_address} → {c.b_address}  "
+                   f"{c.name!r}  sim={c.similarity:.2f}")
+    for sk in plan.skipped_unmatched[:20]:
+        click.echo(f"    ? {sk['a_address']} annotated in OLD, no match in NEW")
+
+    if not apply:
+        click.echo("[chimera] preview only — re-run with --apply to write NEW's overlay.")
+        return
+    overlay_b = ProjectOverlay.load(cfg.project_dir, mb.binary.sha256)
+    apply_plan(plan, overlay_b)
+    overlay_b.save()
+    click.echo(f"[chimera] applied {s['carried']} function annotations to "
+               f"{Path(new).name}'s overlay.")

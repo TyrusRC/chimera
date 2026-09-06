@@ -160,10 +160,15 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return reply or mcpstate.error(
                 f"Function {arguments['address']} not found.")
         instructions = getattr(func, "disassembly", None) or []
+        offset = arguments.get("offset", 0)
+        limit = arguments.get("limit", 200)
+        page = instructions[offset:offset + limit]
         return mcpstate.json_reply({
             "address": func.address, "name": func.name,
             "instruction_count": len(instructions),
-            "instructions": instructions,
+            "offset": offset, "limit": limit,
+            "has_more": offset + limit < len(instructions),
+            "instructions": page,
         })
 
     # ── get_class_headers ───────────────────────────────────────────────

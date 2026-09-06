@@ -33,6 +33,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     diff_cmd,
     doctor,
     dotnet_trace_cmd,
+    emulate_cmd,
     flutter_cmd,
     frida_cmd,
     gdb_export_cmd,
