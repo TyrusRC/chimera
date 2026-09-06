@@ -368,6 +368,14 @@ def all_tools() -> list[Tool]:
                               "description": "Directory to write any inline images to."},
              }, "required": ["path"]}),
 
+        Tool(name="evm_tour",
+             description="Statically triage EVM smart-contract bytecode (as a hex string or a path to a hex/binary file) WITHOUT an Ethereum node: split a constructor (deploy) blob to its runtime, strip the solc metadata trailer, recover the dispatcher's 4-byte function selectors, and disassemble. Optionally pass calldata (selector||abi-encoded args) to EXECUTE a leaf pure/view function through a bounded stack-machine interpreter and get the returned bytes — verify an on-chain formula by execution instead of deploying to a testnet. The interpreter models stack/memory/calldata only (no storage, external calls, gas or logs); such an opcode errors rather than returning a wrong answer.",
+             inputSchema={"type": "object", "properties": {
+                 "source": {"type": "string", "description": "EVM bytecode as a hex string (0x-optional), or a path to a file containing hex or raw bytecode."},
+                 "calldata": {"type": "string",
+                              "description": "Optional hex calldata (selector||abi-args). When given, runs the runtime as a pure function and returns the output bytes instead of the tour."},
+             }, "required": ["source"]}),
+
         # --- Configuration ---
         Tool(name="get_config",
              description="Get or modify Chimera analysis configuration. Call with no params to read current config.",
