@@ -165,7 +165,20 @@ async def analyze_pe(
         binary.framework = Framework.NATIVE
         logger.info("CLR/.NET PE detected — routing to ILSpy; Ghidra/FLOSS skipped")
     elif not is_pyinstaller_bundle:
+        # Recover the common native runtimes that otherwise hide behind the
+        # misleading `native` label (reads as C/C++). Cheapest reliable one:
+        # the VB6-compatible family (classic VB6 / twinBASIC).
         binary.framework = Framework.NATIVE
+        try:
+            from chimera.frameworks.native_pe import detect_native_runtime
+            dlls = [d.get("dll", "") for d in header.imports] if header else []
+            rt = detect_native_runtime(pe_path.read_bytes(), dlls)
+            if rt:
+                binary.framework = Framework.VB6
+                cache.put_json(sha, "native_runtime", {"framework": rt[0], "detail": rt[1]})
+                logger.info("native runtime fingerprint: %s", rt[1])
+        except Exception as exc:
+            logger.warning("native runtime detection failed: %s", exc)
 
     # -----------------------------------------------------------------------
     # Phase 5: r2 triage
@@ -285,11 +298,14 @@ async def analyze_pe(
             high_entropy = sum(
                 1 for s in header.sections if s.entropy > 7.0
             )
+            from chimera.parsers.pe_header import entropy_anomalies
+            anomalies = entropy_anomalies(header.sections, pe_path.stat().st_size)
             cache.put_json(sha, "pe_flags", {
                 "has_authenticode_signature": header.has_authenticode_signature,
                 "has_tls_callbacks": header.has_tls_callbacks,
                 "writable_executable_sections": writable_executable,
                 "high_entropy_section_count": high_entropy,
+                "entropy_anomalies": anomalies,
                 "is_dll": header.is_dll,
                 "pe_class": header.pe_class,
             })
