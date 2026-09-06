@@ -30,9 +30,14 @@ context bloat. **Breadth before depth. Name the path before drilling.**
 3. **Depth (one path, targeted).** Drill the chosen path only:
    `get_function` / `get_disassembly` (paged) / `emulate_function` for a leaf
    routine / `dotnet_trace` for VM'd .NET / `detect_gpu` + the
-   `gpu-acceleration` skill for a crack. Persist findings with the write-back
-   tools (`rename_function`, `set_comment`, `add_note`, `batch_annotate`) so
-   the reasoning survives compaction and the next session reads it back.
+   `gpu-acceleration` skill for a crack. When the logic is huge, generated, or
+   keyed on runtime state, **consider the `dynamic-analysis` skill** — running
+   the target as an oracle (Wine for Windows PEs on Linux, or `emulate_function`
+   for one routine) can beat hand-tracing thousands of instructions; if no
+   oracle exists, it also covers extracting a generated state machine statically.
+   Persist findings with the write-back tools (`rename_function`, `set_comment`,
+   `add_note`, `batch_annotate`) so the reasoning survives compaction and the
+   next session reads it back.
 
 4. **Log the gap.** Whenever you step outside chimera (stock `ast`/`dis`, a
    hand-rolled decryptor, an external tool), note it — that's a tool gap worth
@@ -51,9 +56,26 @@ context bloat. **Breadth before depth. Name the path before drilling.**
 - **Context hygiene = token savings.** Page every list. Offload heavy reads to
   a subagent. Don't re-read a file you just wrote. Keep only conclusions.
 
+## Gotchas that mislead recon
+- **A function count ≈ the import count on a native PE64 is a lie.** A
+  `/INCREMENTAL`-linked MSVC binary routes calls through an Incremental Link
+  Table of `jmp` thunks that defeats a disassembler's call-graph walk (it
+  reports ~112 when there are thousands). Chimera cross-checks `.pdata`'s
+  RUNTIME_FUNCTION table and backfills; `analyze` warns when this happens.
+  Resolve each `call`/`jmp` through its ILT thunk before trusting an edge, and
+  a capstone disasm fallback (`[disasm]` extra) reads functions r2 can't.
+- **`native` in the framework line reads as C/C++ but may not be** — chimera
+  now fingerprints the VB6/twinBASIC family; watch for other runtimes hiding
+  behind `native` (Delphi, Go, Rust).
+- **A section at ~random entropy over a large fraction of the file** is the
+  likely encrypted/compressed payload — chimera surfaces it in the summary.
+
 ## Anti-patterns
 - Running `analyze` (slow, Ghidra-heavy) before cheap detection has told you
   it's even the right instrument — a source-provided or bytecode target may
   need no disassembly at all (see the `python-bytecode` skill).
 - Drilling before the mindset call. Depth without a named path burns tokens.
 - Pulling full strings/disassembly into main context instead of a subagent.
+- Hand-tracing a huge generated validator when an oracle would answer it, OR
+  grinding a dynamic oracle that doesn't exist — the `dynamic-analysis` skill
+  is the decision guide.
