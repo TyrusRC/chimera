@@ -18,6 +18,7 @@ node_modules/
 web/dist/
 .claude/*
 !.claude/skills/
+!.claude/agents/
 e2e/material/
 .worktrees/
 

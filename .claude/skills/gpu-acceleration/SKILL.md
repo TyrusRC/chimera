@@ -32,11 +32,12 @@ decide honestly whether the keyspace is searchable:
 | **Large unknown key** (e.g. a 16–32 byte RC4/AES key) with no crib | ❌ **NOT brute-forceable — recover it analytically** |
 | The key is *derived* from something recoverable (a username, a transform, a seed) | ❌ don't crack — invert the derivation |
 
-> Worked example (Flare-On 12 ch2): the RC4 key was a 20-byte value, but it was
-> *derived* from `os.getlogin()` via `sig[i] = user[i] ^ (i+42)`. Brute-forcing
-> 2^160 is hopeless; XOR is self-inverse, so `user[i] = sig[i] ^ (i+42)` recovers
-> the key in one line. **When a key comes from a transform, invert the transform —
-> never brute-force it.** Announce this and skip the GPU.
+> Example: a key that looks large (16–32 bytes) but is *derived* from a
+> recoverable value (a username, a seed, a timestamp) via a reversible transform
+> (XOR, add, a small PRNG) is NOT brute-forceable — recover the input and replay
+> the derivation. XOR and add are self-inverse. **When a key comes from a
+> transform, invert the transform; never brute-force a derived key.** Announce
+> this and skip the GPU.
 
 If Step 1 says "not brute-forceable," stop here and solve it analytically.
 
