@@ -31,6 +31,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     classify_cmd,
     devices_cmd,
     diff_cmd,
+    dispatch_cmd,
     doctor,
     dotnet_trace_cmd,
     emulate_cmd,
@@ -49,6 +50,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     notebook_cmd,
     overlay_cmd,
     patch_cmd,
+    pathfind_cmd,
     pdf_cmd,
     persistence_cmd,
     protection,
@@ -60,6 +62,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     unpack_cmd,
     varbert_cmd,
     vmp_cmd,
+    wine_cmd,
     yara_cmd,
 )
 
