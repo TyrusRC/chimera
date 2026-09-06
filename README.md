@@ -53,6 +53,7 @@ default `analyze` hot path.
 - **Byte-level patching** — `BinaryPatcher` resolves VA→file-offset for PE (section table), ELF (PT_LOAD), and Mach-O (LC_SEGMENT_64). PE checksum is recomputed automatically. Five recipe kinds: write-bytes, nop-range, force-jump-taken (validates 0x70–0x7F short conditional jumps), find-import-and-stub (PE IAT walk), find-elf-plt-and-stub (.rela.plt / .dynsym). Three anti-debug bypass recipes ship out of the box.
 - **Packer detection + UPX auto-unpack** — YARA-first (UPX / ASPack / VMProtect / Themida / MPRESS / PECompact / Enigma / MEW / kkrunchy), section-name fallback (UPX0, .vmpN, .themida, .aspack, …), per-section byte-entropy heuristic on executable sections. `chimera unpack` round-trips UPX byte-identically and ships manual guidance for the VM-protectors no open-source unpacker handles cleanly.
 - **gdb bridge** — `chimera gdb-export` writes a `.gdbinit` of `$convenience` variables + a `chimera-bp` user command so `gdb` lands inside the same address space your renames refer to.
+- **Single-function emulation** — `chimera emulate <bin> --addr 0x… --arch x86_64|arm64 --arg N` runs one function under Unicorn and reads back its return value and any memory it writes (`--read-back ADDR:LEN`) — resolve an API-hash or run a string-decrypt / checksum routine without executing the whole binary. Reuses the `BinaryPatcher` VA→offset reader; targets self-contained leaf routines (a call into an import/syscall stops the run). Exposed over MCP as `emulate_function`. Optional `[emulate]` extra; degrades cleanly when Unicorn is absent.
 - **PE / ELF imports scoring** — PEStudio-style buckets (process injection, anti-debug, persistence, network, crypto, evasion). Linux: persistence-string scan (cron / systemd / `LD_PRELOAD` / init.d), syscall scoring, XOR-string heuristic.
 - **.NET assemblies** — ILSpy decompilation when `ilspycmd` is on PATH; Ghidra fallback for mixed-mode (C++/CLI). The decompiled C# is ingested into the model as one entry per type and per method, plus its string literals. For VM-protected / anti-tamper'd assemblies that defeat static devirtualization, `chimera dotnet-trace` runs the binary on Linux (via a .NET Core shim) and hooks methods at runtime with Harmony, which detours JIT'd native code rather than on-disk IL — so an IL-integrity check never sees the hook. It runs Windows-only binaries by stubbing their kernel32/ntdll imports (which also blanks the anti-debug those imports carry — CheckRemoteDebuggerPresent, NtQueryInformationProcess), drives a scripted stdin through any menu to the key prompt, hooks bare or fully-qualified (`System.String::op_Equality`) methods, and reconstructs a key straight from the int/char stream a bytecode-VM's memory primitive moves — the value a hooked comparator never materializes as a string. Exposed over MCP as `dotnet_trace`; the target file is never modified.
 
@@ -68,9 +69,10 @@ default `analyze` hot path.
 - **Function-similarity diff (BinDiff-style)** — `chimera diff-functions a.bin b.bin --threshold 0.85` matches functions via opcode-shingled Jaccard, two-pass (same-name first, then greedy bipartite over the cross product); `--heuristic multi` adds call-graph degree + basic-block count + mnemonic cosine. `--export-bindiff out.csv` writes BinDiff-compatible CSV for downstream tools. A whole-binary KEENHash embedding backend (ISSTA 2025) and a REVDECODE Viterbi re-ranker (USENIX Sec 2025) are implemented in the library API (`chimera.diff.function_similarity.diff_models`) but are **not yet wired to `diff-functions` CLI flags**; the KEENHash offline path is a feature-hash surrogate, not the published model.
 - **Reports** — JSON, HTML, Markdown, SARIF v2.1.0, CycloneDX 1.6 SBOM, MASVS coverage matrix, CVSS finding draft.
 - **Annotation sharing** — `chimera overlay export <bin> -o overlay.json` and `chimera overlay import <bin> -i overlay.json --merge|--replace` move renames / comments / types between analysts. Schema includes the binary sha256 so import against a different binary surfaces a warning rather than silently corrupting addresses. Exported payload also carries the project notebook.
+- **Annotation propagation across versions** — `chimera overlay propagate <old> <new> [--threshold 0.85] [--apply]` carries an old build's renames / comments / types onto a new build by matching functions with `diff-functions` similarity, so a rebuild doesn't throw the naming work away. Only matches at or above the threshold carry; drifted and unmatched functions are reported, never guessed. Preview by default.
 - **Notebook** — `chimera notes add --title T --body B --evidence 0xADDR ...` / `notes list [--tag T]` / `notes rm ID`, plus `/api/projects/{id}/notes`. Sidekick-style narrative findings with evidence links to addresses or lines. Stored in the project overlay; round-trips through export/import.
 - **Web UI + TUI** — FastAPI-backed UI with Monaco editor (right-click rename / comment / set-type, plus AI explain / AI rename buttons when an API key is set), Textual TUI for device interaction.
-- **MCP server** — high-level analysis tools exposed to any MCP-compatible LLM client.
+- **MCP server** — ~49 high-level tools for any MCP-compatible LLM client: query (functions, strings, callgraph, disassembly, protections), **write-back** (rename / comment / type / classify / notes, single or `batch_annotate`, persisted to the overlay), and `emulate_function`. List tools page via `offset`/`limit` to stay inside a small model's context.
 - **OWASP MASVS** — findings tagged with MASVS categories.
 
 ### AI-assisted RE (optional, opt-in)
@@ -532,6 +534,17 @@ chimera dotnet-trace keygenme.exe --input 7 --input AAAAA-BBBB --method ReadByte
 chimera vmp-devirt packed.exe --start 0x401000 -o out/
 chimera android-similarity v1.apk v2.apk -o diff_out/
 
+# Single-function emulation (Unicorn) — resolve a hash / run a decrypt routine
+# without executing the whole binary. x86_64 + arm64; self-contained routines
+# only (a call into an import/syscall stops the run). Needs the [emulate] extra.
+chimera emulate sample.bin --addr 0x401000 --arch x86_64 --arg 20 --arg 22
+chimera emulate sample.bin --addr 0x401000 --read-back 0x1000:64    # dump output buffer
+
+# Carry renames/comments/types from an old build onto a new one via function
+# similarity (wires diff-functions + the overlay). Preview by default.
+chimera overlay propagate old.bin new.bin --threshold 0.85
+chimera overlay propagate old.bin new.bin --apply                  # write new's overlay
+
 # Function-similarity (BinDiff-style; Jaccard + greedy bipartite)
 chimera diff-functions a.bin b.bin --threshold 0.85
 chimera diff-functions a.bin b.bin --heuristic multi   # +call-graph/BB/mnemonic signals
@@ -573,10 +586,20 @@ chimera mcp
 
 ### MCP integration
 
-Chimera exposes high-level tools (`analyze`, `xref`, `list_devices`,
-`pull_app`, `run_semgrep`, `detect_protections`, `dotnet_trace`, …) over
-MCP. Point any MCP-compatible client at `chimera mcp` and the model can
-drive the pipeline directly — from static triage to running a
+Chimera exposes ~49 high-level tools over MCP. **Query** tools (`analyze`,
+`get_functions`, `get_function`, `get_strings`, `get_callgraph`,
+`get_disassembly`, `detect_protections`, `run_semgrep`, `dotnet_trace`, …)
+drive the pipeline; **write-back** tools (`rename_function`, `set_comment`,
+`set_function_type`, `set_classification`, `add_note`, `list_annotations`,
+`batch_annotate`) let the model *persist what it finds* into the same
+per-binary `overlay.json` the CLI and web UI use — so a model can name a
+routine and comment it, not just read it, and the change survives restart;
+and `emulate_function` runs one function under Unicorn to resolve a hash or
+decrypt routine without executing the whole binary. List/large-output tools
+page with `offset`/`limit` (`get_callgraph` caps nodes and flags
+`truncated`) so a big binary stays inside a small model's context. Point any
+MCP-compatible client at `chimera mcp` and the model can drive the workflow
+end to end — from static triage, through recording its renames, to running a
 VM-protected .NET binary and reading its key back at runtime.
 
 **Claude Code**: the repo ships a project-scoped `.mcp.json` that
@@ -614,6 +637,7 @@ internal helper functions.
 | Fuzzing           | AFL++           | native-library fuzzing harness                      |
 | Unpacking         | upx             | UPX auto-unpack (UPX0 / UPX1)                       |
 | Debugger handoff  | gdb             | `chimera gdb-export` consumes `.gdbinit`            |
+| Emulation         | Unicorn         | single-function run — `chimera emulate`, MCP `emulate_function` (optional `[emulate]` extra) |
 | AI assistant      | Anthropic API   | `chimera ai {explain,rename,comment,refine-decomp,batch-rename,eval-decomp}` (urllib, no SDK) |
 | Refine engine     | Claude / Idioms | `--engine {claude,idioms}`; Idioms (NDSS 2026) via `CHIMERA_IDIOMS_CHECKPOINT`           |
 | AI verifier       | second LLM call | Sidekick-style adversarial rename refutation (`ai batch-rename --verify`)               |
