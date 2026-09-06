@@ -35,7 +35,7 @@ EXPECTED_TOOLS = {
     "pull_app", "start_frida_server", "frida_attach", "frida_spawn",
     "frida_detach", "frida_exec", "frida_load_script", "frida_messages",
     "get_logcat", "setup_proxy", "clear_proxy", "get_config",
-    "start_fuzz", "fuzz_status", "dotnet_trace", "py_unwrap",
+    "start_fuzz", "fuzz_status", "dotnet_trace", "py_unwrap", "pdf_tour",
     "rename_function", "set_comment", "set_function_type",
     "set_classification", "add_note", "list_annotations", "batch_annotate",
     "emulate_function",

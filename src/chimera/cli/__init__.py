@@ -48,6 +48,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     notebook_cmd,
     overlay_cmd,
     patch_cmd,
+    pdf_cmd,
     persistence_cmd,
     protection,
     pyextract_cmd,

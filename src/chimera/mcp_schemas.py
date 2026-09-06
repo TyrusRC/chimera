@@ -358,6 +358,16 @@ def all_tools() -> list[Tool]:
                             "description": "Also disassemble each recovered code node."},
              }, "required": ["path"]}),
 
+        Tool(name="pdf_tour",
+             description="Statically triage a PDF: recover objects even with no xref/EOF (which strict parsers refuse), flag parser-differential traps (duplicate /Root, name-hex-obfuscated keys like /#52#6F#6F#74, duplicate/commented objects, missing xref/EOF), and — when the file uses the Standard security handler (R2-R6, RC4/AESV2/AESV3) — derive the key from the empty or supplied password, decrypt the streams, and list/dump any hidden inline images. Read-only; never renders or executes the document. Use for suspicious/malformed/encrypted PDFs.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the PDF file."},
+                 "password": {"type": "string", "default": "",
+                              "description": "User/owner password to try (default: empty)."},
+                 "extract_images_dir": {"type": "string",
+                              "description": "Directory to write any inline images to."},
+             }, "required": ["path"]}),
+
         # --- Configuration ---
         Tool(name="get_config",
              description="Get or modify Chimera analysis configuration. Call with no params to read current config.",
