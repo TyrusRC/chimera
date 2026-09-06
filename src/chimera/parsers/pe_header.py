@@ -73,6 +73,29 @@ def _shannon_entropy(data: bytes) -> float:
     return e
 
 
+def entropy_anomalies(sections, file_size: int, *,
+                      threshold: float = 7.2, min_fraction: float = 0.10) -> list[dict]:
+    """Flag sections that look like an encrypted/compressed payload.
+
+    A section is anomalous when its entropy is near-random (``>= threshold``)
+    *and* it is a meaningful fraction of the file (``>= min_fraction``), so a
+    ~1.9MB `.data` blob at 7.96 entropy is surfaced while a tiny high-entropy
+    resource stub is not. This is the single most actionable structural fact
+    on a hand-packed sample, so `analyze` reports it rather than only counting.
+    """
+    out: list[dict] = []
+    for s in sections:
+        frac = (s.raw_size / file_size) if file_size else 0.0
+        if s.entropy >= threshold and frac >= min_fraction:
+            out.append({
+                "name": s.name,
+                "entropy": round(s.entropy, 2),
+                "raw_size": s.raw_size,
+                "fraction": round(frac, 3),
+            })
+    return out
+
+
 def parse_pe(path: Path) -> PEHeaderInfo:
     """Parse a PE file via `pefile`. Caller is responsible for ensuring
     the file is actually a PE (use `_classify_pe` from `chimera.model.binary`).

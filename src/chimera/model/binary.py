@@ -91,6 +91,7 @@ class Framework(Enum):
     CAPACITOR = "capacitor"
     KMM = "kmm"
     PYINSTALLER = "pyinstaller"
+    VB6 = "vb6"  # classic Visual Basic 6 or twinBASIC (VB6-compatible)
     UNKNOWN = "unknown"
 
 

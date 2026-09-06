@@ -87,20 +87,22 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
         click.echo(f"Chimera v{__version__} — analyzing {Path(path).name}")
         click.echo()
         model = await engine.analyze(path)
+        from chimera.core.cache import AnalysisCache
+        cache = AnalysisCache(config.cache_dir)
+        sha = model.binary.sha256
+
         click.echo("Analysis complete:")
         click.echo(f"  Platform:  {model.binary.platform.value}")
         click.echo(f"  Format:    {model.binary.format.value}")
-        click.echo(f"  Framework: {_framework_label(model)}")
-        click.echo(f"  SHA256:    {model.binary.sha256[:16]}...")
+        click.echo(f"  Framework: {_framework_label(model, cache, sha)}")
+        click.echo(f"  SHA256:    {sha[:16]}...")
         click.echo(f"  Functions: {len(model.functions)}")
         click.echo(f"  Strings:   {len(model.get_strings())}")
 
         # Per-native-lib outcomes from the cache so the analyst can see
         # which library each backend actually analyzed (not just "ghidra
         # ran"). Walks the cache for r2_<name>/ghidra_<name> entries.
-        from chimera.core.cache import AnalysisCache
-        cache = AnalysisCache(config.cache_dir)
-        per_lib = _per_native_lib_summary(cache, model.binary.sha256)
+        per_lib = _per_native_lib_summary(cache, sha)
         if per_lib:
             click.echo()
             click.echo("  Native libraries analyzed:")
@@ -131,6 +133,26 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
             click.echo()
             click.echo("  Native protections:   " + " · ".join(flags))
 
+        # Surface high-entropy sections — the single most actionable structural
+        # fact on a hand-packed sample (an encrypted/compressed payload blob).
+        pe_flags = cache.get_json(sha, "pe_flags") or {}
+        for a in pe_flags.get("entropy_anomalies", []):
+            click.echo()
+            click.echo(
+                f"  ⚠ High-entropy section {a['name']}: entropy {a['entropy']} over "
+                f"{a['fraction'] * 100:.0f}% of the file — likely encrypted/compressed payload"
+            )
+
+        # If a native PE was triaged without a decompiler, say so plainly so the
+        # function count isn't mistaken for a complete, decompiled view.
+        unavailable_names = {a.name().lower() for a in engine.registry.all_registered()
+                             if not a.is_available()}
+        fmt = model.binary.format.value
+        if "ghidra" in unavailable_names and fmt.startswith("pe"):
+            click.echo()
+            click.echo("  ⚠ No decompiler (Ghidra) available — functions are a shallow "
+                       "r2 sweep with no library/user split; treat as incomplete.")
+
         jni = cache.get_json(model.binary.sha256, "jni_summary") or {}
         if jni:
             click.echo()
@@ -152,12 +174,13 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
 
 
 
-def _framework_label(model) -> str:
+def _framework_label(model, cache=None, sha=None) -> str:
     """Honest framework label for the analyze summary.
 
     `Framework.NONE` becomes "none (jvm/kotlin)" on Android and
     "none (objc/swift)" on iOS so the analyst sees what code layer they're
-    actually looking at, not just an enum value that reads as "C/C++".
+    actually looking at, not just an enum value that reads as "C/C++". A
+    fingerprinted native runtime (e.g. VB6/twinBASIC) carries its detail.
     """
     fw = model.binary.framework.value
     plat = model.binary.platform.value
@@ -166,6 +189,10 @@ def _framework_label(model) -> str:
             return "none (jvm/kotlin)"
         if plat == "ios":
             return "none (objc/swift)"
+    if cache is not None and sha:
+        rt = cache.get_json(sha, "native_runtime") or {}
+        if rt.get("detail"):
+            return f"{fw} ({rt['detail']})"
     return fw
 
 
