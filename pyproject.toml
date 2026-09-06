@@ -58,6 +58,13 @@ ml = [
 emulate = [
     "unicorn>=2.0",
 ]
+# Cross-version Python disassembly for `chimera pyunwrap --disasm` / MCP
+# py_unwrap. xdis carries the opcode tables for a target compiled by a
+# different interpreter than the host; without it, layer-peeling and the
+# co_names/co_consts tree still work and disasm falls back to stdlib `dis`.
+pybytecode = [
+    "xdis>=6.1",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

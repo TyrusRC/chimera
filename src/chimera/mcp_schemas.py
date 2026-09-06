@@ -344,6 +344,15 @@ def all_tools() -> list[Tool]:
                  "max_insns": {"type": "integer", "default": 200000},
              }, "required": ["address"]}),
 
+        # --- Static unpacking ---
+        Tool(name="py_unwrap",
+             description="Recursively peel marshal/zlib/base64/base85/bz2/lzma layers from a .py/.pyc/blob and dump the version-independent co_names/co_consts tree for every code object found; read-only, never executes the target. Use for obfuscated/packed Python — a .py that exec()s a marshalled/compressed/encoded blob, or nested-encoded bytecode. Set disasm to also disassemble each recovered code node (uses xdis for cross-version when installed).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the .py / .pyc / blob file."},
+                 "disasm": {"type": "boolean", "default": False,
+                            "description": "Also disassemble each recovered code node."},
+             }, "required": ["path"]}),
+
         # --- Configuration ---
         Tool(name="get_config",
              description="Get or modify Chimera analysis configuration. Call with no params to read current config.",
