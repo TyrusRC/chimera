@@ -23,6 +23,12 @@ import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from chimera.unpacking.pymagic import (
+    PYC_MAGIC as _PYC_MAGIC,
+    pyc_header as _pyc_header,
+    reconstruct_pyc as _reconstruct_pyc,
+)
+
 logger = logging.getLogger(__name__)
 
 # The CArchive cookie magic PyInstaller writes near EOF (v2.1+ carries the
@@ -32,15 +38,6 @@ _COOKIE_FMT = "!8sIIII64s"          # magic, lengthOfPackage, toc, tocLen, pyver
 _COOKIE_SIZE = struct.calcsize(_COOKIE_FMT)   # 88
 _TOC_ENTRY_HDR = "!IIIIBc"          # entrySize, entryPos, cmprSize, uncmprSize, flag, type
 _TOC_HDR_SIZE = struct.calcsize(_TOC_ENTRY_HDR)   # 18
-
-# pyc magic numbers (u16 little-endian, then \r\n) per CPython version, for
-# reconstructing a loadable header. Extended as needed; unknown versions get
-# a zeroed magic and a note (the raw marshal still extracts).
-_PYC_MAGIC = {
-    311: 3495, 312: 3531, 313: 3571, 314: 3608,
-    38: 3413, 39: 3425, 310: 3439,
-}
-
 
 @dataclass
 class PyEntry:
@@ -82,30 +79,6 @@ def is_pyinstaller_file(path: str | Path, tail: int = 1 << 16) -> bool:
             return PYINST_MAGIC in fh.read()
     except OSError:
         return False
-
-
-def _pyc_header(pyver: int | None) -> bytes:
-    """A 16-byte pyc header for `pyver` (flags=0, mtime=0, size=0)."""
-    magic_int = _PYC_MAGIC.get(pyver or 0, 0)
-    magic = struct.pack("<H", magic_int) + b"\r\n"
-    return magic + b"\x00" * 12
-
-
-def _reconstruct_pyc(body: bytes, pyver: int | None) -> bytes:
-    """Prepend a pyc header if PyInstaller stripped it.
-
-    Entry scripts and modules are stored as the bare marshalled code object
-    (no pyc header). If `body` already begins with a plausible header we keep
-    it; otherwise we prepend one so a decompiler / `dis` will load it.
-    """
-    # A raw marshalled code object starts with the 'c' / 0xE3 type byte in
-    # CPython; a real pyc would start with the magic. Heuristic: if the first
-    # two bytes match a known magic, assume it's already headered.
-    if len(body) >= 2:
-        first = struct.unpack("<H", body[:2])[0]
-        if first in _PYC_MAGIC.values():
-            return body
-    return _pyc_header(pyver) + body
 
 
 def _safe_join(out_dir: Path, name: str) -> Path:

@@ -349,6 +349,15 @@ def all_tools() -> list[Tool]:
              description="Report the host's GPU and GPU-capable crackers (hashcat/john) and whether GPU-accelerated cracking is available. Call this before attempting any hash-crack, password/keyspace brute-force, or encrypted-archive attack to decide whether to offload to the GPU. Returns gpus, cracker info, a 'usable' verdict, and a hint. Read-only; needs no loaded binary.",
              inputSchema={"type": "object", "properties": {}}),
 
+        # --- Static unpacking ---
+        Tool(name="py_unwrap",
+             description="Recursively peel marshal/zlib/base64/base85/bz2/lzma layers from a .py/.pyc/blob and dump the version-independent co_names/co_consts tree for every code object found; read-only, never executes the target. Use for obfuscated/packed Python — a .py that exec()s a marshalled/compressed/encoded blob, or nested-encoded bytecode. Set disasm to also disassemble each recovered code node (uses xdis for cross-version when installed).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the .py / .pyc / blob file."},
+                 "disasm": {"type": "boolean", "default": False,
+                            "description": "Also disassemble each recovered code node."},
+             }, "required": ["path"]}),
+
         # --- Configuration ---
         Tool(name="get_config",
              description="Get or modify Chimera analysis configuration. Call with no params to read current config.",
