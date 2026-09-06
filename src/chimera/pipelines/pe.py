@@ -238,6 +238,40 @@ async def analyze_pe(
             skipped_phases.append("radare2")
 
     # -----------------------------------------------------------------------
+    # Phase 5.5: .pdata cross-check (x64) — catch an ILT-defeated function walk
+    # -----------------------------------------------------------------------
+    if header is not None and header.pe_class == "PE32+":
+        try:
+            from chimera.parsers.pe_pdata import count_looks_bogus, runtime_functions
+            pdata_fns = runtime_functions(pe_path)
+            r2_count = len(model.functions)
+            import_count = len(model.imports)
+            if count_looks_bogus(r2_count, import_count, len(pdata_fns)):
+                existing = {f.address for f in model.functions}
+                added = 0
+                for fn in pdata_fns:
+                    addr = hex(fn["start"])
+                    if addr in existing:
+                        continue
+                    model.add_function(FunctionInfo(
+                        address=addr, name=f"FUN_{fn['start']:x}",
+                        original_name=f"FUN_{fn['start']:x}",
+                        language="c", classification="unknown",
+                        layer="native", source_backend="pdata",
+                    ))
+                    added += 1
+                logger.warning(
+                    "r2 found %d functions (~import count %d) but .pdata lists %d — "
+                    "call graph is ILT-obscured; backfilled %d from .pdata",
+                    r2_count, import_count, len(pdata_fns), added)
+                cache.put_json(sha, "pdata_functions", {
+                    "r2_count": r2_count, "import_count": import_count,
+                    "pdata_count": len(pdata_fns), "backfilled": added,
+                })
+        except Exception as exc:
+            logger.warning("pdata cross-check failed: %s", exc)
+
+    # -----------------------------------------------------------------------
     # Phase 6: Import scoring
     # -----------------------------------------------------------------------
     if not getattr(config, "skip_pe_imports", False) and header is not None:

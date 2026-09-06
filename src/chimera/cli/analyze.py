@@ -143,6 +143,18 @@ async def _analyze(path: str, project_dir: str | None, cache_dir: str | None,
                 f"{a['fraction'] * 100:.0f}% of the file — likely encrypted/compressed payload"
             )
 
+        # If a disassembler's function walk was defeated (e.g. an ILT-heavy
+        # /INCREMENTAL PE64), .pdata gives the authoritative count — say so.
+        pdf = cache.get_json(sha, "pdata_functions") or {}
+        if pdf.get("pdata_count"):
+            click.echo()
+            click.echo(
+                f"  ⚠ Function recovery incomplete: disassembler found "
+                f"{pdf['r2_count']} (~import count) but .pdata lists "
+                f"{pdf['pdata_count']} — backfilled {pdf['backfilled']} "
+                "(ILT-obscured call graph)."
+            )
+
         # If a native PE was triaged without a decompiler, say so plainly so the
         # function count isn't mistaken for a complete, decompiled view.
         unavailable_names = {a.name().lower() for a in engine.registry.all_registered()
