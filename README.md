@@ -609,6 +609,39 @@ launch, then check it connected with `claude mcp list`. For Claude
 Desktop or another client, point it at `<repo>/.venv/bin/chimera mcp`
 (stdio) the same way.
 
+#### Automate the whole flow from Claude Code — no API key
+
+Claude Code *is* the model, so chimera needs **no `ANTHROPIC_API_KEY`**:
+the MCP surface is entirely deterministic tools, and Claude Code does the
+reasoning and the naming. (The key-gated `chimera ai …` commands are a
+separate CLI/HTTP feature — you don't need them here; the write-back tools
+below replace them.) One-time setup, then hand it the target:
+
+```
+claude                      # from the repo root; approve "chimera" on first launch
+> analyze /path/to/app.apk and walk the license check
+```
+
+From there the agent drives the loop end to end over MCP:
+
+1. **Load** — `analyze(path=…)` (once per binary; the session holds it).
+2. **Explore** — `get_functions` / `get_function` / `get_strings` /
+   `get_callgraph` / `get_disassembly` (all paged, so a big binary stays in
+   context), `detect_protections` / `detect_framework`.
+3. **Understand** — `emulate_function` to resolve a hash or run a decrypt
+   routine; `dotnet_trace` for a VM-protected .NET key.
+4. **Record** — `rename_function` / `set_comment` / `set_function_type` /
+   `set_classification` / `add_note`, or `batch_annotate` for many at once.
+   Everything persists to `overlay.json` and survives restart — so a second
+   Claude Code session (or a teammate) picks up the named-up binary.
+5. **Report** — `chimera report <bin> --format sarif|json|html` via a shell
+   command when a deliverable is wanted.
+
+A **team** works the same way on one target: `analyze` once, then several
+Claude Code agents query and `batch_annotate` in parallel, coordinating
+through the shared on-disk overlay. (One loaded binary per MCP session
+today; multi-binary sessions are on the roadmap.)
+
 `tests/integration/test_mcp_protocol.py` drives `chimera mcp` with the
 `mcp` SDK's client (`stdio_client` / `ClientSession`) — a real
 initialize → `list_tools` → `call_tool` round trip, no API key needed.
