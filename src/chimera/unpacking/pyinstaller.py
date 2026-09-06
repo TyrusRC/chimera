@@ -68,6 +68,22 @@ def is_pyinstaller(data: bytes) -> bool:
     return data.rfind(PYINST_MAGIC) != -1
 
 
+def is_pyinstaller_file(path: str | Path, tail: int = 1 << 16) -> bool:
+    """Cheaply check a file for the CArchive cookie by reading only its tail.
+
+    The cookie sits at (or very near) EOF, so a frozen 17MB EXE can be
+    detected without reading it all — this keeps the analyze hot path from
+    misrouting a PyInstaller bundle into a full-binary Ghidra decompile.
+    """
+    try:
+        with open(path, "rb") as fh:
+            size = fh.seek(0, 2)
+            fh.seek(max(0, size - tail))
+            return PYINST_MAGIC in fh.read()
+    except OSError:
+        return False
+
+
 def _pyc_header(pyver: int | None) -> bytes:
     """A 16-byte pyc header for `pyver` (flags=0, mtime=0, size=0)."""
     magic_int = _PYC_MAGIC.get(pyver or 0, 0)

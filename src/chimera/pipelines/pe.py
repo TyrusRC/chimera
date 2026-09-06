@@ -104,6 +104,21 @@ async def analyze_pe(
     is_dotnet = binary.format == BinaryFormat.DOTNET_PE
     logger.info("PE pipeline: %s [%s]", pe_path.name, binary.format.value)
 
+    # PyInstaller bundle guard: a frozen Python EXE looks like a plain PE by
+    # magic, but deep-decompiling its C bootloader is wasted work — the real
+    # code is marshalled Python in an appended CArchive. Detect it up front
+    # (tail read, cheap), flag the framework, and signpost `chimera pyextract`
+    # so an agent isn't handed 17MB of bootloader disassembly instead.
+    from chimera.unpacking.pyinstaller import is_pyinstaller_file
+    is_pyinstaller_bundle = is_pyinstaller_file(pe_path)
+    if is_pyinstaller_bundle:
+        binary.framework = Framework.PYINSTALLER
+        logger.info(
+            "PyInstaller bundle detected (%s) — payload is marshalled Python "
+            "in an appended CArchive, not the native bootloader. Run "
+            "`chimera pyextract %s` to recover the .pyc; Ghidra deep skipped.",
+            pe_path.name, pe_path.name)
+
     # -----------------------------------------------------------------------
     # Phase 3: PE header parse
     # -----------------------------------------------------------------------
@@ -149,7 +164,7 @@ async def analyze_pe(
         # No Framework.DOTNET exists yet; use NATIVE as placeholder.
         binary.framework = Framework.NATIVE
         logger.info("CLR/.NET PE detected — routing to ILSpy; Ghidra/FLOSS skipped")
-    else:
+    elif not is_pyinstaller_bundle:
         binary.framework = Framework.NATIVE
 
     # -----------------------------------------------------------------------
@@ -356,6 +371,10 @@ async def analyze_pe(
     # -----------------------------------------------------------------------
     if is_dotnet:
         skipped_phases.append("ghidra:dotnet_pe")
+    elif is_pyinstaller_bundle:
+        skipped_phases.append("ghidra:pyinstaller")
+        logger.info("PyInstaller bundle — skipping Ghidra bootloader decompile; "
+                    "run `chimera pyextract` to get the Python payload")
     elif getattr(config, "ghidra_skip", False):
         skipped_phases.append("ghidra:config")
         logger.info("ghidra phase skipped via config")

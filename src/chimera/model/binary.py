@@ -90,6 +90,7 @@ class Framework(Enum):
     IONIC = "ionic"
     CAPACITOR = "capacitor"
     KMM = "kmm"
+    PYINSTALLER = "pyinstaller"
     UNKNOWN = "unknown"
 
 

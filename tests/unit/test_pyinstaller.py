@@ -62,3 +62,13 @@ def test_entry_name_traversal_is_refused(tmp_path):
     r = extract_pyinstaller(tmp_path / "evil.exe", tmp_path / "out")
     assert r.ok
     assert not (tmp_path / "escape.pyc").exists()   # never escaped the tree
+
+
+def test_tail_detector_finds_cookie_without_reading_whole_file(tmp_path):
+    from chimera.unpacking.pyinstaller import is_pyinstaller_file
+    big = tmp_path / "frozen.exe"
+    big.write_bytes(b"MZ" + b"\x00" * (2 << 20) + _build_archive())   # ~2MB + archive
+    assert is_pyinstaller_file(big) is True
+    plain = tmp_path / "plain.exe"
+    plain.write_bytes(b"MZ" + b"\x00" * 4096)
+    assert is_pyinstaller_file(plain) is False
