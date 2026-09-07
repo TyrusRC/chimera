@@ -224,6 +224,23 @@ def run_under_wine(
         except OSError:
             pass
 
+    # Drain stdout/stderr on background threads so a chatty target can't fill the
+    # ~64KB pipe buffer and deadlock (poll() would never return, and we'd kill a
+    # healthy process at the timeout with truncated output).
+    import threading  # noqa: PLC0415
+    buf = {"out": b"", "err": b""}
+
+    def _drain(stream, key):
+        try:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                buf[key] += chunk
+        except (OSError, ValueError):
+            pass
+    readers = [threading.Thread(target=_drain, args=(proc.stdout, "out"), daemon=True),
+               threading.Thread(target=_drain, args=(proc.stderr, "err"), daemon=True)]
+    for t in readers:
+        t.start()
+
     deadline = time.time() + timeout
     scanned = 0
     while proc.poll() is None and time.time() < deadline:
@@ -234,16 +251,16 @@ def run_under_wine(
             scanned += 1
         time.sleep(0.5)
 
-    try:
-        out, err = proc.communicate(timeout=max(0.1, deadline - time.time()))
-        result["returncode"] = proc.returncode
-    except subprocess.TimeoutExpired:
+    if proc.poll() is None:
         proc.kill()
-        out, err = proc.communicate()
         result["timed_out"] = True
+    proc.wait()
+    for t in readers:
+        t.join(timeout=2)
+    result["returncode"] = proc.returncode
     result["ran"] = True
-    result["stdout"] = _decode(out)
-    result["stderr"] = _decode(err)
+    result["stdout"] = _decode(buf["out"])
+    result["stderr"] = _decode(buf["err"])
     result["memory_hits"] = {
         n.hex(): sorted(set(o)) for n, o in hits.items() if o
     } or {}
