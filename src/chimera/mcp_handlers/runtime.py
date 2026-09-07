@@ -162,9 +162,15 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error("run_with_breakpoints needs a non-empty argv")
         bps = []
         for b in arguments.get("breakpoints") or []:
-            addr = b["addr"]
-            addr = int(addr, 16) if isinstance(addr, str) else int(addr)
-            bps.append({"addr": addr, "dumps": b.get("dumps") or []})
+            spec = {"dumps": b.get("dumps") or []}
+            if "signature" in b:
+                spec["signature"] = b["signature"]
+                d = b.get("delta", 0)
+                spec["delta"] = int(d, 0) if isinstance(d, str) else int(d)
+            else:
+                addr = b["addr"]
+                spec["addr"] = int(addr, 16) if isinstance(addr, str) else int(addr)
+            bps.append(spec)
         try:
             result = run_with_breakpoints(
                 [str(a) for a in argv], bps,

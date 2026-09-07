@@ -416,12 +416,12 @@ def all_tools() -> list[Tool]:
              }, "required": ["exe"]}),
 
         Tool(name="run_with_breakpoints",
-             description="Launch a program (x86-64 Linux) under ptrace, set software breakpoints at given addresses, and on each hit dump CPU registers and pointer-target memory — the no-sudo way to read a value a program computes at RUNTIME (a derived/decrypted key, an unpacked buffer) at the instant it's live. Works even under kernel.yama.ptrace_scope=1 because chimera launches (parents) the target. Each breakpoint: {addr, dumps:[[reg,len],...]} reads len bytes from the address in reg. NOTE: breakpoints are armed at the exec-stop, so the address must be mapped then — a native ELF's .text is; a Windows PE loaded later by Wine, or a dlopen/JIT region, is not (that needs deferred module-load arming).",
+             description="Launch a program (x86-64 Linux) under ptrace, break at given locations, and on each hit dump CPU registers and pointer-target memory — the no-sudo way to read a value a program computes at RUNTIME (a derived/decrypted key, an unpacked buffer) at the instant it's live. Works even under kernel.yama.ptrace_scope=1 because chimera launches (parents) the target. A breakpoint is {addr, dumps} OR {signature, delta, dumps}: 'signature' (hex bytes) is located in memory at runtime and the bp armed at found+delta — ASLR-proof (resolve a module base from a known pattern, e.g. an AES S-box). 'dumps':[[reg,len],...] reads len bytes at the address in reg. NOTE: an addr/signature not resident at the exec-stop is armed by a poller once it maps — best-effort, needs the target alive long enough to scan+arm. A Wine-hosted PE is reparented out of our tree, so under ptrace_scope=1 its memory is unreachable (needs ptrace_scope=0); native ELF works directly.",
              inputSchema={"type": "object", "properties": {
                  "argv": {"type": "array", "items": {"type": "string"},
                           "description": "Program + args to launch."},
                  "breakpoints": {"type": "array", "items": {"type": "object"},
-                          "description": "[{addr:int|hex, dumps:[[reg,len],...]}]"},
+                          "description": "[{addr:int|hex, dumps:[[reg,len]]} | {signature:hex, delta:int|hex, dumps:[[reg,len]]}]"},
                  "max_hits": {"type": "integer", "default": 1, "description": "Stop after N hits."},
                  "timeout": {"type": "number", "default": 30, "description": "Kill after N seconds."},
                  "env": {"type": "object", "description": "Extra environment for the target."},

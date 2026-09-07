@@ -14,14 +14,24 @@ a native ELF crackme directly, and for a Windows PE run under Wine (the Wine
 loader is our child, and `PTRACE_O_TRACECLONE` follows the thread the real code
 runs on).
 
+A breakpoint is given either as a fixed "addr", or as a byte "signature" + a
+signed "delta": the signature is located in memory at runtime and the breakpoint
+armed at found+delta. Signature+delta is ASLR-proof — resolve a module's
+randomised base from a known code/data pattern (e.g. an AES S-box) without
+knowing where the loader put it. An address (or signature) not resident at the
+exec-stop is armed later by a poller that watches the traced tree's maps.
+
 Ceilings, stated honestly:
 - x86-64 Linux only.
-- Software breakpoints are armed at launch. For a native ELF the .text is mapped
-  at exec, so an address in the main image is armable immediately. For code that
-  is mapped *later* (a PE mapped by the Wine loader, a dlopen'd/JIT'd region) the
-  address isn't present at the exec-stop — arming it then fails. The caller must
-  arm after the module is mapped (a future enhancement: a deferred breakpoint on
-  an mmap/module-load event); this primitive keeps to the simple case.
+- Deferred/signature arming is best-effort: it needs the target *alive* long
+  enough for the poller to scan and arm before the target reaches the
+  breakpoint. A microsecond-lived program can win the race; a validator waiting
+  on input, or an app with network latency, gives ample time.
+- **Wine-hosted PE**: the Wine loader reparents the actual PE process out of our
+  descendant tree, so under `kernel.yama.ptrace_scope=1` we can neither trace it
+  nor read its /proc/<pid>/mem — the no-sudo path reaches a native ELF child but
+  not the Wine PE. Grabbing a key from a PE-under-Wine needs `ptrace_scope=0`
+  (then attach/gdb works) or a core dump.
 - No hardware/watchpoints, no self-modifying-code re-sync beyond single-stepping
   over our own 0xCC.
 """
@@ -45,6 +55,7 @@ _SINGLESTEP = 9
 _GETREGS = 12
 _SETREGS = 13
 _SETOPTIONS = 0x4200
+_GETEVENTMSG = 0x4201
 # option bits
 _O_EXITKILL = 0x00100000
 _O_TRACECLONE = 0x00000008
@@ -53,6 +64,7 @@ _O_TRACEVFORK = 0x00000004
 _O_TRACEEXEC = 0x00000010
 _OPTIONS = _O_EXITKILL | _O_TRACECLONE | _O_TRACEFORK | _O_TRACEVFORK | _O_TRACEEXEC
 _WALL = 0x40000000
+_WNOHANG = 0x00000001
 
 # user_regs_struct field order for x86-64 Linux (all unsigned long long).
 _REG_FIELDS = [
@@ -110,6 +122,49 @@ def _setregs(libc, pid, regs: UserRegs) -> None:
                                                 ctypes.c_void_p).value)
 
 
+def _addr_mapped(pid: int, addr: int, *, executable: bool = True) -> bool:
+    """True if `addr` falls in a mapped (executable) region of pid's memory."""
+    try:
+        with open(f"/proc/{pid}/maps") as fh:
+            for line in fh:
+                rng, perms = line.split()[0], line.split()[1]
+                lo, hi = (int(x, 16) for x in rng.split("-"))
+                if lo <= addr < hi:
+                    return (not executable) or "x" in perms
+    except OSError:
+        pass
+    return False
+
+
+def _scan_sig(pid: int, sig: bytes, *, max_region: int = 64 * 1024 * 1024):
+    """First address of `sig` in pid's readable memory, or None. Used to resolve
+    an ASLR'd module base at runtime from a known code/data pattern."""
+    try:
+        maps = open(f"/proc/{pid}/maps").read().splitlines()
+        mem = open(f"/proc/{pid}/mem", "rb", 0)
+    except OSError:
+        return None
+    try:
+        for line in maps:
+            p = line.split()
+            if len(p) < 2 or "r" not in p[1]:
+                continue
+            lo, hi = (int(x, 16) for x in p[0].split("-"))
+            if hi - lo <= 0 or hi - lo > max_region:
+                continue
+            try:
+                mem.seek(lo)
+                buf = mem.read(hi - lo)
+            except (OSError, ValueError, OverflowError):
+                continue
+            k = buf.find(sig)
+            if k >= 0:
+                return lo + k
+    finally:
+        mem.close()
+    return None
+
+
 def _read_mem(pid: int, addr: int, length: int) -> bytes:
     try:
         with open(f"/proc/{pid}/mem", "rb", 0) as fh:
@@ -148,12 +203,19 @@ def _event(s): return (s >> 16) & 0xFF
 
 
 def run_with_breakpoints(argv, breakpoints, *, env=None, cwd=None,
-                         timeout: float = 30, max_hits: int = 1) -> dict:
+                         timeout: float = 30, max_hits: int = 1,
+                         defer: bool = True) -> dict:
     """Launch `argv` under ptrace, break at each address, and dump registers.
 
     breakpoints: list of {"addr": int, "dumps": [[reg, length], ...]}. On each
     hit the named registers are recorded, and for every (reg, length) dump the
     `length` bytes at the address in that register are read.
+
+    `defer` (default True): an address not yet mapped at the exec-stop is armed
+    later — a poller watches the traced process tree's memory maps and arms each
+    breakpoint the moment its address appears (in any traced pid). This is what
+    lets you break inside a Windows PE the Wine loader maps after launch, or a
+    dlopen'd/JIT'd region. Set defer=False for the plain arm-at-launch behaviour.
 
     Returns {"ran", "hits", "exit_code", "timed_out", "error"}. Each hit is
     {"addr", "tid", "registers": {name: int}, "dumps": {reg: hex}}. Never raises
@@ -167,11 +229,21 @@ def run_with_breakpoints(argv, breakpoints, *, env=None, cwd=None,
 
     result = {"ran": False, "hits": [], "exit_code": None,
               "timed_out": False, "error": None}
-    bp_by_addr = {int(b["addr"]): b.get("dumps") or [] for b in breakpoints}
+    # A breakpoint is either at a fixed "addr", or at a byte "signature" found in
+    # memory plus a signed "delta" — signature+delta is ASLR-proof (resolve the
+    # module base at runtime from a known code/data pattern, e.g. an AES S-box).
+    bp_by_addr = {int(b["addr"]): b.get("dumps") or []
+                  for b in breakpoints if "addr" in b}
+    sig_specs = [{"sig": bytes.fromhex(b["signature"]) if isinstance(b["signature"], str)
+                  else bytes(b["signature"]),
+                  "delta": int(b.get("delta", 0)), "dumps": b.get("dumps") or [],
+                  "done": False}
+                 for b in breakpoints if "signature" in b]
 
     child = os.fork()
     if child == 0:                                   # ---- child ----
         try:
+            os.setpgid(0, 0)                         # own process group (safe killpg)
             libc = _libc()
             libc.ptrace(_TRACEME, 0, None, None)
             if cwd:
@@ -189,18 +261,21 @@ def run_with_breakpoints(argv, breakpoints, *, env=None, cwd=None,
     originals: dict[int, int] = {}
     status = ctypes.c_int(0)
 
-    def waitpid(pid=-1):
-        r = libc.waitpid(pid, ctypes.byref(status), _WALL)
+    def waitpid(pid=-1, block=True):
+        flags = _WALL if block else (_WALL | _WNOHANG)
+        r = libc.waitpid(pid, ctypes.byref(status), flags)
         return r, status.value
 
     timed_out = threading.Event()
 
     def watchdog():
         timed_out.set()
-        try:
-            os.kill(child, signal.SIGKILL)
-        except OSError:
-            pass
+        for killer in (lambda: os.killpg(child, signal.SIGKILL),   # child is pgroup leader
+                       lambda: os.kill(child, signal.SIGKILL)):
+            try:
+                killer()
+            except OSError:
+                pass
     timer = threading.Timer(timeout, watchdog)
     timer.daemon = True
     timer.start()
@@ -216,18 +291,68 @@ def run_with_breakpoints(argv, breakpoints, *, env=None, cwd=None,
             _ptrace(libc, _SETOPTIONS, child, 0, _OPTIONS)
         except OSError as exc:
             logger.debug("SETOPTIONS failed: %s", exc)
-        # arm breakpoints (best-effort; a not-yet-mapped addr is skipped)
+        # arm what's already mapped now; the rest are deferred to the poller.
+        pending: set[int] = set()
+        pend_lock = threading.Lock()
         for addr in list(bp_by_addr):
             try:
                 _set_byte_cc(libc, child, addr, originals)
-            except OSError as exc:
-                logger.debug("could not arm bp @ %#x: %s (not mapped yet?)",
-                             addr, exc)
+            except OSError:
+                pending.add(addr)
+        traced = {child}                              # pids we're tracing
+        want_arm: dict[int, set[int]] = {}            # pid -> addrs to arm on its next stop
+
+        def poller():
+            # Watch every traced pid: arm a pending fixed addr once it maps, and
+            # resolve a signature bp by scanning memory, then stop that pid so
+            # the main loop can POKETEXT the 0xCC in.
+            while not timed_out.is_set():
+                with pend_lock:
+                    todo = set(pending)
+                    specs = [s for s in sig_specs if not s["done"]]
+                    pids = list(traced)
+                if not todo and not specs:
+                    return
+                for a in todo:
+                    for p in pids:
+                        if _addr_mapped(p, a):
+                            with pend_lock:
+                                want_arm.setdefault(p, set()).add(a)
+                            try:
+                                os.kill(p, signal.SIGSTOP)
+                            except OSError:
+                                pass
+                            break
+                for s in specs:
+                    for p in pids:
+                        at = _scan_sig(p, s["sig"])
+                        if at is not None:
+                            addr = at + s["delta"]
+                            with pend_lock:
+                                bp_by_addr[addr] = s["dumps"]
+                                want_arm.setdefault(p, set()).add(addr)
+                                s["done"] = True
+                            try:
+                                os.kill(p, signal.SIGSTOP)
+                            except OSError:
+                                pass
+                            break
+                threading.Event().wait(0.02)
+
+        if defer and (pending or sig_specs):
+            pt = threading.Thread(target=poller, daemon=True)
+            pt.start()
         _ptrace(libc, _CONT, child, 0, 0)
 
         hits = 0
         while hits < max_hits:
-            pid, st = waitpid()
+            if timed_out.is_set():
+                result["timed_out"] = True
+                break
+            pid, st = waitpid(block=False)          # poll so the timeout can fire
+            if pid == 0:                            # nothing ready yet
+                threading.Event().wait(0.001)
+                continue
             if pid < 0:
                 break
             if timed_out.is_set():
@@ -245,9 +370,31 @@ def run_with_breakpoints(argv, breakpoints, *, env=None, cwd=None,
             if not _WIFSTOPPED(st):
                 continue
             sig = _WSTOPSIG(st)
-            # ptrace event (clone/fork/exec) — just continue the stopped tid
+            # ptrace event (clone/fork/exec) — track the new pid, then continue.
             if sig == signal.SIGTRAP and _event(st) != 0:
+                if _event(st) in (1, 2, 3):           # FORK / VFORK / CLONE
+                    try:
+                        newpid = ctypes.c_ulong(0)
+                        _ptrace(libc, _GETEVENTMSG, pid, 0,
+                                ctypes.cast(ctypes.byref(newpid), ctypes.c_void_p).value)
+                        with pend_lock:
+                            traced.add(newpid.value)
+                    except OSError:
+                        pass
                 _ptrace(libc, _CONT, pid, 0, 0)
+                continue
+            # a stop we (the poller) requested so we can arm a deferred bp here
+            if sig == signal.SIGSTOP and pid in want_arm:
+                with pend_lock:
+                    addrs = want_arm.pop(pid, set())
+                for a in addrs:
+                    try:
+                        _set_byte_cc(libc, pid, a, originals)
+                        with pend_lock:
+                            pending.discard(a)
+                    except OSError:
+                        pass
+                _ptrace(libc, _CONT, pid, 0, 0)       # suppress the SIGSTOP
                 continue
             if sig == signal.SIGTRAP:
                 regs = _getregs(libc, pid)
@@ -278,20 +425,26 @@ def run_with_breakpoints(argv, breakpoints, *, env=None, cwd=None,
                 # a SIGTRAP that isn't ours — forward nothing, keep going
                 _ptrace(libc, _CONT, pid, 0, 0)
                 continue
+            # a new-child init stop or a stray SIGSTOP — resume without redelivery
+            if sig == signal.SIGSTOP:
+                _ptrace(libc, _CONT, pid, 0, 0)
+                continue
             # some other signal — forward it so the tracee behaves normally
             _ptrace(libc, _CONT, pid, sig, 0)
     except OSError as exc:
         result["error"] = f"{exc}"
     finally:
         timer.cancel()
+        for killer in (lambda: os.killpg(child, signal.SIGKILL),
+                       lambda: os.kill(child, signal.SIGKILL)):
+            try:
+                killer()
+            except OSError:
+                pass
         try:
-            os.kill(child, signal.SIGKILL)
-        except OSError:
-            pass
-        try:
-            while True:
-                r, _ = waitpid()
-                if r < 0:
+            for _ in range(10000):
+                r, _ = waitpid(block=False)
+                if r <= 0:
                     break
         except OSError:
             pass
