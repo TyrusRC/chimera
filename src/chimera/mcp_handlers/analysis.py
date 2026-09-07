@@ -374,6 +374,27 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "tables": tables[:50],
         })
 
+    # ── find_aes_keys (schedule scan of a file / pid / hex blob) ──────────
+    if name == "find_aes_keys":
+        from chimera.aes_keyfind import find_in_file, find_in_pid, find_key_schedules
+
+        if arguments.get("pid") is not None:
+            hits = find_in_pid(int(arguments["pid"]))
+        elif arguments.get("file"):
+            path = arguments["file"]
+            if not Path(path).exists():
+                return mcpstate.error(f"file not found: {path}")
+            hits = find_in_file(path)
+        elif arguments.get("hex"):
+            try:
+                data = bytes.fromhex(arguments["hex"])
+            except ValueError:
+                return mcpstate.error("hex is not valid hexadecimal")
+            hits = find_key_schedules(data)
+        else:
+            return mcpstate.error("find_aes_keys needs one of: file, pid, hex")
+        return mcpstate.json_reply({"count": len(hits), "keys": hits})
+
     # ── pathfind (pure graph search; no binary at all) ────────────────────
     if name == "pathfind":
         from chimera.pathfind import pathfind

@@ -154,4 +154,29 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         )
         return mcpstate.json_reply(result)
 
+    if name == "run_with_breakpoints":
+        from chimera.dynamic.ptrace_bp import PtraceUnsupported, run_with_breakpoints
+
+        argv = arguments.get("argv") or []
+        if not argv:
+            return mcpstate.error("run_with_breakpoints needs a non-empty argv")
+        bps = []
+        for b in arguments.get("breakpoints") or []:
+            addr = b["addr"]
+            addr = int(addr, 16) if isinstance(addr, str) else int(addr)
+            bps.append({"addr": addr, "dumps": b.get("dumps") or []})
+        try:
+            result = run_with_breakpoints(
+                [str(a) for a in argv], bps,
+                env=arguments.get("env"),
+                timeout=float(arguments.get("timeout", 30)),
+                max_hits=int(arguments.get("max_hits", 1)),
+            )
+        except PtraceUnsupported as exc:
+            return mcpstate.error(str(exc))
+        # hex-encode register ints for a clean JSON payload
+        for h in result.get("hits", []):
+            h["registers"] = {k: hex(v) for k, v in h.get("registers", {}).items()}
+        return mcpstate.json_reply(result)
+
     return None
