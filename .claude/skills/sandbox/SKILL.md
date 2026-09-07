@@ -42,6 +42,26 @@ full control (ptrace, breakpoints, memory reads) to observe it.
 - **Unprivileged user namespaces** must be enabled for bubblewrap
   (`kernel.unprivileged_userns_clone=1`, or the kernel default).
 
+## Driving it freely (persistent workspace)
+
+For step-by-step control — not one-shot run-and-capture — pass a **`--workspace
+<dir>`** (MCP `workspace`). That dir is bound rw as `$HOME` and is the working
+dir, so everything persists across calls: files the target drops, a Wine prefix
+(`<dir>/.wine`, so `wineboot` runs once), unpacked payloads, notes. Then just
+issue command after command against the same workspace and build up state:
+
+```
+chimera sandbox-run --workspace /tmp/job -- ./target --dump-config   # step 1
+chimera sandbox-run --workspace /tmp/job -- ls -la                   # inspect drops
+chimera sandbox-run --workspace /tmp/job -- gdb -p <pid> ...         # drive it
+chimera sandbox-run --workspace /tmp/job --wine -- sample.exe        # Wine, same prefix
+```
+
+Each call is a fresh namespace over the same persistent workspace, so you keep
+full control while the confinement (network off, host RO) still holds. Add
+`--net` only for the calls that truly need it. Inspect what the target did by
+reading the workspace dir directly from the host between calls.
+
 ## Composing the RE tools inside the sandbox
 
 - Run the target isolated: `chimera sandbox-run --wine -- target.exe` (net off).

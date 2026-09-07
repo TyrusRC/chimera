@@ -56,6 +56,7 @@ def run_sandboxed(
     home_tmpfs: bool = True,
     wine: bool = False,
     wineprefix: str | None = None,
+    workspace: str | None = None,
 ) -> dict:
     """Run `argv` confined by bubblewrap; capture output.
 
@@ -63,8 +64,14 @@ def run_sandboxed(
     - `/tmp` and (with `home_tmpfs`) `$HOME` are throwaway tmpfs, so writes don't
       touch the host; add `rw_binds` for paths the target may write, `ro_binds`
       for extra read-only inputs (each a "src" or "src:dst" string);
+    - `workspace=<dir>` makes a PERSISTENT sandbox you drive freely: the dir is
+      bound rw as `$HOME` (not a throwaway tmpfs) and is the working directory, so
+      files the target drops, and a Wine prefix (defaults to `<workspace>/.wine`),
+      SURVIVE across calls. Run any sequence of commands against the same
+      workspace — files, prefix and state carry over — which is how you keep
+      full control of a target step by step instead of one-shotting it;
     - `wine=True` runs the target under Wine in an isolated `wineprefix`
-      (a scratch dir, bound rw) with the quiet/headless env.
+      (a scratch dir, or `<workspace>/.wine`, bound rw) with the quiet/headless env.
 
     Returns {ran, returncode, stdout, stderr, timed_out, error, sandbox}. Never
     raises for the common failures (bwrap missing, target missing) — reports them.
@@ -83,11 +90,21 @@ def run_sandboxed(
     # bound path under $HOME (e.g. the target binary) overlays it and stays
     # visible rather than being shadowed.
     child_env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
-    home = os.path.expanduser("~")
-    home = home if home != "~" else "/root"
-    if home_tmpfs:
-        args += ["--tmpfs", home]
-        child_env["HOME"] = home
+    if workspace:
+        # persistent, freely-driven sandbox: real dir as $HOME, state survives.
+        ws = os.path.abspath(workspace)
+        os.makedirs(ws, exist_ok=True)
+        args += ["--bind", ws, ws]
+        child_env["HOME"] = ws
+        workdir = workdir or ws
+        if wine and not wineprefix:
+            wineprefix = os.path.join(ws, ".wine")
+    else:
+        home = os.path.expanduser("~")
+        home = home if home != "~" else "/root"
+        if home_tmpfs:
+            args += ["--tmpfs", home]
+            child_env["HOME"] = home
     for spec in ro_binds:
         src, _, dst = str(spec).partition(":")
         args += ["--ro-bind", src, dst or src]
@@ -97,6 +114,7 @@ def run_sandboxed(
 
     if wine:
         wp = wineprefix or tempfile.mkdtemp(prefix="chimera-sbx-wine-")
+        os.makedirs(wp, exist_ok=True)
         args += ["--bind", wp, wp]
         child_env.update({
             "WINEPREFIX": wp, "WINEDEBUG": "-all",

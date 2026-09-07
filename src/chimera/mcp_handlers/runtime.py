@@ -165,6 +165,7 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             ro_binds=tuple(arguments.get("ro_binds") or ()),
             rw_binds=tuple(arguments.get("rw_binds") or ()),
             workdir=arguments.get("workdir"),
+            workspace=arguments.get("workspace"),
             net=bool(arguments.get("net", False)),
             wine=bool(arguments.get("wine", False)),
             timeout=float(arguments.get("timeout", 30)),

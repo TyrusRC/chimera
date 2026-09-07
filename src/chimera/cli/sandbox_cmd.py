@@ -18,14 +18,22 @@ from chimera.cli._root import main
 @click.option("--ro", "ro_binds", multiple=True, help="Extra read-only bind (src or src:dst).")
 @click.option("--rw", "rw_binds", multiple=True, help="Writable bind (src or src:dst).")
 @click.option("--workdir", default=None, help="Working directory inside the sandbox.")
+@click.option("--workspace", default=None,
+              help="Persistent sandbox dir bound as $HOME — run repeated commands "
+                   "against it and files/Wine-prefix/state carry over (free control).")
 @click.option("--timeout", type=float, default=30, help="Kill after N seconds.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the result as JSON.")
-def sandbox_run(argv, net, wine, ro_binds, rw_binds, workdir, timeout, as_json):
-    """Run ARGV... in a bubblewrap sandbox (network off unless --net)."""
+def sandbox_run(argv, net, wine, ro_binds, rw_binds, workdir, workspace, timeout, as_json):
+    """Run ARGV... in a bubblewrap sandbox (network off unless --net).
+
+    With --workspace <dir> the sandbox is persistent: drive a target step by step
+    by running command after command against the same workspace.
+    """
     from chimera.dynamic.sandbox import run_sandboxed
 
     res = run_sandboxed(list(argv), ro_binds=tuple(ro_binds), rw_binds=tuple(rw_binds),
-                        workdir=workdir, net=net, wine=wine, timeout=timeout)
+                        workdir=workdir, workspace=workspace, net=net, wine=wine,
+                        timeout=timeout)
     if as_json:
         click.echo(_json.dumps(res, indent=2))
         return

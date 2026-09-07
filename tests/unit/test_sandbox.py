@@ -44,6 +44,19 @@ def test_network_off_by_default():
     assert "NET_BLOCKED" in r["stdout"], r["stdout"]
 
 
+def test_workspace_persists_across_runs(tmp_path):
+    # a persistent workspace = free step-by-step control: state written in one
+    # run is visible in the next (and lands on the host workspace dir).
+    ws = tmp_path / "ws"
+    r1 = sandbox.run_sandboxed(
+        ["/bin/bash", "-c", "echo kept > $HOME/m.txt"], workspace=str(ws), timeout=15)
+    assert r1["ran"] and r1["returncode"] == 0
+    r2 = sandbox.run_sandboxed(
+        ["/bin/bash", "-c", "cat $HOME/m.txt"], workspace=str(ws), timeout=15)
+    assert r2["stdout"].strip() == "kept"
+    assert (ws / "m.txt").read_text().strip() == "kept"   # persisted on host
+
+
 def test_missing_bwrap_reports_error(monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda _n: None)
     r = sandbox.run_sandboxed(["/bin/echo", "x"])
