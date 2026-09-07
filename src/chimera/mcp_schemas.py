@@ -424,6 +424,7 @@ def all_tools() -> list[Tool]:
                  "ro_binds": {"type": "array", "items": {"type": "string"}, "description": "Extra read-only binds (src or src:dst)."},
                  "rw_binds": {"type": "array", "items": {"type": "string"}, "description": "Writable binds (src or src:dst)."},
                  "workdir": {"type": "string", "description": "Working directory inside the sandbox."},
+                 "workspace": {"type": "string", "description": "Persistent sandbox dir bound as $HOME — repeated calls against the same workspace keep files/Wine-prefix/state, so you can drive a target step by step (free control)."},
                  "timeout": {"type": "number", "default": 30},
              }, "required": ["argv"]}),
 
