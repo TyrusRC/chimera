@@ -31,7 +31,7 @@ EXPECTED_TOOLS = {
     "detect_protocols", "detect_sdks", "get_bypass_scripts",
     "get_dynamic_hooks", "get_class_headers", "list_source_files",
     "read_source", "read_cache", "list_artifacts", "run_semgrep",
-    "diff_projects", "objc_xref", "list_devices", "list_packages",
+    "diff_projects", "objc_xref", "list_devices", "connect_device", "list_packages",
     "pull_app", "start_frida_server", "frida_attach", "frida_spawn",
     "frida_detach", "frida_exec", "frida_load_script", "frida_messages",
     "get_logcat", "setup_proxy", "clear_proxy", "get_config",

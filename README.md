@@ -69,6 +69,7 @@ default `analyze` hot path.
 - **Framework detection** — React Native (Hermes / JSC), Flutter, Unity IL2CPP, Xamarin, Cordova / Capacitor.
 - **Manifest + NSC hardening** — `chimera manifest app.apk` reports `android:debuggable`, `allowBackup` without rules, exported components without permissions, cleartext-traffic flags, `network_security_config.xml` issues (cleartext base/domain configs, user-CA trust). Each finding cites file and line.
 - **Protection bypass** — root / jailbreak / Frida / debugger / packer detection with bundled bypass scripts. (Devices running `frida-server` must be jailbroken / rooted; `frida-gadget` is fine on a stock device.)
+- **Device connect** — `chimera devices` lists connected Android (ADB) / iOS devices and flags rooted / jailbroken. `chimera devices --connect <host[:port]>` (MCP `connect_device`) attaches a *networked* root device (adb-over-Wi-Fi) or a remote / headless emulator over TCP/IP — USB devices and locally-running emulators already appear without it; the call is time-bounded so an unreachable target fails fast instead of blocking. `--disconnect` tears it down.
 - **Dynamic attach** — `chimera attach --pid <pid>` (local) or `--target <pkg> --device <id>` (mobile) with multi-bypass preload, message drain, interactive REPL.
 
 ### Shared workflow

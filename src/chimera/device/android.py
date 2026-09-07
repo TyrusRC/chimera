@@ -31,6 +31,34 @@ class AndroidDeviceManager(DeviceManager):
     def is_available(self) -> bool:
         return shutil.which("adb") is not None
 
+    async def connect(self, target: str, *, timeout: float = 10.0) -> bool:
+        """Attach a device/emulator reachable over TCP/IP via `adb connect`.
+
+        USB devices and locally-running emulators already show up in
+        `adb devices`; this is for a networked ROOT device (adb-over-Wi-Fi) or a
+        remote/headless emulator that must be dialled first. A bare host gets the
+        default adb port :5555. adb connect exits 0 even on some failures, so
+        success is judged from the output text ("connected to ..."), not the
+        return code. It also BLOCKS indefinitely on an unreachable target, so the
+        call is bounded by `timeout` (a timeout is reported as failure).
+        """
+        if ":" not in target:
+            target = f"{target}:5555"
+        try:
+            out = await self._adb_argv(["connect", target], timeout=timeout)
+        except AdbError as e:
+            out = e.stderr  # non-zero exit / timeout still carries the reason
+        return "connected to" in out.lower()
+
+    async def disconnect(self, target: str | None = None, *, timeout: float = 10.0) -> bool:
+        """`adb disconnect <target>` (or all TCP/IP devices when target is None)."""
+        argv = ["disconnect"] + ([target] if target else [])
+        try:
+            await self._adb_argv(argv, timeout=timeout)
+            return True
+        except AdbError:
+            return False
+
     async def list_devices(self) -> list[DeviceInfo]:
         output = await self._adb_argv(["devices"])
         devices = []
@@ -154,18 +182,27 @@ class AndroidDeviceManager(DeviceManager):
     async def cleanup(self) -> None:
         pass
 
-    async def _adb_argv(self, argv: list[str]) -> str:
+    async def _adb_argv(self, argv: list[str], *, timeout: float | None = None) -> str:
         proc = await asyncio.create_subprocess_exec(
             "adb", *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout)
+        except (asyncio.TimeoutError, TimeoutError):
+            # `adb connect` blocks forever on an unreachable target — kill the
+            # client so the call returns. NOTE: the adb *server* may keep the
+            # pending connect; that's harmless and reaped on the next command.
+            proc.kill()
+            await proc.wait()
+            raise AdbError(" ".join(argv), -1, f"timed out after {timeout}s")
         if proc.returncode != 0:
             raise AdbError(
                 " ".join(argv), proc.returncode or -1, stderr.decode(errors="replace"),
             )
         return stdout.decode(errors="replace")
 
-    async def _adb_device_argv(self, device_id: str, argv: list[str]) -> str:
-        return await self._adb_argv(["-s", device_id, *argv])
+    async def _adb_device_argv(self, device_id: str, argv: list[str],
+                               *, timeout: float | None = None) -> str:
+        return await self._adb_argv(["-s", device_id, *argv], timeout=timeout)

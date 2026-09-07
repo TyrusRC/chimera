@@ -126,3 +126,57 @@ async def test_android_is_alive_true_on_successful_echo(monkeypatch):
     monkeypatch.setattr(AndroidDeviceManager, "_adb_device_argv", ok)
     alive = await mgr.is_alive("D")
     assert alive is True
+
+
+async def test_connect_success_and_default_port(monkeypatch):
+    """`adb connect host` should add :5555 and report success from output text."""
+    from chimera.device.android import AndroidDeviceManager
+    mgr = AndroidDeviceManager()
+    seen = {}
+
+    async def fake(argv, **_kw):
+        seen["argv"] = argv
+        return "connected to 192.168.1.5:5555\n"
+    monkeypatch.setattr(mgr, "_adb_argv", fake)
+
+    assert await mgr.connect("192.168.1.5") is True
+    assert seen["argv"] == ["connect", "192.168.1.5:5555"]  # default port added
+
+
+async def test_connect_failure_via_zero_exit_text(monkeypatch):
+    """adb connect exits 0 even on failure — success must come from the text."""
+    from chimera.device.android import AndroidDeviceManager
+    mgr = AndroidDeviceManager()
+
+    async def fake(argv, **_kw):
+        return "unable to connect to 10.0.0.9:5555: Connection refused\n"
+    monkeypatch.setattr(mgr, "_adb_argv", fake)
+    assert await mgr.connect("10.0.0.9:5555") is False
+
+
+async def test_connect_failure_via_adberror(monkeypatch):
+    from chimera.device.android import AndroidDeviceManager, AdbError
+    mgr = AndroidDeviceManager()
+
+    async def fake(argv, **_kw):
+        raise AdbError("connect", 1, "failed to connect")
+    monkeypatch.setattr(mgr, "_adb_argv", fake)
+    assert await mgr.connect("10.0.0.9") is False
+
+
+async def test_disconnect(monkeypatch):
+    from chimera.device.android import AndroidDeviceManager, AdbError
+    mgr = AndroidDeviceManager()
+    calls = []
+
+    async def ok(argv, **_kw):
+        calls.append(argv)
+        return ""
+    monkeypatch.setattr(mgr, "_adb_argv", ok)
+    assert await mgr.disconnect("192.168.1.5:5555") is True
+    assert calls[-1] == ["disconnect", "192.168.1.5:5555"]
+
+    async def boom(argv, **_kw):
+        raise AdbError("disconnect", 1, "no such device")
+    monkeypatch.setattr(mgr, "_adb_argv", boom)
+    assert await mgr.disconnect("nope") is False
