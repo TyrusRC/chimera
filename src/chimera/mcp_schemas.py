@@ -115,6 +115,12 @@ def all_tools() -> list[Tool]:
         Tool(name="list_devices",
              description="List connected Android (ADB) and iOS (libimobiledevice) devices.",
              inputSchema={"type": "object", "properties": {}}),
+        Tool(name="connect_device",
+             description="Attach a networked Android device or emulator over TCP/IP via `adb connect` (adb-over-Wi-Fi to a real ROOT device, or a remote/headless emulator). USB devices and locally-running emulators already appear in list_devices without this. A bare host uses the default adb port :5555. Returns {connected, target, devices, hint}; set disconnect=true to `adb disconnect` instead. The call is time-bounded (adb connect blocks on an unreachable target).",
+             inputSchema={"type": "object", "properties": {
+                 "target": {"type": "string", "description": "host[:port] to connect (bare host → :5555)."},
+                 "disconnect": {"type": "boolean", "default": False, "description": "Disconnect the target instead of connecting."},
+             }, "required": ["target"]}),
 
         # --- Source & Artifact Browsing ---
         Tool(name="list_source_files",

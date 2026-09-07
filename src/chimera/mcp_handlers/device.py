@@ -74,6 +74,31 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.json_reply({"devices": [], "hint": "No devices found. Connect via USB and ensure adb/libimobiledevice is installed."})
         return mcpstate.json_reply({"devices": devices})
 
+    # ── connect_device (adb over TCP/IP) ────────────────────────────────
+    if name == "connect_device":
+        from chimera.device.android import AndroidDeviceManager
+        mgr = AndroidDeviceManager()
+        if not mgr.is_available:
+            return mcpstate.error("ADB not found. connect_device is Android-only.")
+        target = arguments["target"]
+        if arguments.get("disconnect"):
+            ok = await mgr.disconnect(target)
+            await mgr.cleanup()
+            return mcpstate.json_reply({"disconnected": ok, "target": target})
+        ok = await mgr.connect(target)
+        devices = []
+        if ok:
+            for d in await mgr.list_devices():
+                devices.append({"id": d.id, "platform": d.platform.value,
+                                "model": d.model, "os": d.os_version,
+                                "rooted": d.is_rooted, "jailbroken": d.is_jailbroken})
+        await mgr.cleanup()
+        return mcpstate.json_reply({
+            "connected": ok, "target": target, "devices": devices,
+            "hint": ("Now use pull_app/list_packages/get_logcat with the device id."
+                     if ok else "adb connect failed (unreachable or refused)."),
+        })
+
     # ── list_source_files ──────────────────────────────────────────────
     if name == "list_packages":
         device_id = arguments["device_id"]
