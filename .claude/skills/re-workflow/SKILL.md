@@ -92,3 +92,14 @@ context bloat. **Breadth before depth. Name the path before drilling.**
 - Hand-tracing a huge generated validator when an oracle would answer it, OR
   grinding a dynamic oracle that doesn't exist — the `dynamic-analysis` skill
   is the decision guide.
+- **For a network+RE target (binary + pcap): decrypt the CAPTURE statically
+  first — don't chase a runtime key.** The intended solve is usually to reverse
+  the protocol/key derivation from the binary and decrypt the recorded traffic
+  offline. The traffic often *leaks the very inputs the key depends on*: a token
+  or header in the capture can be a reversible encoding of the environment
+  (time / user / hostname) that the key is derived from — recover those by
+  inverting it, no execution needed. Trying to run the sample to dump the key
+  frequently FAILS (it depends on time/user/host/peer that differ on replay, so
+  it exits or crashes before the crypto) and burns huge effort. Reach for the
+  dynamic key-grab (Wine + `bp-dump`) only after confirming the key genuinely
+  can't be derived from the binary + capture.
