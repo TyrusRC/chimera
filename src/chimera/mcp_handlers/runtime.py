@@ -154,6 +154,23 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         )
         return mcpstate.json_reply(result)
 
+    if name == "run_sandboxed":
+        from chimera.dynamic.sandbox import run_sandboxed
+
+        argv = arguments.get("argv") or []
+        if not argv:
+            return mcpstate.error("run_sandboxed needs a non-empty argv")
+        res = run_sandboxed(
+            [str(a) for a in argv],
+            ro_binds=tuple(arguments.get("ro_binds") or ()),
+            rw_binds=tuple(arguments.get("rw_binds") or ()),
+            workdir=arguments.get("workdir"),
+            net=bool(arguments.get("net", False)),
+            wine=bool(arguments.get("wine", False)),
+            timeout=float(arguments.get("timeout", 30)),
+        )
+        return mcpstate.json_reply(res)
+
     if name == "run_with_breakpoints":
         from chimera.dynamic.ptrace_bp import PtraceUnsupported, run_with_breakpoints
 

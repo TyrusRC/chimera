@@ -415,6 +415,18 @@ def all_tools() -> list[Tool]:
                  "prefix": {"type": "string", "description": "Reuse an existing WINEPREFIX."},
              }, "required": ["exe"]}),
 
+        Tool(name="run_sandboxed",
+             description="Run a program confined by bubblewrap (no root, no daemon): isolated PID/mount/IPC/net namespaces, NETWORK OFF by default (a malware sample can't beacon), throwaway tmpfs for /tmp and $HOME, host filesystem read-only except explicit binds. Runs on the host kernel (fast; ptrace/bp-dump still work inside), unlike a VM. Use for running an untrusted crackme/sample/CTF binary. wine=true runs the target under Wine in an isolated prefix. Returns {ran, returncode, stdout, stderr, timed_out, error}.",
+             inputSchema={"type": "object", "properties": {
+                 "argv": {"type": "array", "items": {"type": "string"}, "description": "Program + args."},
+                 "net": {"type": "boolean", "default": False, "description": "Allow network (default off)."},
+                 "wine": {"type": "boolean", "default": False, "description": "Run under Wine."},
+                 "ro_binds": {"type": "array", "items": {"type": "string"}, "description": "Extra read-only binds (src or src:dst)."},
+                 "rw_binds": {"type": "array", "items": {"type": "string"}, "description": "Writable binds (src or src:dst)."},
+                 "workdir": {"type": "string", "description": "Working directory inside the sandbox."},
+                 "timeout": {"type": "number", "default": 30},
+             }, "required": ["argv"]}),
+
         Tool(name="run_with_breakpoints",
              description="Launch a program (x86-64 Linux) under ptrace, break at given locations, and on each hit dump CPU registers and pointer-target memory — the no-sudo way to read a value a program computes at RUNTIME (a derived/decrypted key, an unpacked buffer) at the instant it's live. Works even under kernel.yama.ptrace_scope=1 because chimera launches (parents) the target. A breakpoint is {addr, dumps} OR {signature, delta, dumps}: 'signature' (hex bytes) is located in memory at runtime and the bp armed at found+delta — ASLR-proof (resolve a module base from a known pattern, e.g. an AES S-box). 'dumps':[[reg,len],...] reads len bytes at the address in reg. NOTE: an addr/signature not resident at the exec-stop is armed by a poller once it maps — best-effort, needs the target alive long enough to scan+arm. A Wine-hosted PE is reparented out of our tree, so under ptrace_scope=1 its memory is unreachable (needs ptrace_scope=0); native ELF works directly.",
              inputSchema={"type": "object", "properties": {

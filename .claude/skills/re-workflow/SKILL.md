@@ -45,7 +45,9 @@ context bloat. **Breadth before depth. Name the path before drilling.**
    `bp-dump`/`run_with_breakpoints` reads a runtime-computed value (a derived key)
    at a breakpoint with no sudo; `aeskeys`/`find_aes_keys` recovers an AES key
    from a memory dump or live process. See the `dynamic-analysis` skill for the
-   runtime-key-recovery playbook.
+   runtime-key-recovery playbook. **To actually EXECUTE an untrusted target**
+   (crackme/malware/CTF/Wine PE) do it confined — `chimera sandbox-run` or the
+   `sandbox-runner` agent; see the `sandbox` skill (network off by default).
    Persist findings with the write-back tools (`rename_function`, `set_comment`,
    `add_note`, `batch_annotate`) so the reasoning survives compaction and the
    next session reads it back.
