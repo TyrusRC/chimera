@@ -175,11 +175,21 @@ def _read_mem(pid: int, addr: int, length: int) -> bytes:
 
 
 def _set_byte_cc(libc, pid, addr, originals: dict) -> None:
-    """Arm a software breakpoint at addr, remembering the original byte."""
+    """Arm a software breakpoint at addr, remembering the original byte.
+
+    The real byte is saved only on the FIRST arm — re-arming after a step-over
+    must not overwrite it with the 0xCC we just wrote back, and if this address's
+    byte already reads 0xCC (e.g. two breakpoints share an aligned word) we keep
+    the recorded original rather than saving the patch.
+    NOTE: two breakpoints inside the SAME instruction's bytes are not supported;
+    breakpoints are expected at distinct instruction boundaries.
+    """
     aligned = addr & ~0x7
     word = _ptrace(libc, _PEEKTEXT, pid, aligned, 0) & 0xFFFFFFFFFFFFFFFF
     shift = (addr - aligned) * 8
-    originals[addr] = (word >> shift) & 0xFF
+    cur = (word >> shift) & 0xFF
+    if addr not in originals and cur != 0xCC:
+        originals[addr] = cur
     patched = (word & ~(0xFF << shift)) | (0xCC << shift)
     _ptrace(libc, _POKETEXT, pid, aligned, patched)
 
@@ -251,7 +261,10 @@ def run_with_breakpoints(argv, breakpoints, *, env=None, cwd=None,
             if env is None:
                 os.execvp(argv[0], list(argv))
             else:
-                os.execvpe(argv[0], list(argv), env)
+                # `env` EXTENDS the environment (merge onto os.environ) — passing
+                # it as the whole environment would strip PATH/HOME and a bare
+                # program name would fail to exec.
+                os.execvpe(argv[0], list(argv), {**os.environ, **env})
         except Exception:
             os._exit(127)
         os._exit(127)

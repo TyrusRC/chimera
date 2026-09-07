@@ -143,6 +143,23 @@ def test_run_pure_rejects_state_opcode():
         run_pure(asm(("PUSH1", 0), "SLOAD", "STOP"), b"")
 
 
+def test_run_pure_stack_underflow_is_revert_not_indexerror():
+    # a POP / DUP / SWAP / binary-op on a short stack must surface as EvmRevert
+    # (which callers catch), never a raw IndexError.
+    for code in (asm("POP"), asm("ADD"), asm("SWAP1"), asm("ISZERO")):
+        with pytest.raises(EvmRevert):
+            run_pure(code, b"")
+
+
+def test_strip_metadata_ignores_bogus_length():
+    from chimera.parsers.evm import strip_metadata
+    # last two bytes look like a huge length but there is no real CBOR trailer;
+    # start would be negative — must NOT truncate real code.
+    body = asm(("PUSH1", 0x11), ("PUSH1", 0x22), "ADD", "STOP")
+    code = body + b"\xff\xf0"                        # trailing "length" 0xfff0
+    assert strip_metadata(code) == code
+
+
 def test_run_pure_revert_raises():
     with pytest.raises(EvmRevert):
         run_pure(asm(("PUSH1", 0), ("PUSH1", 0), "REVERT"), b"")

@@ -97,8 +97,10 @@ def strip_metadata(code: bytes) -> bytes:
         return code
     blob_len = int.from_bytes(code[-2:], "big")
     start = len(code) - 2 - blob_len
-    # the CBOR map for solc metadata begins with 0xa2 (map of 2) / 0xa1..0xa3
-    if 0 < blob_len < len(code) and code[start] in (0xA1, 0xA2, 0xA3):
+    # the CBOR map for solc metadata begins with 0xa2 (map of 2) / 0xa1..0xa3.
+    # Require start >= 0 so a bogus length can't index from the end and chop
+    # real runtime code (a false positive would corrupt run_pure).
+    if start >= 0 and blob_len > 0 and code[start] in (0xA1, 0xA2, 0xA3):
         return code[:start]
     return code
 
@@ -279,7 +281,14 @@ def run_pure(code: str | bytes, calldata: bytes, *, max_steps: int = 100_000) ->
     mem = _Mem()
 
     def pop() -> int:
+        if not stack:
+            raise EvmRevert("stack underflow")
         return stack.pop()
+
+    def peek(k: int) -> int:
+        if k > len(stack):
+            raise EvmRevert("stack underflow")
+        return stack[-k]
 
     idx = 0
     steps = 0
@@ -294,9 +303,11 @@ def run_pure(code: str | bytes, calldata: bytes, *, max_steps: int = 100_000) ->
             stack.append(ins.imm_int or 0)
         elif m.startswith("DUP"):
             k = int(m[3:])
-            stack.append(stack[-k])
+            stack.append(peek(k))
         elif m.startswith("SWAP"):
             k = int(m[4:])
+            if len(stack) < k + 1:
+                raise EvmRevert("stack underflow")
             stack[-1], stack[-1 - k] = stack[-1 - k], stack[-1]
         elif m == "POP":
             pop()

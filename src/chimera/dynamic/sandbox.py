@@ -29,13 +29,22 @@ def available() -> bool:
     return shutil.which("bwrap") is not None
 
 
+# System directories that a program needs to run, bound read-only. We do NOT
+# bind the whole host root: the analyst's home (SSH keys, ~/.claude creds),
+# other users' homes, /root, and the project tree must stay invisible to an
+# untrusted target — least privilege for a confinement sandbox. The caller adds
+# back exactly the inputs it wants via ro_binds/rw_binds/workspace.
+_SYS_DIRS = ("/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc")
+
+
 def _base_args(net: bool) -> list[str]:
-    # A read-only view of the host root with isolated namespaces. --unshare-all
-    # drops network too; --share-net adds it back only when explicitly asked.
-    args = [
-        "bwrap", "--ro-bind", "/", "/",
+    args = ["bwrap"]
+    for d in _SYS_DIRS:
+        if os.path.exists(d):
+            args += ["--ro-bind", d, d]
+    args += [
         "--dev", "/dev", "--proc", "/proc",
-        "--tmpfs", "/tmp",
+        "--tmpfs", "/tmp", "--tmpfs", "/run",
         "--unshare-all", "--die-with-parent", "--new-session",
     ]
     if net:

@@ -100,6 +100,16 @@ def test_signature_relative_breakpoint_on_pie(tmp_path):
     assert res["hits"][0]["registers"]["rdi"] == 0x1234
 
 
+def test_env_extends_not_replaces(tmp_path):
+    # a partial env must be MERGED onto os.environ (PATH kept), so a bare program
+    # name still execs. Without the merge the child loses PATH and exits 127.
+    res = run_with_breakpoints(["true"], [], env={"CHIMERA_TEST": "1"}, timeout=15)
+    if res["error"] and "ptrace" in (res["error"] or "").lower():
+        pytest.skip(f"ptrace unavailable: {res['error']}")
+    assert res["ran"] is True
+    assert res["exit_code"] == 0, res
+
+
 def test_no_hit_when_breakpoint_never_reached(tmp_path):
     exe, addr = _build(tmp_path)
     # an address that is valid text but never executed: pick secret+1 offset
