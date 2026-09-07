@@ -24,10 +24,12 @@ from chimera.cli._root import main
 # always runs after the @group() it decorates onto.
 from chimera.cli import (  # noqa: F401  — import for decorator side effects
     _common,
+    aeskeys_cmd,
     ai_cmd,
     analyze,
     android_sim_cmd,
     attach_cmd,
+    bpdump_cmd,
     classify_cmd,
     devices_cmd,
     diff_cmd,

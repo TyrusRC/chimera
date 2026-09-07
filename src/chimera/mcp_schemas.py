@@ -382,6 +382,14 @@ def all_tools() -> list[Tool]:
                  "path": {"type": "string", "description": "Path to the PE file."},
              }, "required": ["path"]}),
 
+        Tool(name="find_aes_keys",
+             description="Recover AES-128/192/256 keys by locating their expanded key schedule in bytes — a file (memory dump / core / any blob), a live process's memory (via /proc, writable regions), or a hex string. The schedule satisfies the AES KeyExpansion recurrence, so it is self-checking: a key computed at RUNTIME behind obfuscation (derived/decrypted/unpacked, never a literal in the binary) is still recoverable once resident. Reports each key (hex), its bit size, address/offset, and the 16 bytes after the schedule as a candidate IV (tiny-AES-c layout). Pair with a process dump or a frozen target (dynamic-analysis skill).",
+             inputSchema={"type": "object", "properties": {
+                 "file": {"type": "string", "description": "Path to a file/dump to scan."},
+                 "pid": {"type": "integer", "description": "PID of a live process to scan (/proc)."},
+                 "hex": {"type": "string", "description": "A hex byte string to scan directly."},
+             }}),
+
         Tool(name="pathfind",
              description="Shortest labelled path through a graph/FSM edge list from a start node to an accepting node — the reusable core of 'find the input that drives this state machine to accept' (e.g. recover a password from a disassembled validator). Edges map a node to [label, next_node] transitions; the concatenated edge labels ARE the accepting input. Pure BFS, no binary needed. Use exact_length to require a path of exactly N edges (the 'N-char password' shape where shorter accepts must be rejected).",
              inputSchema={"type": "object", "properties": {
@@ -406,6 +414,18 @@ def all_tools() -> list[Tool]:
                              "description": "Needle to search (ASCII+UTF-16LE) in process memory."},
                  "prefix": {"type": "string", "description": "Reuse an existing WINEPREFIX."},
              }, "required": ["exe"]}),
+
+        Tool(name="run_with_breakpoints",
+             description="Launch a program (x86-64 Linux) under ptrace, set software breakpoints at given addresses, and on each hit dump CPU registers and pointer-target memory — the no-sudo way to read a value a program computes at RUNTIME (a derived/decrypted key, an unpacked buffer) at the instant it's live. Works even under kernel.yama.ptrace_scope=1 because chimera launches (parents) the target. Each breakpoint: {addr, dumps:[[reg,len],...]} reads len bytes from the address in reg. NOTE: breakpoints are armed at the exec-stop, so the address must be mapped then — a native ELF's .text is; a Windows PE loaded later by Wine, or a dlopen/JIT region, is not (that needs deferred module-load arming).",
+             inputSchema={"type": "object", "properties": {
+                 "argv": {"type": "array", "items": {"type": "string"},
+                          "description": "Program + args to launch."},
+                 "breakpoints": {"type": "array", "items": {"type": "object"},
+                          "description": "[{addr:int|hex, dumps:[[reg,len],...]}]"},
+                 "max_hits": {"type": "integer", "default": 1, "description": "Stop after N hits."},
+                 "timeout": {"type": "number", "default": 30, "description": "Kill after N seconds."},
+                 "env": {"type": "object", "description": "Extra environment for the target."},
+             }, "required": ["argv", "breakpoints"]}),
 
         # --- Configuration ---
         Tool(name="get_config",

@@ -41,7 +41,11 @@ context bloat. **Breadth before depth. Name the path before drilling.**
    `disassemble_many` bulk-disassembles its targets; `pathfind` BFS-searches a
    recovered FSM edge list for the accepting input (`exact_length` = the N-char
    password shape); `run_under_wine` is the one-call Wine oracle; `evm_tour`
-   disassembles/executes on-chain EVM bytecode (a `pure` function) with no node.
+   disassembles/executes on-chain EVM bytecode (a `pure` function) with no node;
+   `bp-dump`/`run_with_breakpoints` reads a runtime-computed value (a derived key)
+   at a breakpoint with no sudo; `aeskeys`/`find_aes_keys` recovers an AES key
+   from a memory dump or live process. See the `dynamic-analysis` skill for the
+   runtime-key-recovery playbook.
    Persist findings with the write-back tools (`rename_function`, `set_comment`,
    `add_note`, `batch_annotate`) so the reasoning survives compaction and the
    next session reads it back.

@@ -66,6 +66,34 @@ Keep it isolated and observable:
 Prefer **`emulate_function`** (chimera/Unicorn) over a full run when you only
 need one leaf routine's output and it has no OS/GUI dependencies.
 
+## Recovering a value computed at runtime (a derived/decrypted key)
+
+When the answer is a value the program **builds at runtime** — an AES key derived
+or decrypted behind obfuscation (MBA, a flattened function), never a literal in
+the file — don't hand-solve the obfuscation. Read the value at the instant it's
+live:
+
+- **Break at the function that consumes it and dump a register.** `chimera
+  bp-dump` / MCP `run_with_breakpoints` launches the target under ptrace, breaks
+  at an address, and dumps registers + pointer-target memory. No sudo — because
+  chimera *launches* the target, ptrace is allowed even under
+  `kernel.yama.ptrace_scope=1` (that only blocks *attaching* to a non-child; a
+  sibling gdb is blocked, this is not). e.g. break at a tiny-AES
+  `AES_init_ctx_iv(ctx,key,iv)` and read 32 bytes at `[rdx]` (key) + 16 at `[r8]`
+  (iv). **Ceiling:** breakpoints arm at the exec-stop, so the address must be
+  mapped then — a native ELF's `.text` is; a **Windows PE the Wine loader maps
+  later** is not, so bp-dump can't yet break inside a PE-under-Wine (a
+  deferred-arm-on-module-load follow-up would close that).
+- **Or scan memory for the key schedule.** `chimera aeskeys` / MCP
+  `find_aes_keys` finds valid AES-128/192/256 key schedules in a file, a live
+  PID's memory, or a hex blob — the schedule is self-checking, so the key falls
+  out even when it's obfuscated in the binary. It also reports the 16 bytes after
+  the schedule as a candidate IV (tiny-AES-c layout). The catch is timing: the
+  schedule can be **transient** (a stack local, gone in ~ms) — freeze the process
+  at the right point (block it in a hooked libc call, or SIGSTOP it) before you
+  scan, or dump a core. If every wrong path collapses instantly, a periodic scan
+  will miss it; prefer the breakpoint.
+
 ## Generated state machines (when you must go static)
 
 A binary that is mostly one giant generated table/dispatch (huge function count,
