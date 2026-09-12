@@ -112,15 +112,23 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
     # ── emulate_function ────────────────────────────────────────────────
     if name == "emulate_function":
         from chimera.dynamic.emulate import emulate_function, unicorn_available
+        from chimera.dynamic.emulate_image import emulate_pe_function
         if not unicorn_available():
             return mcpstate.error(
                 'unicorn not installed — pip install "chimera[emulate]"')
-        if not mcpstate.require_model():
-            return mcpstate.error("No analysis loaded. Call analyze(path=...) first.")
-        model = mcpstate.current_model
-        path = mcpstate.analysis_config.get("path") or str(model.binary.path)
-        arch = arguments.get("arch") or model.binary.arch.value
-        if arch.startswith("arm64"):
+        # An explicit `path` runs against a bare file with no prior analyze();
+        # otherwise fall back to the loaded model's binary.
+        path = arguments.get("path")
+        arch = arguments.get("arch")
+        if not path:
+            if not mcpstate.require_model():
+                return mcpstate.error(
+                    "No analysis loaded. Pass path=... for a bare binary, "
+                    "or call analyze(path=...) first.")
+            model = mcpstate.current_model
+            path = mcpstate.analysis_config.get("path") or str(model.binary.path)
+            arch = arch or model.binary.arch.value
+        if arch and arch.startswith("arm64"):
             arch = "arm64"          # arm64e emulates as arm64
         try:
             args = tuple(int(a) for a in (arguments.get("args") or []))
@@ -131,8 +139,16 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             addr = r.get("address")
             addr = int(addr, 16) if isinstance(addr, str) else int(addr)
             read_back.append((addr, int(r.get("length", 16))))
+        if arguments.get("full_image"):
+            # Whole-PE emulation for obfuscated computed-goto/MBA VMs: maps
+            # every section, stubs calls leaving the code sections, lazily
+            # backs faults, and captures printable writes (a decrypted flag).
+            result = emulate_pe_function(
+                path, arguments["address"], args=args, read_back=tuple(read_back),
+                max_insns=int(arguments.get("max_insns", 2_000_000)))
+            return mcpstate.json_reply(result)
         result = emulate_function(
-            path, arguments["address"], arch=arch, args=args,
+            path, arguments["address"], arch=arch or "x86_64", args=args,
             read_back=tuple(read_back),
             max_insns=int(arguments.get("max_insns", 200_000)))
         return mcpstate.json_reply(result)

@@ -31,6 +31,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     attach_cmd,
     bpdump_cmd,
     classify_cmd,
+    deflatten_cmd,
     devices_cmd,
     diff_cmd,
     dispatch_cmd,

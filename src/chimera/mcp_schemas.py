@@ -337,13 +337,16 @@ def all_tools() -> list[Tool]:
 
         # --- Emulation ---
         Tool(name="emulate_function",
-             description="Emulate the function at ADDRESS in isolation (Unicorn) with integer args and read back memory it writes — resolve a hash, run a string-decrypt or checksum routine without running the whole binary. Self-contained leaf routines only: a call into an import/syscall hits unmapped memory and stops. Needs the 'emulate' extra; arch defaults to the loaded binary's (x86_64/arm64).",
+             description="Emulate the function at ADDRESS in isolation (Unicorn) with integer args and read back memory it writes — resolve a hash, run a string-decrypt or checksum routine without running the whole binary. Default maps only the function's own bytes, so a call into an import/syscall stops the run (self-contained leaf routines). Set full_image=true (x86-64 PE) to map the WHOLE image, stub any call that leaves the code sections as a ret, lazily back faults, and capture printable writes (a decrypted flag/message) — this runs an obfuscated computed-goto/MBA VM whose dispatch reads a data blob, and uses the MS x64 ABI (rcx,rdx,r8,r9). Pass path=... to emulate a bare binary with no prior analyze(). Needs the 'emulate' extra (and pefile for full_image).",
              inputSchema={"type": "object", "properties": {
                  "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
+                 "path": {"type": "string", "description": "Emulate this binary directly (no analyze() needed); defaults to the loaded binary."},
                  "args": {"type": "array", "items": {"type": "integer"},
-                          "description": "Integer arguments in register order (rdi.. / x0..)."},
+                          "description": "Integer arguments in register order (full_image: rcx,rdx,r8,r9; else rdi.. / x0..)."},
                  "arch": {"type": "string", "enum": ["x86_64", "arm64"],
-                          "description": "Override the arch; defaults to the loaded binary's."},
+                          "description": "Override the arch; defaults to the loaded binary's. Ignored when full_image (x86-64 only)."},
+                 "full_image": {"type": "boolean", "default": False,
+                                "description": "Map the entire PE, stub external calls, lazily map faults, capture printable writes — for obfuscated VMs."},
                  "read_back": {"type": "array", "items": {"type": "object", "properties": {
                      "address": {"type": "string"}, "length": {"type": "integer"}}},
                      "description": "Memory regions to return after the run: {address, length}."},
@@ -383,10 +386,18 @@ def all_tools() -> list[Tool]:
              }, "required": ["source"]}),
 
         Tool(name="find_dispatch_tables",
-             description="Scan a PE for arrays of code pointers (a state-handler dispatch table or jump table) and validate each entry against the real function starts from the .pdata table — so it works even when a disassembler's call-graph walk is ILT-defeated. The largest table's length is typically the state/handler count of a generated state machine or VM interpreter. Returns candidate tables (section, base VA, entry count, pointer size 8=absolute-VA/4=RVA), largest first.",
+             description="Scan a PE for arrays of code pointers (a state-handler dispatch table or jump table) and validate each entry against the real function starts from the .pdata table — so it works even when a disassembler's call-graph walk is ILT-defeated. The largest table's length is typically the state/handler count of a generated state machine or VM interpreter. Returns candidate tables (section, base VA, entry count, pointer size 8=absolute-VA/4=RVA), largest first. When no strong plain table exists it hints at recover_cfg — a control-flow-flattened / MBA VM computes its successors per block (jmp rax) and has no pointer table to find.",
              inputSchema={"type": "object", "properties": {
                  "path": {"type": "string", "description": "Path to the PE file."},
              }, "required": ["path"]}),
+
+        Tool(name="recover_cfg",
+             description="Recover the real control-flow graph of a control-flow-flattened / MBA-obfuscated x86-64 function whose blocks end in a computed `jmp rax` (Flare-On-style VM obfuscation). For each block it liveness-backtracks to the 'footer expression' that computes the jump target, then emulates that footer with the whole image mapped (so its data-blob reads resolve) to read the successor — resolving conditional footers (SETZ/SETNZ/SETGE) to both edges. Returns blocks, edges, an unresolved count, and a Graphviz DOT — the edges a linear disassembler cannot see. Needs capstone + the 'emulate' extra (unicorn, pefile).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the PE file."},
+                 "entry": {"type": "string", "description": "Function entry address (e.g. 0x1400202b0)."},
+                 "max_blocks": {"type": "integer", "default": 4000},
+             }, "required": ["path", "entry"]}),
 
         Tool(name="find_aes_keys",
              description="Recover AES-128/192/256 keys by locating their expanded key schedule in bytes — a file (memory dump / core / any blob), a live process's memory (via /proc, writable regions), or a hex string. The schedule satisfies the AES KeyExpansion recurrence, so it is self-checking: a key computed at RUNTIME behind obfuscation (derived/decrypted/unpacked, never a literal in the binary) is still recoverable once resident. Reports each key (hex), its bit size, address/offset, and the 16 bytes after the schedule as a candidate IV (tiny-AES-c layout). Pair with a process dump or a frozen target (dynamic-analysis skill).",

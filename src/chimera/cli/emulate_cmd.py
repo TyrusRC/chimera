@@ -28,17 +28,48 @@ def _parse_int(ctx, param, value):
 @click.option("--read-back", "read_back", multiple=True,
               help="Memory to dump after the run as ADDR:LEN (repeatable).")
 @click.option("--max-insns", type=int, default=200_000)
-def emulate(path: str, address: str, arch: str | None, args, read_back, max_insns: int):
+@click.option("--full-image", is_flag=True,
+              help="Map the WHOLE PE (x86-64), stub calls that leave the code "
+                   "sections, lazily map faults, and capture printable writes — "
+                   "for obfuscated computed-goto/MBA VMs. Needs pefile.")
+def emulate(path: str, address: str, arch: str | None, args, read_back, max_insns: int,
+            full_image: bool):
     """Emulate the function at --addr and print its return value + any output buffers.
 
-    For self-contained routines (hash, decrypt, checksum): a call into an
-    import or a syscall hits unmapped memory and stops the run.
+    Default maps only the function's own bytes — a call into an import or a
+    syscall stops the run (self-contained hash/decrypt/checksum routines).
+    --full-image maps the entire PE and stubs external calls, so an obfuscated
+    VM whose dispatch reads a data blob runs to completion.
     """
     from chimera.dynamic.emulate import emulate_function, unicorn_available
+    from chimera.dynamic.emulate_image import emulate_pe_function
 
     if not unicorn_available():
         raise click.ClickException(
             'unicorn not installed — pip install "chimera[emulate]"')
+
+    if full_image:
+        rb = []
+        for spec in read_back:
+            addr_s, _, len_s = spec.partition(":")
+            rb.append((int(addr_s, 0), int(len_s or "16", 0)))
+        result = emulate_pe_function(path, address, args=tuple(args),
+                                     read_back=tuple(rb),
+                                     max_insns=max(max_insns, 2_000_000))
+        if not result["available"]:
+            raise click.ClickException(result["error"])
+        click.echo(f"[chimera] emulate {address} (full-image)  "
+                   f"insns={result['instructions']} edges={result['edges']} "
+                   f"returned={result['returned']}")
+        if result["error"]:
+            click.echo(f"  note: {result['error']}")
+        if result["extern_calls"]:
+            click.echo(f"  stubbed externs: {', '.join(result['extern_calls'][:12])}")
+        for w in result["ascii_writes"]:
+            click.echo(f"  wrote {w['address']}: {w['text']!r}")
+        for r in result["read_back"]:
+            click.echo(f"  {r['address']}: {r.get('hex', r.get('error'))}")
+        return
 
     if arch is None:
         from chimera.model.binary import BinaryInfo
