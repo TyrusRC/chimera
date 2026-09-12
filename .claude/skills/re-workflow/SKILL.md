@@ -147,7 +147,10 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   behind `native` (Delphi, Go, Rust).
 - **A section at ~random entropy over a large fraction of the file** is the
   likely encrypted/compressed payload — chimera surfaces it in the summary.
-- **Mobile app (APK/AAB/IPA)? Load the `mobile-re` skill** (fingerprint→
+- **Native desktop binary (PE .exe/.dll/.sys or ELF)? Load the `desktop-re`
+  skill** for the native static→dynamic flow + the PE-vs-ELF specifics
+  (ILT/.pdata, PLT/GOT, TLS/ctors, .NET/Go/Rust). **Mobile app (APK/AAB/IPA)?
+  Load the `mobile-re` skill** (fingerprint→
   decompile→manifest→SSL-pin/root bypass→API), and spawn the `mobile-recon`
   agent for the breadth-first triage. **Cross-platform mobile frameworks have
   dedicated tools** — don't try to read Dart AOT or Hermes bytecode as plain
