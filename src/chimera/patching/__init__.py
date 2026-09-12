@@ -15,6 +15,12 @@ search is recipe-local so each recipe can keep its detection logic
 beside the patch bytes.
 """
 
+from chimera.patching.assembler import (
+    AssembleError,
+    SUPPORTED_ARCHES,
+    assemble,
+    keystone_available,
+)
 from chimera.patching.binary_patcher import (
     BinaryPatcher,
     PatchError,
@@ -22,4 +28,7 @@ from chimera.patching.binary_patcher import (
     PatchResult,
 )
 
-__all__ = ["BinaryPatcher", "PatchError", "PatchPlan", "PatchResult"]
+__all__ = [
+    "BinaryPatcher", "PatchError", "PatchPlan", "PatchResult",
+    "assemble", "keystone_available", "AssembleError", "SUPPORTED_ARCHES",
+]

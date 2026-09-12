@@ -60,7 +60,12 @@ argv and let the solver invert the constraints); `pathfind` BFS-searches a
    disassembles/executes on-chain EVM bytecode (a `pure` function) with no node;
    `bp-dump`/`run_with_breakpoints` reads a runtime-computed value (a derived key)
    at a breakpoint with no sudo; `aeskeys`/`find_aes_keys` recovers an AES key
-   from a memory dump or live process. See the `dynamic-analysis` skill for the
+   from a memory dump or live process. To DEFEAT a check instead of solving it —
+   NOP an anti-debug test, force a branch, stub an import, or drop in new code —
+   `patch` (MCP) / `chimera patch` rewrites a PE/ELF/Mach-O in place: give it
+   `asm` source (assembled at the target VA via keystone, so relative branches are
+   correct) or raw `bytes_hex`, or apply a bundled `--recipe`; it defaults to a
+   dry-run diff so you preview before writing. See the `dynamic-analysis` skill for the
    runtime-key-recovery playbook. **To actually EXECUTE an untrusted target**
    (crackme/malware/CTF/Wine PE) do it confined — `chimera sandbox-run` or the
    `sandbox-runner` agent; see the `sandbox` skill (network off by default).

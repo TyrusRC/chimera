@@ -59,8 +59,14 @@ def emulate(path: str, address: str, arch: str | None, args, read_back, input_bu
             rb.append((int(addr_s, 0), int(len_s or "16", 0)))
         ib = []
         for spec in input_buffers:
-            addr_s, _, hex_s = spec.partition(":")
-            ib.append((int(addr_s, 0), bytes.fromhex(hex_s)))
+            addr_s, sep, hex_s = spec.partition(":")
+            if not sep:
+                raise click.BadParameter(
+                    f"--input-buffer must be ADDR:HEX, got {spec!r}")
+            try:
+                ib.append((int(addr_s, 0), bytes.fromhex(hex_s)))
+            except ValueError as exc:
+                raise click.BadParameter(f"bad --input-buffer {spec!r}: {exc}")
         result = emulate_pe_function(path, address, args=tuple(args),
                                      read_back=tuple(rb), input_buffers=tuple(ib),
                                      this_ptr=None if ib else 0x10000000,

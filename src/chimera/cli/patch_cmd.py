@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
               help="Virtual address to patch (hex). Pair with --bytes.")
 @click.option("--bytes", "raw_bytes", type=str, default=None,
               help="Bytes to write as a hex string. Pair with --addr.")
+@click.option("--asm", "asm_src", type=str, default=None,
+              help="Assemble source at --addr and write it (keystone), e.g. "
+                   "--asm 'xor eax,eax; ret'. Relative branches encode against "
+                   "--addr. Pair with --addr; alternative to --bytes.")
+@click.option("--asm-arch", "asm_arch", type=str, default=None,
+              help="Arch for --asm (x86_64/x86/arm64/arm/thumb). "
+                   "Default: auto-detected from the binary.")
 @click.option("--json", "json_path", type=click.Path(exists=True, dir_okay=False), default=None,
               help="Apply a batch of patches from a JSON file. Schema: "
                    "{patches:[{address, bytes_hex, description?}]}.")
@@ -37,6 +44,7 @@ logger = logging.getLogger(__name__)
 @click.option("--dry-run", is_flag=True,
               help="Print the diff summary and do NOT write the output file.")
 def patch(binary: str, addr: str | None, raw_bytes: str | None,
+          asm_src: str | None, asm_arch: str | None,
           json_path: str | None, recipes: tuple[str, ...],
           list_recipes: bool, out_path: str | None, dry_run: bool):
     """Apply byte-level patches to a PE / ELF / Mach-O binary.
@@ -44,12 +52,13 @@ def patch(binary: str, addr: str | None, raw_bytes: str | None,
     \b
     Examples:
       chimera patch app.exe --addr 0x14001234 --bytes 909090
+      chimera patch app.exe --addr 0x14001234 --asm 'xor eax,eax; ret'
       chimera patch sample.elf --recipe elf-ptrace-zero
       chimera patch sample.exe --recipe pe-isdebuggerpresent-nop --dry-run
       chimera patch app.exe --json patches.json --out app.cracked.exe
     """
     import json as _json
-    from chimera.patching import BinaryPatcher, PatchError, PatchPlan
+    from chimera.patching import AssembleError, BinaryPatcher, PatchError, PatchPlan
     from chimera.patching.recipes import (
         apply_recipe,
         load_bundled_recipes,
@@ -62,8 +71,12 @@ def patch(binary: str, addr: str | None, raw_bytes: str | None,
 
     if not (addr or json_path or recipes):
         raise click.UsageError(
-            "Provide --addr+--bytes, --json, --recipe, or --list-recipes."
+            "Provide --addr (+--bytes/--asm), --json, --recipe, or --list-recipes."
         )
+    if raw_bytes and asm_src:
+        raise click.UsageError("Use --bytes or --asm, not both.")
+    if (raw_bytes or asm_src) and not addr:
+        raise click.UsageError("--bytes/--asm need --addr.")
 
     try:
         patcher = BinaryPatcher.open(binary)
@@ -75,6 +88,9 @@ def patch(binary: str, addr: str | None, raw_bytes: str | None,
         if addr and raw_bytes:
             patcher.patch(int(addr, 16), bytes.fromhex(raw_bytes),
                           description="--addr/--bytes")
+        if addr and asm_src:
+            patcher.patch_asm(int(addr, 16), asm_src, arch=asm_arch,
+                              description=f"--asm {asm_src!r}")
         if json_path:
             blob = _json.loads(Path(json_path).read_text())
             for step in blob.get("patches", []):
@@ -90,7 +106,7 @@ def patch(binary: str, addr: str | None, raw_bytes: str | None,
                 if name not in db:
                     raise click.UsageError(f"unknown recipe {name!r}")
                 apply_recipe(patcher, db[name])
-    except PatchError as exc:
+    except (PatchError, AssembleError) as exc:
         click.echo(f"chimera patch: {exc}", err=True)
         raise click.exceptions.Exit(2)
 

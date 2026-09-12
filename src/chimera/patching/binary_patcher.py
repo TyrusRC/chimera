@@ -159,6 +159,50 @@ class BinaryPatcher:
             bytes_=bytes(data), virtual_address=int(vaddr), description=description,
         ))
 
+    def patch_asm(self, vaddr: int, code: str, *, arch: str | None = None,
+                  description: str = "") -> PatchResult:
+        """Assemble `code` at `vaddr` and write it (keystone; needs chimera[patch]).
+
+        `arch` defaults to the binary's own machine (`machine_arch()`) so a
+        relative branch encodes correctly and ARM code is never assembled as x86.
+        Raises AssembleError if keystone is missing or the source won't assemble.
+        """
+        from chimera.patching.assembler import AssembleError, assemble
+        use_arch = arch or self.machine_arch()
+        if use_arch is None:
+            raise AssembleError(
+                "could not detect the binary's architecture — pass arch= explicitly")
+        data = assemble(code, arch=use_arch, addr=int(vaddr))
+        return self.patch(int(vaddr), data, description=description or f"asm: {code}")
+
+    def machine_arch(self) -> str | None:
+        """Map the binary's machine/CPU-type field to an assembler arch name.
+
+        Returns an entry of assembler.SUPPORTED_ARCHES, or None when the field
+        is missing or names a CPU the assembler doesn't cover.
+        """
+        buf = self.buffer
+        try:
+            if self.fmt is BinaryFormat.PE:
+                e_lfanew = struct.unpack_from("<I", buf, 0x3C)[0]
+                machine = struct.unpack_from("<H", buf, e_lfanew + 4)[0]
+                return {0x8664: "x86_64", 0x14C: "x86",
+                        0xAA64: "arm64", 0x1C0: "arm", 0x1C4: "arm"}.get(machine)
+            if self.fmt is BinaryFormat.ELF:
+                endian = "<" if buf[5] == 1 else ">"
+                machine = struct.unpack_from(endian + "H", buf, 0x12)[0]
+                return {0x3E: "x86_64", 0x03: "x86",
+                        0xB7: "arm64", 0x28: "arm"}.get(machine)
+            if self.fmt is BinaryFormat.MACHO:
+                # little-endian magics carry a little-endian cputype at off 4.
+                endian = "<" if buf[:4] in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe") else ">"
+                cputype = struct.unpack_from(endian + "I", buf, 4)[0]
+                return {0x01000007: "x86_64", 0x00000007: "x86",
+                        0x0100000C: "arm64", 0x0000000C: "arm"}.get(cputype)
+        except Exception:  # pragma: no cover - malformed header → unknown arch
+            return None
+        return None
+
     def patch_at_offset(self, offset: int, data: bytes, description: str = "") -> PatchResult:
         return self.apply(PatchPlan(
             bytes_=bytes(data), file_offset=int(offset), description=description,

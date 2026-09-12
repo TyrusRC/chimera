@@ -424,6 +424,22 @@ def all_tools() -> list[Tool]:
                                 "description": "Force a backend (default: pdg then pdc)."},
              }, "required": ["address"]}),
 
+        Tool(name="patch",
+             description="Apply in-place byte or assembly patches to a PE / ELF / Mach-O binary and write a patched copy — NOP an anti-debug check, force a conditional jump, stub an import, or drop in new code. Each patch is either raw `bytes_hex` or `asm` source (assembled at its VA via keystone, so relative jmp/call/branch offsets are correct); `arch` defaults to the binary's own machine (x86_64/x86/arm64/arm/thumb). Also applies bundled `recipes` by name (see `chimera patch --list-recipes`). Defaults to dry_run=true — returns the before/after diff without writing; set dry_run=false (and optionally out=) to save. Assembly needs the 'patch' extra (keystone).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Binary to patch (defaults to the loaded analysis)."},
+                 "patches": {"type": "array", "description": "Patches to apply.", "items": {"type": "object", "properties": {
+                     "address": {"type": "string", "description": "Virtual address (hex, e.g. 0x140001234)."},
+                     "asm": {"type": "string", "description": "Assembly source to encode at the VA, e.g. 'xor eax,eax; ret'."},
+                     "bytes_hex": {"type": "string", "description": "Raw bytes as hex (alternative to asm)."},
+                     "arch": {"type": "string", "description": "Arch for asm (default: auto from the binary)."},
+                     "description": {"type": "string"},
+                 }}},
+                 "recipes": {"type": "array", "items": {"type": "string"}, "description": "Bundled recipe names to apply."},
+                 "out": {"type": "string", "description": "Output path (default: <binary>.patched.<ext>)."},
+                 "dry_run": {"type": "boolean", "default": True, "description": "Preview the diff without writing (default true)."},
+             }, "required": []}),
+
         Tool(name="yara_scan",
              description="Scan a file (sample/dump/unpacked payload) against YARA rules on demand — the compiled-binary counterpart to run_semgrep's source patterns, for identifying family/packer/capability/IOC. Uses chimera's bundled rule set plus any rules in an optional rules_dir. Returns hits with rule name, tags, meta and matched string identifiers. Needs yara-python. (To AUTHOR a rule from findings, use the `chimera yara` CLI.)",
              inputSchema={"type": "object", "properties": {
