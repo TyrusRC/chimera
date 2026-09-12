@@ -141,6 +141,14 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   behind `native` (Delphi, Go, Rust).
 - **A section at ~random entropy over a large fraction of the file** is the
   likely encrypted/compressed payload — chimera surfaces it in the summary.
+- **Cross-platform mobile frameworks have dedicated tools** — don't try to read
+  Dart AOT or Hermes bytecode as plain native/JS. **Flutter**: `chimera
+  flutter-extract` (static B(l)utter — Dart classes/methods) and `chimera
+  flutter-patch` (reFlutter — repackage for traffic MITM, since Flutter ignores
+  the system proxy + bundles its own CA, or dump Dart code offsets). **React
+  Native**: `analyze` auto-detects the bundle and runs `hermes-decompile`
+  (Hermes bytecode) or webcrack (plain-JSC minified bundle) + source-map
+  recovery. **Others**: `rust-decompile`, `vmp-devirt` (VMProtect).
 - **R8/ProGuard-obfuscated Android**: `a.b.c` class names aren't a dead end —
   Kotlin `@Metadata`/`@DebugMetadata` annotations survive R8 and carry the
   original fully-qualified names, so an obfuscated→real map is recoverable
