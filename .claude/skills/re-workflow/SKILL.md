@@ -28,7 +28,10 @@ context bloat. **Breadth before depth. Name the path before drilling.**
    leak the flag? a constant is right there?), take it and stop.
 
 3. **Depth (one path, targeted).** Drill the chosen path only:
-   `get_function` / `get_disassembly` (paged) / `emulate_function` for a leaf
+   `get_function` (decompiled source of an analyzed function) / `decompile` (one
+   function to C on demand from a bare path — prefers r2ghidra `pdg` for genuine
+   Ghidra-quality C, falls back to r2 `pdc`) / `get_disassembly` (paged) /
+   `emulate_function` for a leaf
    routine / `dotnet_trace` for VM'd .NET / `detect_gpu` + the
    `gpu-acceleration` skill for a crack. When the logic is huge, generated, or
    keyed on runtime state, **consider the `dynamic-analysis` skill** — running

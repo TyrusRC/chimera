@@ -399,6 +399,22 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         result["blocks_truncated"] = len(blocks) > 400
         return mcpstate.json_reply(result)
 
+    # ── decompile (single function to C, r2ghidra pdg → pdc, bare path) ──
+    if name == "decompile":
+        from chimera.adapters.radare2 import Radare2Adapter
+        target = arguments.get("path")
+        if not target and mcpstate.require_model():
+            target = mcpstate.analysis_config.get("path") or str(mcpstate.current_model.binary.path)
+        if not target or not Path(target).exists():
+            return mcpstate.error("decompile needs path=<binary> (or a loaded analysis).")
+        adapter = Radare2Adapter()
+        if not adapter.is_available():
+            return mcpstate.error("radare2 not found on PATH.")
+        result = await adapter.analyze(target, {
+            "mode": "decompile", "address": arguments["address"],
+            "decompiler": arguments.get("decompiler")})
+        return mcpstate.json_reply(result)
+
     # ── yara_scan (binary pattern / family / IOC matching, on demand) ────
     if name == "yara_scan":
         from chimera.adapters.yara_adapter import YaraAdapter
