@@ -167,6 +167,20 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             max_insns=int(arguments.get("max_insns", 200_000)))
         return mcpstate.json_reply(result)
 
+    if name == "hdl_sim":
+        from chimera.dynamic.hdl_sim import hdl_sim
+        sources = arguments.get("sources") or []
+        if not sources:
+            return mcpstate.error("hdl_sim needs a non-empty 'sources' list of .v files.")
+        result = hdl_sim(
+            [str(s) for s in sources], top=arguments.get("top"),
+            extra_flags=tuple(arguments.get("flags") or ("-g2012",)),
+            vvp_flags=tuple(arguments.get("vvp_flags") or ()),
+            iverilog=arguments.get("iverilog", "iverilog"),
+            vvp=arguments.get("vvp", "vvp"),
+            timeout=int(arguments.get("timeout", 120)))
+        return mcpstate.json_reply(result)
+
     if name == "run_under_wine":
         from chimera.dynamic.wine import run_under_wine
 

@@ -56,7 +56,10 @@ success string while avoiding failures — the crackme/keygen/serial-check solve
 `pathfind` and `emulate_function` can't do (declare the input as symbolic stdin /
 argv and let the solver invert the constraints); `pathfind` BFS-searches a
    recovered FSM edge list for the accepting input (`exact_length` = the N-char
-   password shape); `run_under_wine` is the one-call Wine oracle; `evm_tour`
+   password shape); `run_under_wine` is the one-call Wine oracle; `hdl_sim` /
+   `chimera hdl-sim` is the HDL analogue — compile a Verilog/SystemVerilog design
+   with Icarus (iverilog) and run its testbench, capturing `$display` output, for
+   a "reverse this hardware core" target (edit a testbench to drive input); `evm_tour`
    disassembles/executes on-chain EVM bytecode (a `pure` function) with no node;
    `bp-dump`/`run_with_breakpoints` reads a runtime-computed value (a derived key)
    at a breakpoint with no sudo; `aeskeys`/`find_aes_keys` recovers an AES key
