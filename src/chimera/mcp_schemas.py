@@ -399,6 +399,15 @@ def all_tools() -> list[Tool]:
                  "max_blocks": {"type": "integer", "default": 4000},
              }, "required": ["path", "entry"]}),
 
+        Tool(name="decompile",
+             description="Decompile ONE native function to C at a given address, on demand (no prior analyze needed — pass path=). Prefers r2ghidra's `pdg` (the real Ghidra decompiler, genuine C) and falls back to radare2's built-in `pdc` when r2ghidra isn't installed; `decompiler` can force pdg or pdc. Does a targeted `af` (not a full analysis) so it's fast on large binaries. For a whole loaded project's functions use get_function instead. Returns the C code + which backend produced it.",
+             inputSchema={"type": "object", "properties": {
+                 "address": {"type": "string", "description": "Function address (e.g. 0x401000)."},
+                 "path": {"type": "string", "description": "Binary to decompile (defaults to the loaded analysis)."},
+                 "decompiler": {"type": "string", "enum": ["pdg", "pdc"],
+                                "description": "Force a backend (default: pdg then pdc)."},
+             }, "required": ["address"]}),
+
         Tool(name="yara_scan",
              description="Scan a file (sample/dump/unpacked payload) against YARA rules on demand — the compiled-binary counterpart to run_semgrep's source patterns, for identifying family/packer/capability/IOC. Uses chimera's bundled rule set plus any rules in an optional rules_dir. Returns hits with rule name, tags, meta and matched string identifiers. Needs yara-python. (To AUTHOR a rule from findings, use the `chimera yara` CLI.)",
              inputSchema={"type": "object", "properties": {

@@ -54,30 +54,42 @@ class Radare2Adapter(BackendAdapter):
             r2.quit()
 
     def _decompile_one(self, r2, options: dict) -> dict:
-        """Decompile a single function via r2's `pdc` (poor-man's decompiler).
+        """Decompile a single function to C, preferring r2ghidra `pdg`.
 
-        r2 emits a function-flavoured pseudo-C when given an analyzed
-        function. We do a *targeted* `af` at the supplied address rather
-        than a full `aaa` so the call returns in well under a second even
-        on multi-MB binaries.
-
-        `options["address"]` is a hex string (or anything `int(x, 16)`
-        accepts). Errors are surfaced in the return dict rather than
-        raised so callers can degrade gracefully when r2's analysis fails.
+        `pdg` (the r2ghidra plugin) is the real Ghidra decompiler and emits
+        genuine C — far better than r2's built-in `pdc` poor-man's decompiler.
+        We prefer it and fall back to `pdc` when the plugin isn't installed
+        (`pdg` then returns empty). `options["decompiler"]` can force "pdg" or
+        "pdc". We do a *targeted* `af` at the address rather than a full `aaa`
+        so the call returns fast even on multi-MB binaries. Errors are returned,
+        never raised, so callers degrade gracefully.
         """
         addr = options.get("address")
         if not addr:
             return {"ok": False, "error": "address required for decompile mode"}
+        prefer = options.get("decompiler")  # "pdg" | "pdc" | None (auto)
         try:
             r2.cmd(f"af @ {addr}")  # function-scope analysis, no aaa
-            code = r2.cmd(f"pdc @ {addr}")
+            code, backend = "", ""
+            if prefer in (None, "pdg"):
+                try:
+                    code = r2.cmd(f"pdg @ {addr}") or ""
+                except Exception:
+                    code = ""
+                if code.strip():
+                    backend = "r2ghidra (pdg)"
+            if not code.strip() and prefer != "pdg":
+                code = r2.cmd(f"pdc @ {addr}") or ""
+                backend = "radare2 (pdc)"
         except Exception as exc:  # r2pipe surfaces as RuntimeError on stale pipes
             return {"ok": False, "error": f"r2 pipe error: {exc!s}"}
         if not isinstance(code, str) or not code.strip():
-            return {"ok": False, "error": "r2 pdc returned empty output"}
+            hint = ("install r2ghidra for Ghidra-quality C: `r2pm -ci r2ghidra`"
+                    if prefer == "pdg" else "")
+            return {"ok": False, "error": "decompiler returned empty output", "hint": hint}
         return {
             "ok": True,
-            "backend": "radare2",
+            "backend": backend,
             "address": str(addr),
             "code": code,
             "lines": code.count("\n") + 1,
