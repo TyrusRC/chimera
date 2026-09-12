@@ -35,6 +35,18 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             ]
         return mcpstate.json_reply(payload)
 
+    if name == "js_deobf":
+        from chimera.unpacking.js_deobf import deobfuscate
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        result = deobfuscate(path, out_dir=arguments.get("out_dir"),
+                             prettier=bool(arguments.get("prettier", True)))
+        if not result.get("available"):
+            return mcpstate.error(result.get("error", "webcrack unavailable"))
+        return mcpstate.json_reply(result)
+
     if name == "pdf_tour":
         from chimera.unpacking.pdf import pdf_tour
 

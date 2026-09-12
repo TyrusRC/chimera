@@ -197,7 +197,12 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   the system proxy + bundles its own CA, or dump Dart code offsets). **React
   Native**: `analyze` auto-detects the bundle and runs `hermes-decompile`
   (Hermes bytecode) or webcrack (plain-JSC minified bundle) + source-map
-  recovery. **Others**: `rust-decompile`, `vmp-devirt` (VMProtect).
+  recovery. **Standalone obfuscated .js/.html** (a web CTF page, a malicious
+  dropper's inline script — NOT a mobile bundle; `analyze` mis-sniffs HTML as a
+  binary): `js_deobf` (MCP) / `chimera js-deobf` extracts inline `<script>`s,
+  runs webcrack (unflatten/unminify/inline the string array), and line-splits
+  the result so a multi-MB one-liner is greppable — needs node+webcrack.
+  **Others**: `rust-decompile`, `vmp-devirt` (VMProtect).
 - **R8/ProGuard-obfuscated Android**: `a.b.c` class names aren't a dead end —
   Kotlin `@Metadata`/`@DebugMetadata` annotations survive R8 and carry the
   original fully-qualified names, so an obfuscated→real map is recoverable

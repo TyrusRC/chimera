@@ -36,7 +36,7 @@ EXPECTED_TOOLS = {
     "frida_detach", "frida_exec", "frida_load_script", "frida_messages",
     "get_logcat", "setup_proxy", "clear_proxy", "get_config",
     "start_fuzz", "fuzz_status", "dotnet_trace", "py_unwrap", "pdf_tour",
-    "evm_tour", "find_dispatch_tables", "recover_cfg", "pathfind", "run_under_wine",
+    "evm_tour", "js_deobf", "find_dispatch_tables", "recover_cfg", "pathfind", "run_under_wine",
     "symexec", "decompile", "yara_scan", "yara_solve", "detect_capabilities", "deobfuscate_strings",
     "find_aes_keys", "run_with_breakpoints", "run_sandboxed",
     "rename_function", "set_comment", "set_function_type",
