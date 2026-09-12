@@ -26,6 +26,36 @@ there is no greedy oracle** — stop probing and extract the logic statically
 (post-run state, seeding the state yourself, an execution counter) — don't
 assume from one.
 
+## Emulate an obfuscated routine offline (no Wine, deterministic)
+
+For an obfuscated x86-64 PE — a control-flow-flattened / MBA / computed-goto VM
+whose blocks end in `jmp rax` — you often don't need to run the whole program.
+Two chimera primitives beat both hand-tracing and a fragile GUI run:
+
+- **`recover_cfg` / `chimera deflatten`** — resolves the computed `jmp rax`
+  edges (liveness-backtrack each block's footer, emulate it with the image
+  mapped) and returns the real CFG + DOT. Use it to find the good-boy/bad-boy
+  split and the gate that checks a value against a hardcoded constant.
+- **`emulate_function full_image=true` / `chimera emulate --full-image`** — maps
+  the WHOLE PE, stubs any call leaving the code sections (imports/Qt/syscalls
+  no longer halt it), lazily maps faults, uses the MS-x64 ABI, and captures the
+  printable strings the run writes. It runs the flattened routine to completion
+  where the plain leaf-emulator (`emulate_function`) halts at the first `call`.
+
+**Do not force a single branch to "success" in the emulator.** The VM dispatch
+is keyed on the exact runtime state; a forced or fake value derails it into a
+garbage path (millions of junk instructions, no flag). The clean route is to
+recover the *input* (the passcode/code) by inverting the recovered hash, not to
+fake the state. See the re-workflow "flattened VM" recipe.
+
+**When the flag is a runtime-only GUI artifact:** a Qt6/GUI PE under Wine+Xvfb
+(no WM/GPU) frequently won't paint its main window, and synthetic keystrokes are
+ignored — so you can't drive the keypad to make it print the flag. Top-level
+*dialogs* still render, but if you can't drive input, recover the **input**
+instead (it's the real answer); the flag string is then whatever the app prints
+for that input on a real display. This is the same class as a nondeterministic
+runtime popup — don't burn hours on the GUI once the input is recovered.
+
 ## Running Windows PEs on Linux under Wine (safe, headless, scriptable)
 
 Wine turns a Windows CTF/malware binary into a runnable oracle on Linux.
