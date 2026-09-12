@@ -30,6 +30,10 @@ Available patch kinds (`kind`):
     for a chosen dynamic symbol to a constant-return shim.
   * ``nop-range``             — analyst-supplied [start, end) VA range
     filled with 0x90 / 0x00 / no-op equivalent for the binary's arch.
+  * ``nop-insn``              — NOP the ``count`` (default 1) instruction(s)
+    at ``address``, auto-sized by disassembly (capstone) so short and near
+    jumps both work without hand-counting bytes: ``{"kind":"nop-insn",
+    "address":"0x401486","count":1}``.
   * ``force-jump-taken``      — flip a single short conditional jump
     (0x74 jz / 0x75 jnz / etc.) at the supplied VA to an
     unconditional ``jmp`` (0xEB).
@@ -137,6 +141,10 @@ def _expand_step(patcher: BinaryPatcher, recipe: Recipe, step: dict[str, Any]) -
             raise ValueError(f"nop-range end {end:#x} <= start {start:#x}")
         nop = bytes([_nop_for_format(patcher.fmt)] * (end - start))
         return [PatchPlan(bytes_=nop, virtual_address=start, description=f"{recipe.name}: nop {end-start} bytes")]
+    if kind == "nop-insn":
+        vaddr = _hex_int(step["address"])
+        count = int(step.get("count", 1))
+        return [patcher._nop_plan(vaddr, count, description=f"{recipe.name}: nop-insn")]
     if kind == "asm":
         from chimera.patching.assembler import assemble
         vaddr = _hex_int(step["address"])

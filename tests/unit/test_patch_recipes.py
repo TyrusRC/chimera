@@ -66,6 +66,35 @@ def test_nop_range_fills_with_x86_nop(tmp_path):
     assert results[0].after == b"\x90" * 8
 
 
+def test_nop_instruction_autosizes_near_and_short_jumps(tmp_path):
+    """patch --nop: NOP a whole instruction without knowing its length up front."""
+    src = tmp_path / "x.elf"
+    raw = bytearray(_minimal_elf64_with_one_load(load_vaddr=0x400000, load_size=0x1000))
+    raw[0x500:0x506] = bytes.fromhex("0f85aabbccdd")  # near jne (6B) @ VA 0x400500
+    raw[0x510:0x512] = bytes.fromhex("7405")          # short je  (2B) @ VA 0x400510
+    src.write_bytes(bytes(raw))
+
+    p = BinaryPatcher.open(src)
+    r_near = p.nop(0x400500)
+    r_short = p.nop(0x400510)
+    assert r_near.after == b"\x90" * 6                # sized the near form, not 2 bytes
+    assert r_short.after == b"\x90" * 2
+    assert p.read(0x400512, 1) == b"\x00"             # next instruction untouched
+    assert "jne" in r_near.description
+
+
+def test_nop_insn_recipe_kind(tmp_path):
+    src = tmp_path / "x.elf"
+    raw = bytearray(_minimal_elf64_with_one_load(load_vaddr=0x400000, load_size=0x1000))
+    raw[0x500:0x506] = bytes.fromhex("0f85aabbccdd")  # near jne @ VA 0x400500
+    src.write_bytes(bytes(raw))
+    p = BinaryPatcher.open(src)
+    r = Recipe(name="n", description="", applies_to=["elf"],
+               patches=[{"kind": "nop-insn", "address": "0x400500"}])
+    results = apply_recipe(p, r)
+    assert results[0].after == b"\x90" * 6
+
+
 def test_force_jump_taken_flips_jz(tmp_path):
     src = tmp_path / "x.elf"
     raw = bytearray(_minimal_elf64_with_one_load(load_vaddr=0x400000, load_size=0x1000))

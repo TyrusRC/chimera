@@ -52,7 +52,8 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         if not Path(path).exists():
             return mcpstate.error(f"file not found: {path}")
         result = deobfuscate(path, out_dir=arguments.get("out_dir"),
-                             prettier=bool(arguments.get("prettier", True)))
+                             prettier=bool(arguments.get("prettier", True)),
+                             resolve=arguments.get("resolve"))
         if not result.get("available"):
             return mcpstate.error(result.get("error", "webcrack unavailable"))
         return mcpstate.json_reply(result)

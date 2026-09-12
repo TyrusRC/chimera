@@ -378,11 +378,12 @@ def all_tools() -> list[Tool]:
              }, "required": ["path"]}),
 
         Tool(name="js_deobf",
-             description="Deobfuscate a standalone JavaScript / HTML file — the web counterpart to py_unwrap, for an obfuscated web CTF page or a malicious dropper's inline script (chimera otherwise only handled JS inside the React Native bundle pipeline, and `analyze` mis-sniffs HTML as a binary). Extracts inline <script> bodies from HTML, runs webcrack (undo control-flow flattening, inline the string array, unminify, split modules), then line-splits the result (prettier, or a built-in splitter) so a multi-MB one-liner becomes greppable. Returns the output directory and per-file paths + byte sizes — the cleaned content is left on disk (grep/read it), not inlined. Needs node + webcrack (npm i -g webcrack, or via npx).",
+             description="Deobfuscate a standalone JavaScript / HTML file — the web counterpart to py_unwrap, for an obfuscated web CTF page or a malicious dropper's inline script (chimera otherwise only handled JS inside the React Native bundle pipeline, and `analyze` mis-sniffs HTML as a binary). Follows the web module graph from the entry — inline <script> bodies PLUS every local external <script src> and ES-imported file (import/export…from/dynamic import(); remote URLs and bare npm packages are skipped, network stays off) — runs webcrack (undo control-flow flattening, inline the string array, unminify, split modules), then line-splits the result (prettier, or a built-in splitter) so a multi-MB one-liner becomes greppable. Returns the module graph and per-file paths + byte sizes — the cleaned content is left on disk (grep/read it), not inlined. Pass `resolve=\"NAME[IDX]\"` to instead STATICALLY read one element of a `const NAME = [ … ]` array literal across the collected sources (no node needed) — the recurring \"indexed table → flag\" web-CTF pattern. Needs node + webcrack for deobfuscation (npm i -g webcrack, or via npx); --resolve works without it.",
              inputSchema={"type": "object", "properties": {
-                 "path": {"type": "string", "description": "Path to the .js or .html file."},
+                 "path": {"type": "string", "description": "Path to the .js or .html file (entry point of the web app)."},
                  "out_dir": {"type": "string", "description": "Output directory (default: <name>_deobf beside the input)."},
                  "prettier": {"type": "boolean", "default": True, "description": "Format with prettier (else the built-in line-splitter)."},
+                 "resolve": {"type": "string", "description": "Statically resolve one const-array element, e.g. \"TABLE[12]\" — returns the value without running node/webcrack."},
              }, "required": ["path"]}),
 
         Tool(name="pdf_tour",
@@ -451,11 +452,13 @@ def all_tools() -> list[Tool]:
              }, "required": ["path"]}),
 
         Tool(name="patch",
-             description="Apply in-place byte or assembly patches to a PE / ELF / Mach-O binary and write a patched copy — NOP an anti-debug check, force a conditional jump, stub an import, or drop in new code. Each patch is either raw `bytes_hex` or `asm` source (assembled at its VA via keystone, so relative jmp/call/branch offsets are correct); `arch` defaults to the binary's own machine (x86_64/x86/arm64/arm/thumb). Also applies bundled `recipes` by name (see `chimera patch --list-recipes`). Defaults to dry_run=true — returns the before/after diff without writing; set dry_run=false (and optionally out=) to save. Assembly needs the 'patch' extra (keystone).",
+             description="Apply in-place byte or assembly patches to a PE / ELF / Mach-O binary and write a patched copy — NOP an anti-debug check, force a conditional jump, stub an import, or drop in new code. Each patch is `nop:true` (overwrite the instruction(s) at the VA with NOPs, auto-sized by disassembly so short AND near jumps both work — the 'just NOP the check' patch, no byte-counting), or raw `bytes_hex`, or `asm` source (assembled at its VA via keystone, so relative jmp/call/branch offsets are correct); `arch` defaults to the binary's own machine (x86_64/x86/arm64/arm/thumb). Also applies bundled `recipes` by name (see `chimera patch --list-recipes`). Defaults to dry_run=true — returns the before/after diff without writing; set dry_run=false (and optionally out=) to save. `nop` needs the 'disasm' extra (capstone); `asm` needs the 'patch' extra (keystone).",
              inputSchema={"type": "object", "properties": {
                  "path": {"type": "string", "description": "Binary to patch (defaults to the loaded analysis)."},
                  "patches": {"type": "array", "description": "Patches to apply.", "items": {"type": "object", "properties": {
                      "address": {"type": "string", "description": "Virtual address (hex, e.g. 0x140001234)."},
+                     "nop": {"type": "boolean", "description": "NOP the instruction(s) at the VA, auto-sized by disassembly (no byte-counting). Pair with 'count'."},
+                     "count": {"type": "integer", "default": 1, "description": "Instructions to NOP when nop:true (default 1)."},
                      "asm": {"type": "string", "description": "Assembly source to encode at the VA, e.g. 'xor eax,eax; ret'."},
                      "bytes_hex": {"type": "string", "description": "Raw bytes as hex (alternative to asm)."},
                      "arch": {"type": "string", "description": "Arch for asm (default: auto from the binary)."},
