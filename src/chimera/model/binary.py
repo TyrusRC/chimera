@@ -34,6 +34,7 @@ class BinaryFormat(Enum):
     MEMORY_LIME = "memory_lime"
     MEMORY_RAW = "memory_raw"
     JAR = "jar"
+    UEFI_FIRMWARE = "uefi_firmware"
 
     @property
     def is_mobile(self) -> bool:
@@ -170,6 +171,13 @@ def _detect_format(path: Path) -> BinaryFormat:
         return _classify_zip(path, suffix)
     if magic[:4] in (b"LiME", b"EMiL"):
         return BinaryFormat.MEMORY_LIME
+
+    # UEFI firmware volume (OVMF / BIOS / SPI flash): the `_FVH` signature sits
+    # at offset 0x28 of a volume, but a flash image may lead with another region.
+    with open(path, "rb") as fh:
+        head = fh.read(0x40000)
+    if head[0x28:0x2c] == b"_FVH" or b"_FVH" in head:
+        return BinaryFormat.UEFI_FIRMWARE
 
     if suffix in (".raw", ".mem", ".dmp", ".vmem"):
         return BinaryFormat.MEMORY_RAW

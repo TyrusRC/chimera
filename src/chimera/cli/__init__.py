@@ -43,6 +43,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     evm_cmd,
     flutter_cmd,
     frida_cmd,
+    fwextract_cmd,
     gdb_export_cmd,
     gpu_cmd,
     hdlsim_cmd,

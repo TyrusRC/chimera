@@ -191,6 +191,12 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   go.buildinfo/pclntab), and **.NET NativeAOT** (framework `dotnet-aot`, via the
   `.managed`+`hydrated` sections — native, no IL, expect a managed crypto stack
   like BouncyCastle); watch for the ones still unlabelled (Delphi, Rust, Nim).
+- **A UEFI firmware image** (OVMF/BIOS/SPI flash — a `_FVH` volume, e.g. a
+  bootkit or a boot-stage CTF) is NOT an ELF: `analyze` now detects it and points
+  to `fw_extract` (MCP) / `chimera fw-extract`, which carves the firmware volumes
+  and lists the FFS PE/TE modules by GUID + UI-name (spot the implant among the
+  stock DXEs), extracting each as a normal .efi PE to analyze. To then RUN the
+  firmware, a QEMU boot is the oracle (candidate primitive; not yet wrapped).
 - **A section at ~random entropy over a large fraction of the file** is the
   likely encrypted/compressed payload — chimera surfaces it in the summary.
 - **Native desktop binary (PE .exe/.dll/.sys or ELF)? Load the `desktop-re`
