@@ -90,6 +90,12 @@ patch = [
 solve = [
     "z3-solver>=4.12",
 ]
+# UEFI firmware carving for `chimera fw-extract` / MCP fw_extract — parse
+# firmware volumes and extract the FFS PE/TE modules (bootkit/implant triage).
+# Optional; without it the tool degrades to a clear "not installed" result.
+firmware = [
+    "uefi-firmware>=1.11",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

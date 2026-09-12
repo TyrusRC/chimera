@@ -140,6 +140,10 @@ class ChimeraEngine:
                 detected = BinaryInfo.from_path(path).format.value
             except Exception:
                 pass
+            if detected == "uefi_firmware":
+                raise UnsupportedFormatError(
+                    "uefi_firmware (carve it first: `chimera fw-extract "
+                    f"{path}` — then analyze an extracted module)", str(path))
             raise UnsupportedFormatError(detected, str(path))
 
     async def cleanup(self) -> None:

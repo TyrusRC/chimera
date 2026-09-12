@@ -35,6 +35,16 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             ]
         return mcpstate.json_reply(payload)
 
+    if name == "fw_extract":
+        from chimera.unpacking.uefi import carve_firmware, uefi_available
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        if not uefi_available():
+            return mcpstate.error('uefi_firmware not installed — pip install "chimera[firmware]"')
+        result = carve_firmware(path, extract_dir=arguments.get("extract_dir"))
+        return mcpstate.json_reply(result)
+
     if name == "js_deobf":
         from chimera.unpacking.js_deobf import deobfuscate
 

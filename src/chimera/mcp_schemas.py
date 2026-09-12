@@ -370,6 +370,13 @@ def all_tools() -> list[Tool]:
                             "description": "Also disassemble each recovered code node."},
              }, "required": ["path"]}),
 
+        Tool(name="fw_extract",
+             description="Carve a UEFI firmware image (OVMF/BIOS/SPI flash) into its modules — chimera otherwise has NO firmware concept (analyze mis-sniffs a firmware volume as ELF and aborts). Recurses the firmware volumes and returns one entry per FFS file carrying a PE32/TE image: its GUID, UI-name (e.g. 'Shell', 'BdsDxe'), kind and size — the way to spot a bootkit/implant or a CTF's malicious DXE among the stock modules. Pass extract_dir to write each module out as a normal .efi PE for further analysis (decompile/emulate it). Needs the 'firmware' extra (uefi_firmware).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the firmware image (bios.bin / OVMF / flash dump)."},
+                 "extract_dir": {"type": "string", "description": "Directory to extract the PE/TE modules into."},
+             }, "required": ["path"]}),
+
         Tool(name="js_deobf",
              description="Deobfuscate a standalone JavaScript / HTML file — the web counterpart to py_unwrap, for an obfuscated web CTF page or a malicious dropper's inline script (chimera otherwise only handled JS inside the React Native bundle pipeline, and `analyze` mis-sniffs HTML as a binary). Extracts inline <script> bodies from HTML, runs webcrack (undo control-flow flattening, inline the string array, unminify, split modules), then line-splits the result (prettier, or a built-in splitter) so a multi-MB one-liner becomes greppable. Returns the output directory and per-file paths + byte sizes — the cleaned content is left on disk (grep/read it), not inlined. Needs node + webcrack (npm i -g webcrack, or via npx).",
              inputSchema={"type": "object", "properties": {
