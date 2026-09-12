@@ -440,6 +440,16 @@ def all_tools() -> list[Tool]:
                  "dry_run": {"type": "boolean", "default": True, "description": "Preview the diff without writing (default true)."},
              }, "required": []}),
 
+        Tool(name="yara_solve",
+             description="SOLVE a YARA rule — synthesise a file that MATCHES its condition, the inverse of yara_scan. Translates the condition (byte/int reads uint8/uint16/uint32/int* incl. be variants, filesize, C-arithmetic and comparisons, joined by `and`) to a Z3 bit-vector model over the file bytes, and brute-forces short hash.md5/sha1/sha256/crc32(offset,len) windows to pin their exact bytes. This is the YARA-keygen CTF solver (reverse a rule to the flag it accepts) and a defensive rule-QA check (does any input satisfy this, and what does it look like?). Pass the rule as `source` or `path`; `size` supplies the length when there is no `filesize == N`; verifies the result with yara-python. Needs the 'solve' extra (z3). Unsupported atoms (or/not/for..of/string-identifiers) are reported, not silently dropped.",
+             inputSchema={"type": "object", "properties": {
+                 "source": {"type": "string", "description": "The YARA rule text (alternative to path)."},
+                 "path": {"type": "string", "description": "Path to a .yara/.yar file (alternative to source)."},
+                 "size": {"type": "integer", "description": "File length in bytes, when the rule has no `filesize == N`."},
+                 "max_hash_len": {"type": "integer", "default": 3, "description": "Max window length to brute-force for hash.* atoms."},
+                 "binary": {"type": "boolean", "default": False, "description": "Allow non-printable bytes (default assumes an ASCII flag)."},
+             }, "required": []}),
+
         Tool(name="yara_scan",
              description="Scan a file (sample/dump/unpacked payload) against YARA rules on demand — the compiled-binary counterpart to run_semgrep's source patterns, for identifying family/packer/capability/IOC. Uses chimera's bundled rule set plus any rules in an optional rules_dir. Returns hits with rule name, tags, meta and matched string identifiers. Needs yara-python. (To AUTHOR a rule from findings, use the `chimera yara` CLI.)",
              inputSchema={"type": "object", "properties": {

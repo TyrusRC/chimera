@@ -46,6 +46,45 @@ def yara(path: str, project_dir: str | None, cache_dir: str | None,
 
 
 
+@main.command("yara-solve")
+@click.argument("rule", type=click.Path(exists=True, dir_okay=False))
+@click.option("--size", type=int, default=None,
+              help="File length in bytes (when the rule has no `filesize == N`).")
+@click.option("--max-hash-len", type=int, default=3,
+              help="Max window length to brute-force for hash.* atoms (default 3).")
+@click.option("--binary", is_flag=True,
+              help="Allow non-printable bytes (default assumes an ASCII flag).")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Write the solved file here.")
+def yara_solve(rule: str, size: int | None, max_hash_len: int,
+               binary: bool, out_path: str | None):
+    """Synthesise a file that MATCHES a YARA rule (reverse a rule to its input).
+
+    Translates the condition to a Z3 bit-vector model and brute-forces short
+    hash windows — the YARA-keygen solver (recover the flag a rule accepts) and
+    a rule-QA check. Needs the 'solve' extra (z3). Verifies with yara-python.
+    """
+    from chimera.detection_engineering.yara_solve import solve_yara_file, z3_available
+    if not z3_available():
+        raise click.ClickException('z3 not installed — pip install "chimera[solve]"')
+    r = solve_yara_file(rule, size=size, max_hash_len=max_hash_len,
+                        printable=not binary)
+    if not r.get("sat"):
+        click.echo(f"chimera yara-solve: {r.get('error') or r.get('note')}", err=True)
+        if r.get("unsupported_atoms"):
+            click.echo(f"  unsupported atoms: {r['unsupported_atoms'][:5]}", err=True)
+        raise click.exceptions.Exit(1)
+    click.echo(f"filesize={r['filesize']}  hash-windows-pinned={r['pinned_hash_windows']}  "
+               f"yara-match={r['matched']}")
+    if r.get("unsupported_atoms"):
+        click.echo(f"  note: {len(r['unsupported_atoms'])} atom(s) unsupported and ignored")
+    click.echo(f"  ascii: {r['ascii']!r}")
+    click.echo(f"  hex:   {r['data_hex']}")
+    if out_path:
+        Path(out_path).write_bytes(bytes.fromhex(r["data_hex"]))
+        click.echo(f"  wrote {out_path}")
+
+
 async def _yara_cmd(path, project_dir, cache_dir, out_path, family,
                     rule_name, max_strings, max_imports, min_string_length,
                     min_matches):
