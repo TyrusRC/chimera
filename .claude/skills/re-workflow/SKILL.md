@@ -122,6 +122,34 @@ blob, then re-host it in Python to solve. `find_dispatch_tables` locates the
 handler table (biggest = opcode count); `dotnet_trace` covers a VM'd .NET
 method. For VMProtect/Themida, cluster 20–30 handler samples by operand pattern.
 
+## Recipe: generated obfuscated-function/DLL swarm (n-funcs / matryoshka verifier)
+A binary with thousands of near-identical generated functions (or embedded
+DLLs/resources), each doing one small obfuscated op, composed into a giant
+verifier (DEFCON `nfuncs`/`ncuts`, Flare-On "10000"). Do NOT try to emulate the
+whole thing (one op can be millions of instructions — full run ~10^13):
+1. **Blackbox one primitive.** If a self-contained routine (decompressor,
+   transform) has no external calls, don't identify its algorithm — copy/emulate
+   it. `emulate_function full_image=true` with **`input_buffers`** (inject the
+   input blob at a scratch VA, point an arg reg at it, `read_back` the output) is
+   a buffer-in/out oracle that recovers its exact output. (This peeled the
+   Flare-On "10000" custom decompressor and modelled its transforms.)
+2. **Recognize the template's algebra.** The swarm is generated from a few
+   templates differing only in constants. Emulate ONE instance on chosen inputs
+   to identify the op — substitution / permutation / **modular exponentiation
+   mod 2^256** (a `block[0]|=1` "force odd" + acc=1 + nested bit-loops with imul =
+   RTL square-and-multiply; invert with `d=pow(e,-1,1<<256)`) / a matrix power in
+   `GL(n,N)` (invert via `d=e^-1 mod GL(n,N).order()`, sage). Test GF(2)-affinity
+   fast: `f(a)^f(b)==f(a^b)^f(0)`.
+3. **Extract constants statically, invert symbolically.** Parse each instance's
+   tables/exponents from its disasm; compose the per-check op chain and invert it
+   (inverse S/P tables, modular-inverse exponent, matrix inverse-power) — all in
+   Python, no emulation.
+4. **Watch for cross-instance coupling.** An extra XOR against a global table
+   that the driver updates after each check (e.g. `counter[dep]+=iteration`)
+   makes the checks order-dependent. Recover the order by solving the linear
+   system `target = C·x` (C = dependency-coefficient matrix, target = the
+   expected table) with sage `solve_right`, then keygen in that order.
+
 ## Anti-tamper / launcher checks (do this before fighting a crash)
 A GUI target may refuse to run unless launched a specific way — e.g. it calls
 `getenv("SOME_VAR")` at startup and `exit(1)`+MessageBox if unset (the var is

@@ -74,6 +74,7 @@ def emulate_image(*, sections: list[tuple[int, bytes]], entry: int,
                   exec_ranges: list[tuple[int, int]], args: tuple[int, ...] = (),
                   abi: str = "win64", this_ptr: int | None = None,
                   read_back: tuple[tuple[int, int], ...] = (),
+                  input_buffers: tuple[tuple[int, bytes], ...] = (),
                   stub_externs: bool = True, lazy_map: bool = True,
                   watch_ascii: bool = True, max_insns: int = 2_000_000,
                   timeout_s: int = 30) -> dict:
@@ -84,9 +85,18 @@ def emulate_image(*, sections: list[tuple[int, bytes]], entry: int,
     leaves them (an import thunk, a syscall stub) is treated as a returned call
     when `stub_externs`. `abi` picks the arg registers ("win64": rcx,rdx,r8,r9;
     "sysv": rdi,rsi,rdx,rcx,r8,r9). `this_ptr`, when set, is written into the
-    first arg register (a fake `this`). Returns instruction/edge counts, the
-    stubbed extern targets, `read_back` regions and — with `watch_ascii` — the
-    printable strings the run wrote.
+    first arg register (a fake `this`).
+
+    `input_buffers` are (virtual_address, bytes) written AFTER the sections and
+    the fake-`this` seeding, at caller-chosen scratch VAs — the way to hand a
+    routine its input to transform (a compressed/encrypted blob) and to reserve
+    a zeroed output region: point an arg register at the VA and read it back via
+    `read_back`. This turns the emulator into a buffer-in / buffer-out oracle for
+    a decompressor, string-decryptor or hash-of-buffer routine, not just an
+    integer-arg VM runner.
+
+    Returns instruction/edge counts, the stubbed extern targets, `read_back`
+    regions and — with `watch_ascii` — the printable strings the run wrote.
     """
     if not unicorn_available():
         return _unavailable('unicorn not installed — pip install "chimera[emulate]"')
@@ -138,6 +148,13 @@ def emulate_image(*, sections: list[tuple[int, bytes]], entry: int,
         uc.reg_write(reg, int(val) & 0xFFFFFFFFFFFFFFFF)
     if this_ptr is not None:
         uc.reg_write(arg_regs[0], this_ptr)
+
+    for va, data in input_buffers:      # caller-injected inputs / zeroed output scratch
+        _ensure(va, len(data))
+        try:
+            uc.mem_write(va, bytes(data))
+        except U.UcError:
+            pass
 
     def _in_exec(addr: int) -> bool:
         return any(lo <= addr < hi for lo, hi in exec_ranges)
@@ -213,6 +230,7 @@ def emulate_image(*, sections: list[tuple[int, bytes]], entry: int,
 def emulate_pe_function(path: str, address: int | str, *, args: tuple[int, ...] = (),
                         this_ptr: int | None = 0x10000000,
                         read_back: tuple[tuple[int, int], ...] = (),
+                        input_buffers: tuple[tuple[int, bytes], ...] = (),
                         stub_externs: bool = True, lazy_map: bool = True,
                         watch_ascii: bool = True, max_insns: int = 2_000_000,
                         timeout_s: int = 30) -> dict:
@@ -240,6 +258,7 @@ def emulate_pe_function(path: str, address: int | str, *, args: tuple[int, ...] 
 
     return emulate_image(sections=sections, entry=va, exec_ranges=exec_ranges,
                          args=args, abi="win64", this_ptr=this_ptr,
-                         read_back=read_back, stub_externs=stub_externs,
+                         read_back=read_back, input_buffers=input_buffers,
+                         stub_externs=stub_externs,
                          lazy_map=lazy_map, watch_ascii=watch_ascii,
                          max_insns=max_insns, timeout_s=timeout_s)

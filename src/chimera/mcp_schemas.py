@@ -337,12 +337,12 @@ def all_tools() -> list[Tool]:
 
         # --- Emulation ---
         Tool(name="emulate_function",
-             description="Emulate the function at ADDRESS in isolation (Unicorn) with integer args and read back memory it writes — resolve a hash, run a string-decrypt or checksum routine without running the whole binary. Default maps only the function's own bytes, so a call into an import/syscall stops the run (self-contained leaf routines). Set full_image=true (x86-64 PE) to map the WHOLE image, stub any call that leaves the code sections as a ret, lazily back faults, and capture printable writes (a decrypted flag/message) — this runs an obfuscated computed-goto/MBA VM whose dispatch reads a data blob, and uses the MS x64 ABI (rcx,rdx,r8,r9). Pass path=... to emulate a bare binary with no prior analyze(). Needs the 'emulate' extra (and pefile for full_image).",
+             description="Emulate the function at ADDRESS in isolation (Unicorn) with integer args and read back memory it writes — resolve a hash, run a string-decrypt or checksum routine without running the whole binary. Default maps only the function's own bytes, so a call into an import/syscall stops the run (self-contained leaf routines). Set full_image=true (x86-64 PE) to map the WHOLE image, stub any call that leaves the code sections as a ret, lazily back faults, and capture printable writes (a decrypted flag/message) — this runs an obfuscated computed-goto/MBA VM whose dispatch reads a data blob, and uses the MS x64 ABI (rcx,rdx,r8,r9). With input_buffers (full_image) it also acts as a buffer-in/buffer-out oracle for a decompressor / string-decryptor / hash-of-buffer routine: inject the input blob at a scratch VA, point an arg register (e.g. rcx/r8) at it, reserve a zeroed output VA, run, and read the plaintext with read_back — the way to recover a custom decompressor's output without identifying the algorithm. Pass path=... to emulate a bare binary with no prior analyze(). Needs the 'emulate' extra (and pefile for full_image).",
              inputSchema={"type": "object", "properties": {
                  "address": {"type": "string", "description": "Function address (e.g. 0x1234)"},
                  "path": {"type": "string", "description": "Emulate this binary directly (no analyze() needed); defaults to the loaded binary."},
                  "args": {"type": "array", "items": {"type": "integer"},
-                          "description": "Integer arguments in register order (full_image: rcx,rdx,r8,r9; else rdi.. / x0..)."},
+                          "description": "Integer arguments in register order (full_image: rcx,rdx,r8,r9; else rdi.. / x0..). Point one at an input_buffers VA to pass a pointer."},
                  "arch": {"type": "string", "enum": ["x86_64", "arm64"],
                           "description": "Override the arch; defaults to the loaded binary's. Ignored when full_image (x86-64 only)."},
                  "full_image": {"type": "boolean", "default": False,
@@ -350,6 +350,9 @@ def all_tools() -> list[Tool]:
                  "read_back": {"type": "array", "items": {"type": "object", "properties": {
                      "address": {"type": "string"}, "length": {"type": "integer"}}},
                      "description": "Memory regions to return after the run: {address, length}."},
+                 "input_buffers": {"type": "array", "items": {"type": "object", "properties": {
+                     "address": {"type": "string"}, "hex": {"type": "string"}}},
+                     "description": "Bytes to write at a scratch VA before the run (full_image): {address, hex}. Passing any sets the first arg (rcx) from `args` instead of a fake `this`, so rcx can be a real pointer."},
                  "max_insns": {"type": "integer", "default": 200000},
              }, "required": ["address"]}),
 

@@ -27,13 +27,17 @@ def _parse_int(ctx, param, value):
               help="Integer argument (repeatable), in register order.")
 @click.option("--read-back", "read_back", multiple=True,
               help="Memory to dump after the run as ADDR:LEN (repeatable).")
+@click.option("--input-buffer", "input_buffers", multiple=True,
+              help="Inject bytes at a scratch VA before the run as ADDR:HEX "
+                   "(repeatable) — hand a decompress/decrypt routine its input "
+                   "buffer, then read the output with --read-back. Full-image only.")
 @click.option("--max-insns", type=int, default=200_000)
 @click.option("--full-image", is_flag=True,
               help="Map the WHOLE PE (x86-64), stub calls that leave the code "
                    "sections, lazily map faults, and capture printable writes — "
                    "for obfuscated computed-goto/MBA VMs. Needs pefile.")
-def emulate(path: str, address: str, arch: str | None, args, read_back, max_insns: int,
-            full_image: bool):
+def emulate(path: str, address: str, arch: str | None, args, read_back, input_buffers,
+            max_insns: int, full_image: bool):
     """Emulate the function at --addr and print its return value + any output buffers.
 
     Default maps only the function's own bytes — a call into an import or a
@@ -53,8 +57,13 @@ def emulate(path: str, address: str, arch: str | None, args, read_back, max_insn
         for spec in read_back:
             addr_s, _, len_s = spec.partition(":")
             rb.append((int(addr_s, 0), int(len_s or "16", 0)))
+        ib = []
+        for spec in input_buffers:
+            addr_s, _, hex_s = spec.partition(":")
+            ib.append((int(addr_s, 0), bytes.fromhex(hex_s)))
         result = emulate_pe_function(path, address, args=tuple(args),
-                                     read_back=tuple(rb),
+                                     read_back=tuple(rb), input_buffers=tuple(ib),
+                                     this_ptr=None if ib else 0x10000000,
                                      max_insns=max(max_insns, 2_000_000))
         if not result["available"]:
             raise click.ClickException(result["error"])
