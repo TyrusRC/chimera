@@ -370,6 +370,14 @@ def all_tools() -> list[Tool]:
                             "description": "Also disassemble each recovered code node."},
              }, "required": ["path"]}),
 
+        Tool(name="js_deobf",
+             description="Deobfuscate a standalone JavaScript / HTML file — the web counterpart to py_unwrap, for an obfuscated web CTF page or a malicious dropper's inline script (chimera otherwise only handled JS inside the React Native bundle pipeline, and `analyze` mis-sniffs HTML as a binary). Extracts inline <script> bodies from HTML, runs webcrack (undo control-flow flattening, inline the string array, unminify, split modules), then line-splits the result (prettier, or a built-in splitter) so a multi-MB one-liner becomes greppable. Returns the output directory and per-file paths + byte sizes — the cleaned content is left on disk (grep/read it), not inlined. Needs node + webcrack (npm i -g webcrack, or via npx).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the .js or .html file."},
+                 "out_dir": {"type": "string", "description": "Output directory (default: <name>_deobf beside the input)."},
+                 "prettier": {"type": "boolean", "default": True, "description": "Format with prettier (else the built-in line-splitter)."},
+             }, "required": ["path"]}),
+
         Tool(name="pdf_tour",
              description="Statically triage a PDF: recover objects even with no xref/EOF (which strict parsers refuse), flag parser-differential traps (duplicate /Root, name-hex-obfuscated keys like /#52#6F#6F#74, duplicate/commented objects, missing xref/EOF), and — when the file uses the Standard security handler (R2-R6, RC4/AESV2/AESV3) — derive the key from the empty or supplied password, decrypt the streams, and list/dump any hidden inline images. Read-only; never renders or executes the document. Use for suspicious/malformed/encrypted PDFs.",
              inputSchema={"type": "object", "properties": {
