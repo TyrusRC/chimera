@@ -498,6 +498,20 @@ def all_tools() -> list[Tool]:
                  "max_depth": {"type": "integer", "description": "Bound the search to this many edges."},
              }, "required": ["edges", "start", "accept"]}),
 
+        Tool(name="eth_fetch",
+             description="Read LIVE EVM on-chain state over JSON-RPC — the complement to evm_tour (which is offline bytecode only). Two read-only ops: an `eth_call` (ABI-encode a method call to a contract and decode the result) or `get_transaction` (recover a tx's calldata). This is the exact capability for triaging an EtherHiding / ClearFake dropper, which hides its real payload in a contract's return value or in a storage-write transaction's calldata and pulls it at runtime. Pass tx_hash for get_transaction, or to+method_id (+param_types/args/return_type/block) for eth_call. NETWORK IS OFF unless allow_network=true is passed explicitly — nothing touches the network otherwise. Minimal ABI codec (string/address/bytes/uintN).",
+             inputSchema={"type": "object", "properties": {
+                 "rpc": {"type": "string", "description": "JSON-RPC endpoint URL."},
+                 "allow_network": {"type": "boolean", "default": False, "description": "Required to make the live read-only request."},
+                 "tx_hash": {"type": "string", "description": "get_transaction mode: recover this tx's calldata."},
+                 "to": {"type": "string", "description": "eth_call mode: contract address."},
+                 "method_id": {"type": "string", "description": "eth_call mode: 4-byte selector (0x…)."},
+                 "param_types": {"type": "array", "items": {"type": "string"}, "description": "ABI types of the call args."},
+                 "args": {"type": "array", "items": {"type": "string"}, "description": "Call arg values (paired with param_types)."},
+                 "block": {"type": "string", "description": "Block tag/number (default latest)."},
+                 "return_type": {"type": "string", "description": "ABI type to decode the result as (e.g. string)."},
+             }, "required": ["rpc"]}),
+
         Tool(name="hdl_sim",
              description="Compile a Verilog/SystemVerilog design with Icarus Verilog and run it under vvp, capturing the testbench's $display output — the HDL analogue of run_under_wine, for a 'reverse this hardware core' target where the answer is produced by SIMULATING the design (chimera otherwise has no HDL path). Pass `sources` (the .v files) and the `top` module to elaborate; edit a testbench first if you need to drive a specific input. iverilog/vvp are external: on PATH (apt install iverilog) or passed explicitly via iverilog=/vvp= (a rootless dpkg-deb -x extract works — add its ivl backend with flags=['-g2012','-B','<dir>']). Returns {available, compiled, returncode, stdout, stderr}; binary output is decoded leniently.",
              inputSchema={"type": "object", "properties": {

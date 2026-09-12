@@ -167,6 +167,24 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             max_insns=int(arguments.get("max_insns", 200_000)))
         return mcpstate.json_reply(result)
 
+    if name == "eth_fetch":
+        from chimera.dynamic.eth_rpc import eth_call, get_transaction
+        rpc = arguments.get("rpc")
+        if not rpc:
+            return mcpstate.error("eth_fetch needs rpc=<JSON-RPC URL>.")
+        allow = bool(arguments.get("allow_network", False))
+        if arguments.get("tx_hash"):
+            result = get_transaction(rpc, arguments["tx_hash"], allow_network=allow)
+        elif arguments.get("to") and arguments.get("method_id"):
+            result = eth_call(
+                rpc, arguments["to"], arguments["method_id"],
+                arguments.get("param_types") or [], arguments.get("args") or [],
+                block=arguments.get("block", "latest"),
+                return_type=arguments.get("return_type"), allow_network=allow)
+        else:
+            return mcpstate.error("eth_fetch needs tx_hash, or to + method_id.")
+        return mcpstate.json_reply(result)
+
     if name == "hdl_sim":
         from chimera.dynamic.hdl_sim import hdl_sim
         sources = arguments.get("sources") or []
