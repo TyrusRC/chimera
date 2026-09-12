@@ -60,6 +60,17 @@ def _md(arch: str):
     return capstone.Cs(getattr(capstone, spec[0]), getattr(capstone, spec[1]))
 
 
+def make_cs(arch: str, *, detail: bool = False):
+    """A capstone `Cs` disassembler for `arch` (raises DisasmError if unavailable).
+
+    Shared by the patcher's sizing and by static readers (e.g. compare-string
+    recovery) that need arch-aware disassembly beyond hardcoded x64.
+    """
+    md = _md(arch)
+    md.detail = detail
+    return md
+
+
 def instruction_span(code: bytes, arch: str, addr: int, count: int) -> tuple[int, list[str]]:
     """Total byte length of the first `count` instructions in `code`, plus their text.
 
