@@ -60,7 +60,11 @@ argv and let the solver invert the constraints); `pathfind` BFS-searches a
    `chimera hdl-sim` is the HDL analogue — compile a Verilog/SystemVerilog design
    with Icarus (iverilog) and run its testbench, capturing `$display` output, for
    a "reverse this hardware core" target (edit a testbench to drive input); `evm_tour`
-   disassembles/executes on-chain EVM bytecode (a `pure` function) with no node;
+   disassembles/executes on-chain EVM bytecode (a `pure` function) with no node
+   — and its LIVE complement `eth_fetch` / `chimera eth-fetch` does a read-only
+   `eth_call` or reads a transaction's calldata over JSON-RPC (network opt-in,
+   default off), the capability for an **EtherHiding/ClearFake** dropper that
+   hides its payload on-chain;
    `bp-dump`/`run_with_breakpoints` reads a runtime-computed value (a derived key)
    at a breakpoint with no sudo; `aeskeys`/`find_aes_keys` recovers an AES key
    from a memory dump or live process. To DEFEAT a check instead of solving it —
