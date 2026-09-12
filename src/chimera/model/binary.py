@@ -93,6 +93,7 @@ class Framework(Enum):
     PYINSTALLER = "pyinstaller"
     VB6 = "vb6"  # classic Visual Basic 6 or twinBASIC (VB6-compatible)
     GO = "go"  # Go toolchain (gc); pclntab + go:buildinfo present
+    DOTNET_AOT = "dotnet-aot"  # .NET NativeAOT (native PE; .managed + hydrated sections)
     UNKNOWN = "unknown"
 
 

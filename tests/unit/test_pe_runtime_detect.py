@@ -60,6 +60,21 @@ def test_go_takes_precedence_over_vb_markers():
     assert detect_native_runtime(data, [])[0] == "go"
 
 
+# --- .NET NativeAOT detection ----------------------------------------------
+
+def test_detects_dotnet_aot_by_sections_and_version():
+    # NativeAOT's two signature section names + the runtime version string.
+    data = b"junk.text\x00.managed\x00\x00hydrated\x00.NETCoreApp,Version=v8.0 more"
+    rt = detect_native_runtime(data, ["KERNEL32.dll"])
+    assert rt is not None and rt[0] == "dotnet-aot"
+    assert "v8.0" in rt[1]
+
+
+def test_dotnet_aot_needs_both_sections():
+    # `.managed` alone (without hydrated) must NOT trip it.
+    assert detect_native_runtime(b"has .managed but not the other marker", []) is None
+
+
 # --- section entropy anomalies ---------------------------------------------
 
 @dataclass

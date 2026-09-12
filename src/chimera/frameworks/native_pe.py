@@ -21,6 +21,8 @@ from typing import Iterable, Optional
 _GO_BUILDINFO_MAGIC = b"\xff Go buildinf:"
 _GO_VERSION_RE = re.compile(rb"go1\.\d+(?:\.\d+)?")
 
+_DOTNET_CORE_RE = re.compile(rb"\.NETCoreApp,Version=v(\d+\.\d+)")
+
 
 def _present(data: bytes, needle: bytes) -> bool:
     """True if `needle` appears as ASCII or UTF-16LE (VB stores both)."""
@@ -46,6 +48,23 @@ def _detect_go(data: bytes) -> Optional[tuple[str, str]]:
     return ("go", f"Go ({m.group(0).decode()})" if m else "Go (gc toolchain)")
 
 
+def _detect_dotnet_aot(data: bytes) -> Optional[tuple[str, str]]:
+    """Recognise a .NET NativeAOT binary — a native PE, not IL.
+
+    NativeAOT emits two section names unique to it: `.managed` (managed
+    metadata/type system) and `hydrated` (the run-time-rehydrated data blob).
+    Both present is an unambiguous signature; the `.NETCoreApp,Version=vX.Y`
+    string, when present, names the version. Tagging it tells the analyst this
+    is .NET compiled to native code (no IL to decompile — treat as native RE,
+    and expect a managed crypto stack like BouncyCastle), not plain C/C++.
+    """
+    if b".managed" not in data or b"hydrated" not in data:
+        return None
+    m = _DOTNET_CORE_RE.search(data)
+    ver = f" v{m.group(1).decode()}" if m else ""
+    return ("dotnet-aot", f".NET NativeAOT{ver} (native, no IL)")
+
+
 def detect_native_runtime(
     data: bytes, import_dlls: Iterable[str]
 ) -> Optional[tuple[str, str]]:
@@ -54,6 +73,10 @@ def detect_native_runtime(
     go = _detect_go(data)
     if go:
         return go
+
+    aot = _detect_dotnet_aot(data)
+    if aot:
+        return aot
 
     # twinBASIC self-identifies in its runtime error strings.
     if _present(data, b"twinBASIC"):

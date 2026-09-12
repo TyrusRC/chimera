@@ -187,8 +187,10 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   Resolve each `call`/`jmp` through its ILT thunk before trusting an edge, and
   a capstone disasm fallback (`[disasm]` extra) reads functions r2 can't.
 - **`native` in the framework line reads as C/C++ but may not be** — chimera
-  now fingerprints the VB6/twinBASIC family; watch for other runtimes hiding
-  behind `native` (Delphi, Go, Rust).
+  now fingerprints the VB6/twinBASIC family, **Go** (framework `go`, via
+  go.buildinfo/pclntab), and **.NET NativeAOT** (framework `dotnet-aot`, via the
+  `.managed`+`hydrated` sections — native, no IL, expect a managed crypto stack
+  like BouncyCastle); watch for the ones still unlabelled (Delphi, Rust, Nim).
 - **A section at ~random entropy over a large fraction of the file** is the
   likely encrypted/compressed payload — chimera surfaces it in the summary.
 - **Native desktop binary (PE .exe/.dll/.sys or ELF)? Load the `desktop-re`
