@@ -139,12 +139,26 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             addr = r.get("address")
             addr = int(addr, 16) if isinstance(addr, str) else int(addr)
             read_back.append((addr, int(r.get("length", 16))))
+        input_buffers = []
+        for b in (arguments.get("input_buffers") or []):
+            addr = b.get("address")
+            addr = int(addr, 16) if isinstance(addr, str) else int(addr)
+            try:
+                data = bytes.fromhex(b.get("hex", ""))
+            except ValueError:
+                return mcpstate.error("input_buffers[].hex must be a hex string.")
+            input_buffers.append((addr, data))
         if arguments.get("full_image"):
             # Whole-PE emulation for obfuscated computed-goto/MBA VMs: maps
             # every section, stubs calls leaving the code sections, lazily
             # backs faults, and captures printable writes (a decrypted flag).
+            # With input_buffers it is also a buffer-in/buffer-out oracle for a
+            # decompress/decrypt/hash routine (point an arg at the scratch VA,
+            # read_back the output).
             result = emulate_pe_function(
                 path, arguments["address"], args=args, read_back=tuple(read_back),
+                input_buffers=tuple(input_buffers),
+                this_ptr=None if input_buffers else 0x10000000,
                 max_insns=int(arguments.get("max_insns", 2_000_000)))
             return mcpstate.json_reply(result)
         result = emulate_function(
