@@ -92,6 +92,7 @@ class Framework(Enum):
     KMM = "kmm"
     PYINSTALLER = "pyinstaller"
     VB6 = "vb6"  # classic Visual Basic 6 or twinBASIC (VB6-compatible)
+    GO = "go"  # Go toolchain (gc); pclntab + go:buildinfo present
     UNKNOWN = "unknown"
 
 
