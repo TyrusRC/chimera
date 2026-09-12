@@ -13,15 +13,34 @@ This runs the two transforms that actually make such code readable:
      the output greppable/readable instead of one unreadable blob.
 
 Inline `<script>` bodies are extracted from HTML first (stdlib parser, no dep).
+A real web app, though, keeps its code in EXTERNAL files: `<script src=…>` plus
+ES `import`/`export … from`/dynamic `import()`. `collect_local_scripts` walks
+that module graph from an HTML/JS entry point (local files only — remote URLs
+and bare npm packages are skipped; network stays off) so a multi-file page can
+be deobfuscated from its `index.html` in one call. `resolve_const_index` then
+reads an element out of a constant array literal statically (no code execution)
+— the recurring web-CTF "indexed table → flag" pattern (a hardcoded index into
+a word/table constant).
+
 node + webcrack/prettier are external (reachable on PATH or via `npx --yes`);
 without them this returns a clear "not available" result rather than raising.
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
+
+# External <script src="..."> references in HTML.
+_SRC_RE = re.compile(r"""<script\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']""", re.I)
+# ES module specifiers: `… from "x"`, bare `import "x"`, dynamic `import("x")`.
+_IMPORT_RE = re.compile(
+    r"""(?:\bimport\b|\bexport\b)[^;]*?\bfrom\s*["']([^"']+)["']"""
+    r"""|\bimport\s*\(\s*["']([^"']+)["']\s*\)"""
+    r"""|\bimport\s+["']([^"']+)["']""",
+    re.I)
 
 
 class _ScriptExtractor(HTMLParser):
@@ -57,6 +76,181 @@ def extract_scripts(text: str, *, is_html: bool) -> list[str]:
     p = _ScriptExtractor()
     p.feed(text)
     return p.scripts
+
+
+def _is_local_spec(spec: str) -> bool:
+    """A module specifier we can resolve to a file — not remote, not a bare pkg."""
+    if not spec:
+        return False
+    if re.match(r"[a-z][a-z0-9+.-]*://", spec, re.I) or spec.startswith("//"):
+        return False  # http(s):// or protocol-relative — remote, don't fetch
+    return spec.startswith((".", "/")) or spec.lower().endswith((".js", ".mjs", ".cjs"))
+
+
+def _resolve_spec(spec: str, base_dir: Path) -> Path | None:
+    """Resolve a local module specifier under base_dir to an existing file.
+
+    A leading `/` is treated as the served site root (the entry's directory),
+    not the filesystem root — that is what a challenge folder means by it.
+    """
+    spec = spec.split("?", 1)[0].split("#", 1)[0].lstrip("/")
+    cand = base_dir / spec
+    tries = [cand]
+    if cand.suffix == "":  # extensionless import → try the usual endings
+        tries += [cand.with_suffix(".js"), cand.with_suffix(".mjs"), cand / "index.js"]
+    for t in tries:
+        try:
+            if t.is_file():
+                return t.resolve()
+        except OSError:
+            pass
+    return None
+
+
+def collect_local_scripts(entry: Path, *, max_files: int = 200) -> tuple[list[Path], list[str]]:
+    """BFS the web module graph from an HTML/JS entry point.
+
+    Returns (ordered existing local .js files, skipped/unresolvable specifiers).
+    HTML roots come from `<script src>`; a JS entry is its own root. Both then
+    follow local ES `import`/`export … from` and dynamic `import()` edges.
+    """
+    entry = entry.resolve()
+    text = entry.read_text(errors="replace")
+    is_html = entry.suffix.lower() in (".html", ".htm") or "<script" in text[:4096].lower()
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    skipped: list[str] = []
+    queue: list[Path] = []
+
+    if is_html:
+        for spec in _SRC_RE.findall(text):
+            if not _is_local_spec(spec):
+                skipped.append(spec)
+                continue
+            r = _resolve_spec(spec, entry.parent)
+            queue.append(r) if r else skipped.append(spec)
+    else:
+        queue.append(entry)
+
+    while queue and len(ordered) < max_files:
+        f = queue.pop(0)
+        if f in seen:
+            continue
+        seen.add(f)
+        ordered.append(f)
+        try:
+            ftext = f.read_text(errors="replace")
+        except OSError:
+            continue
+        for groups in _IMPORT_RE.findall(ftext):
+            spec = next((g for g in groups if g), "")
+            if not spec:
+                continue
+            if not _is_local_spec(spec):
+                skipped.append(spec)
+                continue
+            r = _resolve_spec(spec, f.parent)
+            if r and r not in seen:
+                queue.append(r)
+            elif not r:
+                skipped.append(spec)
+    return ordered, sorted(set(skipped))
+
+
+def _split_array_literal(js: str, open_pos: int) -> list[str] | None:
+    """Split a `[ … ]` literal at `open_pos` into its top-level element tokens.
+
+    Respects string quotes/escapes and nested (){}[] so commas inside them do
+    not split. Returns None if the bracket is unterminated.
+    NOTE: a sparse element (`,,`) is kept as an empty token, so an array with
+    real holes would misalign an index — these tables never have holes.
+    """
+    i, n = open_pos + 1, len(js)
+    depth = 0
+    quote = ""
+    esc = False
+    cur: list[str] = []
+    out: list[str] = []
+    while i < n:
+        ch = js[i]
+        if quote:
+            cur.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == quote:
+                quote = ""
+        elif ch in "\"'`":
+            quote = ch
+            cur.append(ch)
+        elif ch in "([{":
+            depth += 1
+            cur.append(ch)
+        elif ch in ")}":
+            depth -= 1
+            cur.append(ch)
+        elif ch == "]":
+            if depth == 0:
+                seg = "".join(cur).strip()
+                if seg or out:  # keep a trailing element, drop a trailing comma
+                    out.append(seg)
+                return out
+            depth -= 1
+            cur.append(ch)
+        elif ch == "," and depth == 0:
+            out.append("".join(cur).strip())
+            cur = []
+        else:
+            cur.append(ch)
+        i += 1
+    return None
+
+
+def _unescape_js_string(s: str) -> str:
+    simple = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f", "0": "\0"}
+
+    def repl(m: re.Match) -> str:
+        e = m.group(0)
+        if e[1] in "uxX":
+            return chr(int(e[2:], 16))
+        return simple.get(e[1], e[1])
+
+    return re.sub(r"\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)", repl, s)
+
+
+def _as_scalar(tok: str) -> str | None:
+    """A string/number literal token → its Python value; None if not a scalar."""
+    tok = tok.strip()
+    if len(tok) >= 2 and tok[0] in "\"'`" and tok[-1] == tok[0]:
+        return _unescape_js_string(tok[1:-1])
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", tok):
+        return tok
+    return None
+
+
+def resolve_const_index(js: str, name: str, index: int) -> str | None:
+    """Element `index` of a `const/let/var NAME = [ … ]` literal, statically.
+
+    No code execution: it finds the declaration, splits the array literal, and
+    returns the element if it is a simple string/number. None if the name isn't
+    a const array, the index is out of range, or the element isn't a scalar.
+    """
+    m = re.search(rf"(?:export\s+)?(?:const|let|var)\s+{re.escape(name)}\s*=\s*\[", js)
+    if not m:
+        return None
+    elems = _split_array_literal(js, m.end() - 1)
+    if elems is None or not (0 <= index < len(elems)):
+        return None
+    return _as_scalar(elems[index])
+
+
+def _safe_label(f: Path, base: Path) -> str:
+    try:
+        rel = f.relative_to(base)
+    except ValueError:
+        rel = Path(f.name)
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(rel))
 
 
 def node_tool_cmd(tool: str) -> list[str] | None:
@@ -96,15 +290,53 @@ def _fallback_split(js: str, max_col: int = 200) -> str:
 
 
 def deobfuscate(path: str, *, out_dir: str | None = None, prettier: bool = True,
-                timeout: int = 300) -> dict:
+                resolve: str | None = None, timeout: int = 300) -> dict:
     """Deobfuscate the JS/HTML at `path`; write cleaned scripts under out_dir.
 
-    Returns availability, the inline scripts found, and per-output-file paths +
-    byte sizes (never the multi-MB content itself — read the files as needed).
+    Follows the web module graph: inline `<script>` bodies plus every local
+    external `<script src>` / ES-imported file reachable from the entry. Returns
+    availability, the module graph, and per-output-file paths + byte sizes
+    (never the multi-MB content itself — read the files as needed).
+
+    `resolve="NAME[IDX]"` short-circuits to STATIC constant resolution — it reads
+    element IDX of the `const NAME = [ … ]` array literal across the collected
+    sources without running node or webcrack (the "indexed table → flag" case).
     """
     src = Path(path)
     if not src.exists():
         return {"available": True, "error": f"file not found: {path}"}
+
+    text = src.read_text(errors="replace")
+    is_html = src.suffix.lower() in (".html", ".htm") or "<script" in text[:4096].lower()
+    files, skipped = collect_local_scripts(src)
+    sources: list[tuple[str, str]] = []
+    if is_html:
+        for i, body in enumerate(extract_scripts(text, is_html=True)):
+            sources.append((f"inline_{i}", body))
+    for f in files:
+        try:
+            sources.append((_safe_label(f, src.resolve().parent), f.read_text(errors="replace")))
+        except OSError:
+            pass
+    module_graph = [str(f) for f in files]
+
+    if resolve is not None:  # static, no node needed — answer and return
+        rm = re.fullmatch(r"\s*([A-Za-z_$][\w$]*)\s*\[\s*(\d+)\s*\]\s*", resolve)
+        if not rm:
+            return {"available": True, "is_html": is_html, "module_graph": module_graph,
+                    "resolved": {"expr": resolve, "error": "expected NAME[INDEX]"}}
+        joined = "\n".join(t for _, t in sources)
+        val = resolve_const_index(joined, rm.group(1), int(rm.group(2)))
+        return {"available": True, "is_html": is_html, "sources": len(sources),
+                "module_graph": module_graph, "skipped_refs": skipped,
+                "resolved": {"expr": resolve, "value": val},
+                "note": "static const resolution (no deobfuscation run)"}
+
+    if not sources:
+        return {"available": True, "is_html": is_html, "skipped_refs": skipped,
+                "error": "no scripts found (no inline <script>, no resolvable "
+                         "external/imported .js)"}
+
     wc = node_tool_cmd("webcrack")
     if wc is None:
         return {"available": False,
@@ -113,20 +345,15 @@ def deobfuscate(path: str, *, out_dir: str | None = None, prettier: bool = True,
     out = Path(out_dir) if out_dir else src.parent / f"{src.stem}_deobf"
     out.mkdir(parents=True, exist_ok=True)
 
-    text = src.read_text(errors="replace")
-    is_html = src.suffix.lower() in (".html", ".htm") or "<script" in text[:4096].lower()
-    scripts = extract_scripts(text, is_html=is_html)
-    if not scripts:
-        return {"available": True, "error": "no inline <script> found in HTML",
-                "is_html": is_html}
-
     pretty = node_tool_cmd("prettier") if prettier else None
     output_files: list[dict] = []
     errors: list[str] = []
-    for i, body in enumerate(scripts):
-        raw = out / f"script_{i}.js"
+    for i, (label, body) in enumerate(sources):
+        raw = out / f"{i:02d}_{label}"
+        if raw.suffix.lower() not in (".js", ".mjs", ".cjs"):
+            raw = raw.with_suffix(raw.suffix + ".js")
         raw.write_text(body)
-        wc_out = out / f"script_{i}_webcrack"
+        wc_out = out / f"{i:02d}_webcrack"
         try:
             proc = subprocess.run(wc + ["-o", str(wc_out), str(raw)],
                                   capture_output=True, text=True, timeout=timeout)
@@ -149,11 +376,12 @@ def deobfuscate(path: str, *, out_dir: str | None = None, prettier: bool = True,
             output_files.append({"path": str(js), "size": js.stat().st_size})
 
     return {
-        "available": True, "is_html": is_html, "scripts_found": len(scripts),
+        "available": True, "is_html": is_html, "scripts_found": len(sources),
+        "module_graph": module_graph, "skipped_refs": skipped,
         "output_dir": str(out), "output_files": output_files,
         "formatter": ("prettier" if pretty else "builtin-splitter"),
         "webcrack": " ".join(wc),
         "errors": errors,
-        "note": (f"{len(output_files)} cleaned file(s) — grep/read them; "
-                 "content not inlined to keep it out of context"),
+        "note": (f"{len(output_files)} cleaned file(s) from {len(sources)} source(s) — "
+                 "grep/read them; content not inlined to keep it out of context"),
     }

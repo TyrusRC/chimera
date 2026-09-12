@@ -203,6 +203,32 @@ class BinaryPatcher:
             return None
         return None
 
+    def _nop_plan(self, vaddr: int, count: int = 1, description: str = "") -> PatchPlan:
+        """Build a PatchPlan that overwrites `count` instruction(s) at `vaddr` with NOPs.
+
+        Sizes the instructions by disassembly (capstone), so the short (2-byte)
+        AND near (6-byte) conditional-jump forms are both handled without
+        hand-counting bytes. Arch comes from the binary's own machine.
+        """
+        from chimera.patching.disasm import instruction_span, nop_fill
+        arch = self.machine_arch()
+        if arch is None:
+            raise PatchError("could not detect the binary's architecture for NOP sizing")
+        # x86 instructions are <=15 bytes; fixed-width arches 2/4. 15*count covers it.
+        window = self.read(int(vaddr), 15 * max(int(count), 1))
+        span, texts = instruction_span(window, arch, int(vaddr), int(count))
+        fill = nop_fill(arch, span)
+        desc = description or f"nop {count} insn ({'; '.join(texts)})"
+        return PatchPlan(bytes_=fill, virtual_address=int(vaddr), description=desc)
+
+    def nop(self, vaddr: int, count: int = 1, description: str = "") -> PatchResult:
+        """Overwrite the `count` instruction(s) at `vaddr` with NOPs (auto-sized).
+
+        The "just NOP the check" operation: NOP a conditional jump to force
+        fall-through, or a call/anti-debug test, without counting its bytes.
+        """
+        return self.apply(self._nop_plan(vaddr, count, description))
+
     def patch_at_offset(self, offset: int, data: bytes, description: str = "") -> PatchResult:
         return self.apply(PatchPlan(
             bytes_=bytes(data), file_offset=int(offset), description=description,

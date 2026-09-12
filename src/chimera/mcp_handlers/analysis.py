@@ -472,6 +472,7 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
     if name == "patch":
         from chimera.patching import (
             AssembleError, BinaryPatcher, PatchError, PatchPlan)
+        from chimera.patching.disasm import DisasmError
         from chimera.patching.recipes import apply_recipe, load_bundled_recipes
         target = arguments.get("path")
         if not target and mcpstate.require_model():
@@ -487,7 +488,10 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             for p in patches:
                 addr = p.get("address")
                 va = int(addr, 16) if isinstance(addr, str) else int(addr)
-                if p.get("asm"):
+                if p.get("nop"):
+                    patcher.nop(va, count=int(p.get("count", 1)),
+                                description=p.get("description", ""))
+                elif p.get("asm"):
                     patcher.patch_asm(va, p["asm"], arch=p.get("arch"),
                                       description=p.get("description", "asm"))
                 elif p.get("bytes_hex"):
@@ -495,14 +499,14 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
                         bytes_=bytes.fromhex(p["bytes_hex"]), virtual_address=va,
                         description=p.get("description", "bytes")))
                 else:
-                    return mcpstate.error("each patch needs 'asm' or 'bytes_hex'.")
+                    return mcpstate.error("each patch needs 'nop', 'asm', or 'bytes_hex'.")
             if recipe_names:
                 db = load_bundled_recipes()
                 for rn in recipe_names:
                     if rn not in db:
                         return mcpstate.error(f"unknown recipe {rn!r}")
                     apply_recipe(patcher, db[rn])
-        except (PatchError, AssembleError, ValueError) as exc:
+        except (PatchError, AssembleError, DisasmError, ValueError) as exc:
             return mcpstate.error(f"patch: {exc}")
         dry_run = bool(arguments.get("dry_run", True))
         out = patcher.save(arguments.get("out"), dry_run=dry_run)

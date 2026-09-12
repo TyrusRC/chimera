@@ -75,10 +75,14 @@ argv and let the solver invert the constraints); `pathfind` BFS-searches a
    over a dumped region). `memory` (Volatility) is for whole-OS images, not a
    userspace core. To DEFEAT a check instead of solving it —
    NOP an anti-debug test, force a branch, stub an import, or drop in new code —
-   `patch` (MCP) / `chimera patch` rewrites a PE/ELF/Mach-O in place: give it
-   `asm` source (assembled at the target VA via keystone, so relative branches are
-   correct) or raw `bytes_hex`, or apply a bundled `--recipe`; it defaults to a
-   dry-run diff so you preview before writing. For a **YARA-keygen** challenge (a
+   `patch` (MCP) / `chimera patch` rewrites a PE/ELF/Mach-O in place: to kill a
+   check just NOP its gating instruction with `nop:true` / `--nop <VA>` (auto-sized
+   by disassembly, so the short 2-byte AND near 6-byte conditional-jump forms both
+   work with no byte-counting — repeat per branch); or give it `asm` source
+   (assembled at the target VA via keystone, so relative branches are correct) or
+   raw `bytes_hex`, or apply a bundled `--recipe`; it defaults to a dry-run diff so
+   you preview before writing. Patching past the gate is usually faster than
+   reversing it — recover the exact input only when the flag is derived from it. For a **YARA-keygen** challenge (a
    `.yara` rule you must craft an input to match) reach for `yara_solve` (MCP) /
    `chimera yara-solve` — it compiles the condition (uint/int reads, filesize,
    arithmetic + comparisons) to a Z3 model and brute-forces short hash windows to
@@ -224,9 +228,14 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   (Hermes bytecode) or webcrack (plain-JSC minified bundle) + source-map
   recovery. **Standalone obfuscated .js/.html** (a web CTF page, a malicious
   dropper's inline script — NOT a mobile bundle; `analyze` mis-sniffs HTML as a
-  binary): `js_deobf` (MCP) / `chimera js-deobf` extracts inline `<script>`s,
-  runs webcrack (unflatten/unminify/inline the string array), and line-splits
-  the result so a multi-MB one-liner is greppable — needs node+webcrack.
+  binary): `js_deobf` (MCP) / `chimera js-deobf` follows the web module graph
+  from the entry — inline `<script>`s PLUS every local external `<script src>` /
+  ES-imported file (remote URLs + bare npm pkgs skipped, network off) — runs
+  webcrack (unflatten/unminify/inline the string array), and line-splits the
+  result so a multi-MB one-liner is greppable — needs node+webcrack. When the
+  secret is an element of a constant array literal picked by a hardcoded index
+  (the "indexed table → flag" pattern), pass `resolve="NAME[IDX]"` to read that
+  element STATICALLY (no node, no eval) instead of hand-reading the array.
   **Others**: `rust-decompile`, `vmp-devirt` (VMProtect).
 - **R8/ProGuard-obfuscated Android**: `a.b.c` class names aren't a dead end —
   Kotlin `@Metadata`/`@DebugMetadata` annotations survive R8 and carry the
