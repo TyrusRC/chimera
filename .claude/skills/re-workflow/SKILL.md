@@ -65,7 +65,11 @@ argv and let the solver invert the constraints); `pathfind` BFS-searches a
    `patch` (MCP) / `chimera patch` rewrites a PE/ELF/Mach-O in place: give it
    `asm` source (assembled at the target VA via keystone, so relative branches are
    correct) or raw `bytes_hex`, or apply a bundled `--recipe`; it defaults to a
-   dry-run diff so you preview before writing. See the `dynamic-analysis` skill for the
+   dry-run diff so you preview before writing. For a **YARA-keygen** challenge (a
+   `.yara` rule you must craft an input to match) reach for `yara_solve` (MCP) /
+   `chimera yara-solve` — it compiles the condition (uint/int reads, filesize,
+   arithmetic + comparisons) to a Z3 model and brute-forces short hash windows to
+   synthesise a matching file (the flag), then verifies with yara-python. See the `dynamic-analysis` skill for the
    runtime-key-recovery playbook. **To actually EXECUTE an untrusted target**
    (crackme/malware/CTF/Wine PE) do it confined — `chimera sandbox-run` or the
    `sandbox-runner` agent; see the `sandbox` skill (network off by default).

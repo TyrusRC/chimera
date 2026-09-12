@@ -477,6 +477,23 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "note": "dry_run — nothing written; set dry_run=false to save" if dry_run else "written",
         })
 
+    # ── yara_solve (synthesise a file that matches a rule; z3) ───────────
+    if name == "yara_solve":
+        from chimera.detection_engineering.yara_solve import solve_yara, z3_available
+        if not z3_available():
+            return mcpstate.error('z3 not installed — pip install "chimera[solve]"')
+        src = arguments.get("source")
+        if not src:
+            p = arguments.get("path")
+            if not p or not Path(p).exists():
+                return mcpstate.error("yara_solve needs source=<rule text> or path=<.yara file>.")
+            src = Path(p).read_text(errors="replace")
+        result = solve_yara(
+            src, size=arguments.get("size"),
+            max_hash_len=int(arguments.get("max_hash_len", 3)),
+            printable=not bool(arguments.get("binary", False)))
+        return mcpstate.json_reply(result)
+
     # ── yara_scan (binary pattern / family / IOC matching, on demand) ────
     if name == "yara_scan":
         from chimera.adapters.yara_adapter import YaraAdapter
