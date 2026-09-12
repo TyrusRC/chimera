@@ -519,6 +519,18 @@ def all_tools() -> list[Tool]:
                  "return_type": {"type": "string", "description": "ABI type to decode the result as (e.g. string)."},
              }, "required": ["rpc"]}),
 
+        Tool(name="qemu_boot",
+             description="Boot a firmware/disk image under QEMU headless and capture its console — the firmware analogue of run_under_wine/hdl_sim, and the runtime companion to fw_extract (which only carves statically). Some answers appear ONLY at runtime: a boot-stage ransomware's note, a flag a bootkit prints, the behaviour of a malicious DXE. Pass `bios` (e.g. an OVMF image) and/or `disk` (raw image, mounted copy-on-write); drive an interactive EFI/DOS shell by giving `input_lines` (typed over serial after boot, one per line_delay). Confined: no network by default, disk copy-on-write (image never modified), -no-reboot, hard timeout. Returns the captured (ANSI-stripped) console text. Needs qemu-system-x86_64.",
+             inputSchema={"type": "object", "properties": {
+                 "bios": {"type": "string", "description": "Firmware image path (OVMF/BIOS)."},
+                 "disk": {"type": "string", "description": "Raw disk image path (mounted copy-on-write)."},
+                 "input_lines": {"type": "array", "items": {"type": "string"}, "description": "Console lines to type into the guest after boot (drive an EFI/DOS shell)."},
+                 "boot_wait": {"type": "number", "default": 8.0, "description": "Seconds to wait before the first input."},
+                 "line_delay": {"type": "number", "default": 1.5, "description": "Seconds between input lines."},
+                 "timeout": {"type": "integer", "default": 90},
+                 "net": {"type": "boolean", "default": False, "description": "Allow guest networking (default off)."},
+             }, "required": []}),
+
         Tool(name="hdl_sim",
              description="Compile a Verilog/SystemVerilog design with Icarus Verilog and run it under vvp, capturing the testbench's $display output — the HDL analogue of run_under_wine, for a 'reverse this hardware core' target where the answer is produced by SIMULATING the design (chimera otherwise has no HDL path). Pass `sources` (the .v files) and the `top` module to elaborate; edit a testbench first if you need to drive a specific input. iverilog/vvp are external: on PATH (apt install iverilog) or passed explicitly via iverilog=/vvp= (a rootless dpkg-deb -x extract works — add its ivl backend with flags=['-g2012','-B','<dir>']). Returns {available, compiled, returncode, stdout, stderr}; binary output is decoded leniently.",
              inputSchema={"type": "object", "properties": {
