@@ -64,6 +64,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     sandbox_cmd,
     sdks_cmd,
     serve_cmd,
+    triage_cmd,
     unpack_cmd,
     varbert_cmd,
     vmp_cmd,
