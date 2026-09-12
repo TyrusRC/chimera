@@ -67,7 +67,13 @@ argv and let the solver invert the constraints); `pathfind` BFS-searches a
    hides its payload on-chain;
    `bp-dump`/`run_with_breakpoints` reads a runtime-computed value (a derived key)
    at a breakpoint with no sudo; `aeskeys`/`find_aes_keys` recovers an AES key
-   from a memory dump or live process. To DEFEAT a check instead of solving it —
+   from a memory dump or live process. **A crashed process left an ELF CORE
+   dump?** `core_triage` (MCP) / `chimera core` parses it — PT_LOAD maps, NT_FILE
+   module mappings, NT_PRSTATUS registers — and correlates the faulting `rip` /
+   stack return to `module+offset`, resolves any address, and searches/dumps
+   process memory (the backbone of a backdoor post-mortem; pair with find_aes_keys
+   over a dumped region). `memory` (Volatility) is for whole-OS images, not a
+   userspace core. To DEFEAT a check instead of solving it —
    NOP an anti-debug test, force a branch, stub an import, or drop in new code —
    `patch` (MCP) / `chimera patch` rewrites a PE/ELF/Mach-O in place: give it
    `asm` source (assembled at the target VA via keystone, so relative branches are
