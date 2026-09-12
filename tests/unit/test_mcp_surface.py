@@ -43,6 +43,7 @@ EXPECTED_TOOLS = {
     "set_classification", "add_note", "list_annotations", "batch_annotate",
     "emulate_function",
     "detect_gpu",
+    "patch",
 }
 
 

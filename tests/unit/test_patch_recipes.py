@@ -95,6 +95,23 @@ def test_force_jump_taken_rejects_non_conditional(tmp_path):
         apply_recipe(p, r)
 
 
+def test_asm_step_assembles_and_writes(tmp_path):
+    """An `asm` step encodes source at the VA (arch defaults to the binary's)."""
+    from chimera.patching.assembler import keystone_available
+    if not keystone_available():
+        pytest.skip("keystone not installed")
+    src = tmp_path / "x.elf"
+    src.write_bytes(_minimal_elf64_with_one_load(load_vaddr=0x400000, load_size=0x1000))
+    p = BinaryPatcher.open(src)
+    r = Recipe(
+        name="a", description="", applies_to=["elf"],
+        patches=[{"kind": "asm", "address": "0x400500", "asm": "xor eax, eax; ret"}],
+    )
+    results = apply_recipe(p, r)
+    assert results[0].after == bytes.fromhex("31c0c3")
+    assert p.read(0x400500, 3) == bytes.fromhex("31c0c3")
+
+
 def test_unknown_kind_raises(tmp_path):
     src = tmp_path / "x.elf"
     src.write_bytes(_minimal_elf64_with_one_load(load_vaddr=0x400000, load_size=0x1000))

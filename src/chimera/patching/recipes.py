@@ -33,6 +33,9 @@ Available patch kinds (`kind`):
   * ``force-jump-taken``      — flip a single short conditional jump
     (0x74 jz / 0x75 jnz / etc.) at the supplied VA to an
     unconditional ``jmp`` (0xEB).
+  * ``asm``                   — assemble source at the VA (keystone) and
+    write it: ``{"kind":"asm","address":"0x..","asm":"xor eax,eax; ret",
+    "arch":"x86_64"}``. ``arch`` defaults to the binary's own machine.
   * ``write-bytes``           — last-resort: write raw bytes at VA.
 """
 
@@ -134,6 +137,15 @@ def _expand_step(patcher: BinaryPatcher, recipe: Recipe, step: dict[str, Any]) -
             raise ValueError(f"nop-range end {end:#x} <= start {start:#x}")
         nop = bytes([_nop_for_format(patcher.fmt)] * (end - start))
         return [PatchPlan(bytes_=nop, virtual_address=start, description=f"{recipe.name}: nop {end-start} bytes")]
+    if kind == "asm":
+        from chimera.patching.assembler import assemble
+        vaddr = _hex_int(step["address"])
+        arch = step.get("arch") or patcher.machine_arch()
+        if arch is None:
+            raise PatchError("asm step: could not detect arch; add \"arch\" to the step")
+        data = assemble(step["asm"], arch=arch, addr=vaddr)
+        return [PatchPlan(bytes_=data, virtual_address=vaddr,
+                          description=f"{recipe.name}: asm {step['asm']!r}")]
     if kind == "force-jump-taken":
         vaddr = _hex_int(step["address"])
         existing = patcher.read(vaddr, 1)

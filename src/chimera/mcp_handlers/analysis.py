@@ -432,6 +432,51 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "decompiler": arguments.get("decompiler")})
         return mcpstate.json_reply(result)
 
+    # ── patch (in-place PE/ELF/Mach-O byte + asm patcher, dry-run default) ──
+    if name == "patch":
+        from chimera.patching import (
+            AssembleError, BinaryPatcher, PatchError, PatchPlan)
+        from chimera.patching.recipes import apply_recipe, load_bundled_recipes
+        target = arguments.get("path")
+        if not target and mcpstate.require_model():
+            target = mcpstate.analysis_config.get("path") or str(mcpstate.current_model.binary.path)
+        if not target or not Path(target).exists():
+            return mcpstate.error("patch needs path=<binary> (or a loaded analysis).")
+        patches = arguments.get("patches") or []
+        recipe_names = arguments.get("recipes") or []
+        if not patches and not recipe_names:
+            return mcpstate.error("patch needs 'patches' and/or 'recipes'.")
+        try:
+            patcher = BinaryPatcher.open(target)
+            for p in patches:
+                addr = p.get("address")
+                va = int(addr, 16) if isinstance(addr, str) else int(addr)
+                if p.get("asm"):
+                    patcher.patch_asm(va, p["asm"], arch=p.get("arch"),
+                                      description=p.get("description", "asm"))
+                elif p.get("bytes_hex"):
+                    patcher.apply(PatchPlan(
+                        bytes_=bytes.fromhex(p["bytes_hex"]), virtual_address=va,
+                        description=p.get("description", "bytes")))
+                else:
+                    return mcpstate.error("each patch needs 'asm' or 'bytes_hex'.")
+            if recipe_names:
+                db = load_bundled_recipes()
+                for rn in recipe_names:
+                    if rn not in db:
+                        return mcpstate.error(f"unknown recipe {rn!r}")
+                    apply_recipe(patcher, db[rn])
+        except (PatchError, AssembleError, ValueError) as exc:
+            return mcpstate.error(f"patch: {exc}")
+        dry_run = bool(arguments.get("dry_run", True))
+        out = patcher.save(arguments.get("out"), dry_run=dry_run)
+        return mcpstate.json_reply({
+            "binary": target, "machine_arch": patcher.machine_arch(),
+            "patches_applied": len(patcher.results), "diff": patcher.diff_summary(),
+            "dry_run": dry_run, "output_path": str(out),
+            "note": "dry_run — nothing written; set dry_run=false to save" if dry_run else "written",
+        })
+
     # ── yara_scan (binary pattern / family / IOC matching, on demand) ────
     if name == "yara_scan":
         from chimera.adapters.yara_adapter import YaraAdapter

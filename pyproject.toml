@@ -77,6 +77,13 @@ pdf = [
 disasm = [
     "capstone>=5.0",
 ]
+# Assembly patching for `chimera patch --asm` / MCP patch (assemble mnemonics to
+# bytes at the target VA). keystone is a per-platform wheel, so it's opt-in;
+# without it byte-level and recipe patching still work and --asm reports the
+# missing extra.
+patch = [
+    "keystone-engine>=0.9",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
