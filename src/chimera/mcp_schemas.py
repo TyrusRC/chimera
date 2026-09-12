@@ -418,6 +418,16 @@ def all_tools() -> list[Tool]:
                  "max_blocks": {"type": "integer", "default": 4000},
              }, "required": ["path", "entry"]}),
 
+        Tool(name="recover_cmp_string",
+             description="Reconstruct a hidden string from a chain of BYTE COMPARISONS in a function — the expected password / serial / key-sequence when a check is compiled as an unrolled cascade `if(buf[0]=='L') if(buf[1]=='L') if(buf[2]=='U')...`. Such a string exists ONLY as the immediate operands of `cmp` instructions and never appears contiguously, so get_strings and deobfuscate_strings (FLOSS: stack-built / decoded strings) both miss it. Arch-aware (handles 32-bit targets, unlike the x64-only model disasm): it disassembles from the function VA, collects printable-ASCII cmp-immediates in address order (reading the last operand, so a memory displacement is never mistaken for a value, and non-printable length checks like `cmp eax,0xf` are filtered), and groups them into candidate strings ranked by length. Driving case: Flare-On 'Magic 8 Ball' → \"LLURULDUL\". Needs capstone ('disasm' extra).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Binary to analyze (PE/ELF/Mach-O)."},
+                 "address": {"type": "string", "description": "Function VA to scan (hex, e.g. 0x004024e0)."},
+                 "max_bytes": {"type": "integer", "default": 2048, "description": "Bytes of code to disassemble from the VA."},
+                 "min_run": {"type": "integer", "default": 4, "description": "Minimum characters for a reported candidate."},
+                 "gap": {"type": "integer", "default": 128, "description": "Max byte gap between consecutive compares before a new candidate starts."},
+             }, "required": ["path", "address"]}),
+
         Tool(name="symexec",
              description="Symbolic execution (angr): find the INPUT that drives the binary to a target — a win address (`find`) or a state whose stdout contains a string (`find_stdout`), while avoiding failure addresses/strings. Declare the symbolic input as `stdin_len` bytes of stdin and/or `sym_argv` (byte-lengths of symbolic argv entries). Returns the concrete stdin/argv that reaches it. Use for crackme/keygen/serial checks where pathfind (needs a recovered FSM) and emulate_function (runs one chosen path) can't discover an unknown input. Needs angr (pip install angr); bounded by timeout + state cap.",
              inputSchema={"type": "object", "properties": {

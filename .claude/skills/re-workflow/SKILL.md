@@ -54,7 +54,13 @@ context bloat. **Breadth before depth. Name the path before drilling.**
    bulk-disassembles its targets; `symexec` (angr) discovers an UNKNOWN input that reaches a win address / prints a
 success string while avoiding failures — the crackme/keygen/serial-check solver
 `pathfind` and `emulate_function` can't do (declare the input as symbolic stdin /
-argv and let the solver invert the constraints); `pathfind` BFS-searches a
+argv and let the solver invert the constraints); when a check is a straight
+   unrolled cascade of per-byte compares (`if(buf[0]==c0) if(buf[1]==c1)...`) the
+   expected password/sequence is simpler than symexec — the constants live only as
+   `cmp` immediates (never a contiguous string, so `get_strings` and FLOSS
+   `deobfuscate_strings` both miss them): `recover_cmp_string` (MCP) / `chimera
+   cmp-string --addr <fn>` reads them back in order (arch-aware, so 32-bit targets
+   work); `pathfind` BFS-searches a
    recovered FSM edge list for the accepting input (`exact_length` = the N-char
    password shape); `run_under_wine` is the one-call Wine oracle; `hdl_sim` /
    `chimera hdl-sim` is the HDL analogue — compile a Verilog/SystemVerilog design

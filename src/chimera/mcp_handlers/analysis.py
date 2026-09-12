@@ -382,6 +382,26 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
                              "use recover_cfg(path, entry=<func>) to resolve them.")
         return mcpstate.json_reply(reply)
 
+    # ── recover_cmp_string (hidden string from a cmp cascade) ────────────
+    if name == "recover_cmp_string":
+        from chimera.parsers.cmp_strings import recover_compare_string
+
+        path = arguments.get("path")
+        if not path or not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        addr = arguments.get("address") or arguments.get("va")
+        if addr is None:
+            return mcpstate.error("recover_cmp_string needs address=<function VA> (hex).")
+        va = int(addr, 16) if isinstance(addr, str) else int(addr)
+        result = recover_compare_string(
+            path, va,
+            max_bytes=int(arguments.get("max_bytes", 2048)),
+            min_run=int(arguments.get("min_run", 4)),
+            gap=int(arguments.get("gap", 128)))
+        if not result.get("available"):
+            return mcpstate.error(result.get("error", "recover_cmp_string failed"))
+        return mcpstate.json_reply(result)
+
     # ── recover_cfg (deflatten computed-goto / MBA VMs) ──────────────────
     if name == "recover_cfg":
         from chimera.parsers.cfg_deflatten import recover_cfg
