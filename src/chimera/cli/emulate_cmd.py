@@ -41,8 +41,8 @@ def emulate(path: str, address: str, arch: str | None, args, read_back, max_insn
     --full-image maps the entire PE and stubs external calls, so an obfuscated
     VM whose dispatch reads a data blob runs to completion.
     """
-    from chimera.dynamic.emulate import (emulate_function, emulate_pe_function,
-                                         unicorn_available)
+    from chimera.dynamic.emulate import emulate_function, unicorn_available
+    from chimera.dynamic.emulate_image import emulate_pe_function
 
     if not unicorn_available():
         raise click.ClickException(

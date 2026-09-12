@@ -386,10 +386,18 @@ def all_tools() -> list[Tool]:
              }, "required": ["source"]}),
 
         Tool(name="find_dispatch_tables",
-             description="Scan a PE for arrays of code pointers (a state-handler dispatch table or jump table) and validate each entry against the real function starts from the .pdata table — so it works even when a disassembler's call-graph walk is ILT-defeated. The largest table's length is typically the state/handler count of a generated state machine or VM interpreter. Returns candidate tables (section, base VA, entry count, pointer size 8=absolute-VA/4=RVA), largest first.",
+             description="Scan a PE for arrays of code pointers (a state-handler dispatch table or jump table) and validate each entry against the real function starts from the .pdata table — so it works even when a disassembler's call-graph walk is ILT-defeated. The largest table's length is typically the state/handler count of a generated state machine or VM interpreter. Returns candidate tables (section, base VA, entry count, pointer size 8=absolute-VA/4=RVA), largest first. When no strong plain table exists it hints at recover_cfg — a control-flow-flattened / MBA VM computes its successors per block (jmp rax) and has no pointer table to find.",
              inputSchema={"type": "object", "properties": {
                  "path": {"type": "string", "description": "Path to the PE file."},
              }, "required": ["path"]}),
+
+        Tool(name="recover_cfg",
+             description="Recover the real control-flow graph of a control-flow-flattened / MBA-obfuscated x86-64 function whose blocks end in a computed `jmp rax` (Flare-On-style VM obfuscation). For each block it liveness-backtracks to the 'footer expression' that computes the jump target, then emulates that footer with the whole image mapped (so its data-blob reads resolve) to read the successor — resolving conditional footers (SETZ/SETNZ/SETGE) to both edges. Returns blocks, edges, an unresolved count, and a Graphviz DOT — the edges a linear disassembler cannot see. Needs capstone + the 'emulate' extra (unicorn, pefile).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the PE file."},
+                 "entry": {"type": "string", "description": "Function entry address (e.g. 0x1400202b0)."},
+                 "max_blocks": {"type": "integer", "default": 4000},
+             }, "required": ["path", "entry"]}),
 
         Tool(name="find_aes_keys",
              description="Recover AES-128/192/256 keys by locating their expanded key schedule in bytes — a file (memory dump / core / any blob), a live process's memory (via /proc, writable regions), or a hex string. The schedule satisfies the AES KeyExpansion recurrence, so it is self-checking: a key computed at RUNTIME behind obfuscation (derived/decrypted/unpacked, never a literal in the binary) is still recoverable once resident. Reports each key (hex), its bit size, address/offset, and the 16 bytes after the schedule as a candidate IV (tiny-AES-c layout). Pair with a process dump or a frozen target (dynamic-analysis skill).",

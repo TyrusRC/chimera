@@ -111,8 +111,8 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
 
     # ── emulate_function ────────────────────────────────────────────────
     if name == "emulate_function":
-        from chimera.dynamic.emulate import (emulate_function, emulate_pe_function,
-                                             unicorn_available)
+        from chimera.dynamic.emulate import emulate_function, unicorn_available
+        from chimera.dynamic.emulate_image import emulate_pe_function
         if not unicorn_available():
             return mcpstate.error(
                 'unicorn not installed — pip install "chimera[emulate]"')

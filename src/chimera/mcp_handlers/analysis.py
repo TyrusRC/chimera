@@ -369,10 +369,35 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         tables = find_dispatch_tables(path)
         # The biggest tables are what matter; small runs in .text are mostly
         # noise, so cap the payload and report the total.
-        return mcpstate.json_reply({
-            "total_candidates": len(tables),
-            "tables": tables[:50],
-        })
+        reply = {"total_candidates": len(tables), "tables": tables[:50]}
+        # When there is no strong plain pointer-table, the binary may still be a
+        # dispatch-driven VM whose successors are *computed* per block (MBA /
+        # pointer-encrypted `jmp rax`) — which this scan cannot see. Point at
+        # recover_cfg, which resolves those by emulating each block's footer.
+        biggest = tables[0]["count"] if tables else 0
+        if biggest < 32:
+            reply["hint"] = ("No large plain dispatch table. If this is a "
+                             "control-flow-flattened / MBA-obfuscated VM, the edges "
+                             "are computed per block (jmp rax) and invisible here — "
+                             "use recover_cfg(path, entry=<func>) to resolve them.")
+        return mcpstate.json_reply(reply)
+
+    # ── recover_cfg (deflatten computed-goto / MBA VMs) ──────────────────
+    if name == "recover_cfg":
+        from chimera.parsers.cfg_deflatten import recover_cfg
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        result = recover_cfg(path, arguments["entry"],
+                             max_blocks=int(arguments.get("max_blocks", 4000)))
+        if not result.get("available"):
+            return mcpstate.error(result.get("error", "recover_cfg failed"))
+        # The DOT can be large; return it but cap blocks in the JSON payload.
+        blocks = result.pop("blocks")
+        result["blocks"] = blocks[:400]
+        result["blocks_truncated"] = len(blocks) > 400
+        return mcpstate.json_reply(result)
 
     # ── find_aes_keys (schedule scan of a file / pid / hex blob) ──────────
     if name == "find_aes_keys":

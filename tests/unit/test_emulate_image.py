@@ -8,7 +8,7 @@ and returns (run must complete).
 """
 import pytest
 
-from chimera.dynamic.emulate import emulate_image, unicorn_available
+from chimera.dynamic.emulate_image import emulate_image, unicorn_available
 
 pytestmark = pytest.mark.skipif(not unicorn_available(),
                                 reason="unicorn not installed")
