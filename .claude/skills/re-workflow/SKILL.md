@@ -51,7 +51,10 @@ context bloat. **Breadth before depth. Name the path before drilling.**
    obfuscated routine end-to-end (maps the whole PE, stubs import/Qt/syscall
    calls, lazily maps faults, MS-x64 ABI, captures printable writes) when the
    plain leaf-emulator halts at the first `call`; `disassemble_many`
-   bulk-disassembles its targets; `pathfind` BFS-searches a
+   bulk-disassembles its targets; `symexec` (angr) discovers an UNKNOWN input that reaches a win address / prints a
+success string while avoiding failures — the crackme/keygen/serial-check solver
+`pathfind` and `emulate_function` can't do (declare the input as symbolic stdin /
+argv and let the solver invert the constraints); `pathfind` BFS-searches a
    recovered FSM edge list for the accepting input (`exact_length` = the N-char
    password shape); `run_under_wine` is the one-call Wine oracle; `evm_tour`
    disassembles/executes on-chain EVM bytecode (a `pure` function) with no node;

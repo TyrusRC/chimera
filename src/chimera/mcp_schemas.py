@@ -399,6 +399,19 @@ def all_tools() -> list[Tool]:
                  "max_blocks": {"type": "integer", "default": 4000},
              }, "required": ["path", "entry"]}),
 
+        Tool(name="symexec",
+             description="Symbolic execution (angr): find the INPUT that drives the binary to a target — a win address (`find`) or a state whose stdout contains a string (`find_stdout`), while avoiding failure addresses/strings. Declare the symbolic input as `stdin_len` bytes of stdin and/or `sym_argv` (byte-lengths of symbolic argv entries). Returns the concrete stdin/argv that reaches it. Use for crackme/keygen/serial checks where pathfind (needs a recovered FSM) and emulate_function (runs one chosen path) can't discover an unknown input. Needs angr (pip install angr); bounded by timeout + state cap.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Binary to solve (defaults to the loaded analysis)."},
+                 "find": {"type": "string", "description": "Win address (hex, e.g. 0x401337)."},
+                 "find_stdout": {"type": "string", "description": "String the winning state must have printed (alternative to find)."},
+                 "avoid": {"type": "array", "items": {"type": "string"}, "description": "Failure addresses to prune (hex)."},
+                 "avoid_stdout": {"type": "string", "description": "String a failing state prints (e.g. 'Wrong')."},
+                 "stdin_len": {"type": "integer", "description": "Symbolic stdin length in bytes."},
+                 "sym_argv": {"type": "array", "items": {"type": "integer"}, "description": "Byte-lengths of symbolic argv entries after argv[0]."},
+                 "timeout": {"type": "integer", "default": 120},
+             }, "required": []}),
+
         Tool(name="decompile",
              description="Decompile ONE native function to C at a given address, on demand (no prior analyze needed — pass path=). Prefers r2ghidra's `pdg` (the real Ghidra decompiler, genuine C) and falls back to radare2's built-in `pdc` when r2ghidra isn't installed; `decompiler` can force pdg or pdc. Does a targeted `af` (not a full analysis) so it's fast on large binaries. For a whole loaded project's functions use get_function instead. Returns the C code + which backend produced it.",
              inputSchema={"type": "object", "properties": {

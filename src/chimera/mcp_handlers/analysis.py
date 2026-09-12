@@ -399,6 +399,23 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         result["blocks_truncated"] = len(blocks) > 400
         return mcpstate.json_reply(result)
 
+    # ── symexec (angr: find the input that reaches a target) ─────────────
+    if name == "symexec":
+        from chimera.dynamic.symexec import solve_input, angr_available
+        target = arguments.get("path")
+        if not target and mcpstate.require_model():
+            target = mcpstate.analysis_config.get("path") or str(mcpstate.current_model.binary.path)
+        if not target or not Path(target).exists():
+            return mcpstate.error("symexec needs path=<binary> (or a loaded analysis).")
+        if not angr_available():
+            return mcpstate.error("angr not installed — pip install angr")
+        result = solve_input(
+            target, find=arguments.get("find"), avoid=arguments.get("avoid"),
+            find_stdout=arguments.get("find_stdout"), avoid_stdout=arguments.get("avoid_stdout"),
+            stdin_len=arguments.get("stdin_len"), sym_argv=arguments.get("sym_argv"),
+            timeout_s=int(arguments.get("timeout", 120)))
+        return mcpstate.json_reply(result)
+
     # ── decompile (single function to C, r2ghidra pdg → pdc, bare path) ──
     if name == "decompile":
         from chimera.adapters.radare2 import Radare2Adapter
