@@ -1,6 +1,6 @@
 ---
 name: dynamic-analysis
-description: Use when a target resists static analysis (a huge generated state machine, hand-rolled crypto keyed on runtime state, an opaque validator) and running it — or emulating one routine — would answer the question far cheaper. Covers using execution as an oracle, running Windows PEs on Linux under Wine safely, capturing GUI/MessageBox output headless, and when a dynamic oracle does NOT exist so you must extract statically.
+description: Use when a target resists static analysis (a huge generated state machine, an obfuscated/flattened VM, hand-rolled crypto keyed on runtime state, an opaque validator) and running it — or emulating one routine / the whole image — would answer the question far cheaper. Covers using execution as an oracle, offline full-image emulation + CFG deflattening of obfuscated VMs, running Windows PEs on Linux under Wine safely, capturing GUI/MessageBox output headless, detecting & neutralizing anti-debug/anti-analysis checks, and when a dynamic oracle does NOT exist so you must extract statically.
 ---
 
 # Dynamic analysis: execution as an oracle
@@ -123,6 +123,33 @@ live:
   at the right point (block it in a hooked libc call, or SIGSTOP it) before you
   scan, or dump a core. If every wrong path collapses instantly, a periodic scan
   will miss it; prefer the breakpoint.
+
+## Anti-analysis: detect it, then neutralize it
+
+Before assuming a target "crashed" or "exits early," check whether it detected
+the analysis environment. Grep the binary first (static scan is free):
+`ptrace(`, `/proc/self/status`, `/proc/self/maps`, `rdtsc`, `signal(SIGTRAP`,
+`fork(`, and on Windows `IsDebuggerPresent`, `NtQueryInformationProcess`,
+`QueryPerformanceCounter`/`GetTickCount`, `CheckRemoteDebuggerPresent`.
+
+Detection → neutralization on this Linux/Wine box:
+- **`ptrace(PTRACE_TRACEME)` self-trace / a fork watchdog** — run the debugger as
+  the *parent* (bp-dump launches the child, so scope=1 is fine), and
+  `set follow-fork-mode child` + `set detach-on-fork off` to hold both processes.
+- **`/proc/self/status` `TracerPid` != 0** — an `LD_PRELOAD` shim over `fopen`/
+  `open`/`read` that rewrites the `TracerPid:` line to 0 (Wine reads the Linux
+  `/proc`, so the shim goes on the ELF wine process).
+- **Timing (`rdtsc`, `clock_gettime`, `QueryPerformanceCounter`)** used to detect
+  single-stepping — don't single-step; run free to a breakpoint. If a threshold
+  gates execution, LD_PRELOAD a fixed `clock_gettime`, or patch the compare.
+  (`rdtsc` spin-loops are also just obfuscation stalls — emulate past them.)
+- **`IsDebuggerPresent` / PEB `BeingDebugged` (+0x02) / `NtGlobalFlag` (PEB+0xBC
+  == 0x70) / heap ForceFlags** under Wine — patch the check site, or hook the API
+  to return 0; these are the classic Windows tells.
+- **A launcher/env self-check** (won't run unless started a certain way) — see
+  the re-workflow "anti-tamper / launcher checks" note (getenv-gated launch).
+Neutralize the check, don't fight the symptom: an "early exit" is usually a
+passed anti-debug test, not a real bug.
 
 ## Generated state machines (when you must go static)
 

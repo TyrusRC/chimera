@@ -72,8 +72,8 @@ reading the workspace dir directly from the host between calls.
 - Recover an AES key from a dump or a live/frozen pid: `chimera aeskeys`.
 - Feed a dead C2 by replaying the captured server responses from a mock HTTP
   server + an `LD_PRELOAD` `getaddrinfo` shim that points the C2 domain at your
-  mock (Wine uses the Linux resolver, not the Windows hosts file). See
-  [[windows-re-dynamic-oracle]].
+  mock (Wine uses the Linux resolver, not the Windows hosts file); pairs with
+  the `dynamic-analysis` skill.
 
 ## Gotchas
 - `$HOME` is a throwaway tmpfs — a target (or interpreter/venv) **under `$HOME`

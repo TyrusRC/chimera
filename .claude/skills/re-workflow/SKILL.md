@@ -62,9 +62,11 @@ context bloat. **Breadth before depth. Name the path before drilling.**
    `add_note`, `batch_annotate`) so the reasoning survives compaction and the
    next session reads it back.
 
-4. **Log the gap.** Whenever you step outside chimera (stock `ast`/`dis`, a
-   hand-rolled decryptor, an external tool), note it — that's a tool gap worth
-   fixing. In a benchmark, hand it to `benchmark-supervisor`.
+4. **Log the gap, then fill it.** Whenever you step outside chimera (stock
+   `ast`/`dis`, a hand-rolled decryptor, an external tool), that's a capability
+   gap — the goal is to build the missing primitive so it's never re-rolled. To
+   rank which gaps to fill first, hand the solve to the `benchmark-supervisor`
+   (gap-auditor) agent for a prioritized fix list.
 
 ## Operating rules
 
@@ -102,6 +104,17 @@ so a forced/foreign value derails into garbage). Instead:
    The **flag is often decrypted at runtime keyed on that input** — so the input
    (passcode/code) is the deliverable; enter it in the real app for the flag
    string, or emulate the decrypt with the input if it's self-contained.
+
+**Different shape — a classic bytecode interpreter** (a dispatch LOOP reading
+opcodes from a bytecode blob, not per-block computed jumps): find the loop by
+its fetch/decode/handler signature (`op = code[pc++]` → `switch`/`jmp
+[table+op*8]`/threaded `goto *handlers[op]`); locate the VM context struct (pc,
+stack, registers, the code pointer); enumerate every handler and infer each
+operand's width from how many times it does `pc++`; build an `{opcode → mnemonic,
+operands, semantics}` ISA dictionary and write a small disassembler over the
+blob, then re-host it in Python to solve. `find_dispatch_tables` locates the
+handler table (biggest = opcode count); `dotnet_trace` covers a VM'd .NET
+method. For VMProtect/Themida, cluster 20–30 handler samples by operand pattern.
 
 ## Anti-tamper / launcher checks (do this before fighting a crash)
 A GUI target may refuse to run unless launched a specific way — e.g. it calls

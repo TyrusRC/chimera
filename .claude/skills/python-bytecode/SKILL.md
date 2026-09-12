@@ -1,6 +1,6 @@
 ---
 name: python-bytecode
-description: Use when a target is Python — a frozen EXE (PyInstaller/py2exe), a .pyc, or a .py that exec()s a marshalled/compressed/encoded blob. Covers static layer-peeling, the version-independent co_names/co_consts trick, cross-version disassembly, and when NOT to run the target.
+description: Use when a target is Python — a frozen EXE (PyInstaller/py2exe), a .pyc, a .py that exec()s a marshalled/compressed/encoded blob, or a Nuitka-compiled binary. Covers static layer-peeling, the version-independent co_names/co_consts trick, cross-version disassembly, detecting Nuitka (native C, not bytecode), and when NOT to run the target.
 ---
 
 # Reversing Python Targets (static, never run it)
@@ -22,6 +22,15 @@ executing it.
   recursively peels marshal/zlib/base64/base85/bz2/lzma and dumps the layer
   tree. Extract the bytes literal with `ast.literal_eval`, NEVER by importing
   the module.
+- **Nuitka** (NOT bytecode — a trap for this skill): Nuitka compiles Python to
+  native C, so there is no pyc to recover — it is genuine native RE (treat it
+  like any C++ PE; `analyze`/disasm, not `pyextract`). Detect it by strings
+  `nuitka` / `__compiled__` / a `cpNNN-…` tag, a `.pyd` beside `.exe`, or a
+  `MANIFEST.txt`. If it ships `.encrypted` source with the key in Nuitka
+  constants (`.rdata`/`.rsrc`), it is usually XOR+base64 with a repeating key —
+  recover the key by known-plaintext from a predictable file (a JSON config
+  starts `{` ⇒ `key[i] = enc[i] ^ plaintext[i]`), verify it parses, then bulk
+  decrypt. (chimera has no dedicated Nuitka helper yet — this is native RE.)
 
 ## The key trick: co_names / co_consts are version-independent
 When a marshalled code object was compiled for a **different** Python than the
