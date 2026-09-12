@@ -12,7 +12,14 @@ Returns `(framework_value, detail)` where `framework_value` matches a
 """
 from __future__ import annotations
 
+import re
 from typing import Iterable, Optional
+
+# The .go.buildinfo blob every gc-compiled Go 1.13+ binary embeds starts with
+# this 14-byte magic; it is the single most reliable "this is Go" marker and is
+# independent of whether symbols were stripped.
+_GO_BUILDINFO_MAGIC = b"\xff Go buildinf:"
+_GO_VERSION_RE = re.compile(rb"go1\.\d+(?:\.\d+)?")
 
 
 def _present(data: bytes, needle: bytes) -> bool:
@@ -20,10 +27,33 @@ def _present(data: bytes, needle: bytes) -> bool:
     return needle in data or needle.decode("ascii").encode("utf-16-le") in data
 
 
+def _detect_go(data: bytes) -> Optional[tuple[str, str]]:
+    """Recognise a gc-compiled Go binary and, if possible, name the version.
+
+    Checked before the VB6 family because these markers are unambiguous: the
+    go.buildinfo magic, the `Go build ID` note, or the `go1.x` runtime version
+    string. r2 already symbolises Go via the pclntab, so tagging the framework
+    is the missing half — an analyst who sees `native` chases C/C++.
+    """
+    is_go = (
+        _GO_BUILDINFO_MAGIC in data
+        or b"Go build ID: \"" in data
+        or b"runtime.goexit" in data
+    )
+    if not is_go:
+        return None
+    m = _GO_VERSION_RE.search(data)
+    return ("go", f"Go ({m.group(0).decode()})" if m else "Go (gc toolchain)")
+
+
 def detect_native_runtime(
     data: bytes, import_dlls: Iterable[str]
 ) -> Optional[tuple[str, str]]:
     dlls = {d.lower() for d in import_dlls if d}
+
+    go = _detect_go(data)
+    if go:
+        return go
 
     # twinBASIC self-identifies in its runtime error strings.
     if _present(data, b"twinBASIC"):

@@ -40,6 +40,26 @@ def test_returns_none_for_plain_native():
     assert detect_native_runtime(b"just some C code strings", ["KERNEL32.dll"]) is None
 
 
+# --- Go detection ----------------------------------------------------------
+
+def test_detects_go_by_buildinfo_magic_and_version():
+    data = b"....\xff Go buildinf:\x08\x00....go1.22.2....rest"
+    rt = detect_native_runtime(data, ["KERNEL32.dll"])
+    assert rt is not None and rt[0] == "go"
+    assert "go1.22.2" in rt[1]
+
+
+def test_detects_go_by_build_id_note_without_version():
+    rt = detect_native_runtime(b'xx Go build ID: "abc/def" xx', [])
+    assert rt is not None and rt[0] == "go"
+
+
+def test_go_takes_precedence_over_vb_markers():
+    # A Go binary that happens to contain a ThunderRT6 byte-run is still Go.
+    data = b"\xff Go buildinf: go1.21 ThunderRT6FormDC"
+    assert detect_native_runtime(data, [])[0] == "go"
+
+
 # --- section entropy anomalies ---------------------------------------------
 
 @dataclass
@@ -69,3 +89,14 @@ def test_does_not_flag_small_high_entropy_section():
 
 def test_does_not_flag_normal_code_entropy():
     assert entropy_anomalies([_Sec(".text", 900_000, 6.4)], 1_000_000) == []
+
+
+def test_does_not_flag_compressed_dwarf_debug_sections():
+    # Go's .zdebug_* (and clang/gcc .debug_*) are high-entropy DWARF, not a
+    # payload — flagging them sends the analyst at the wrong section.
+    secs = [
+        _Sec(".zdebug_info", 277_504, 8.0),   # would otherwise trip the flag
+        _Sec(".debug_line", 150_528, 7.99),
+        _Sec(".data", 100_000, 4.0),
+    ]
+    assert entropy_anomalies(secs, 2_490_368) == []

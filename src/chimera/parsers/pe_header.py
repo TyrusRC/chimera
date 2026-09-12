@@ -73,6 +73,38 @@ def _shannon_entropy(data: bytes) -> float:
     return e
 
 
+# DWARF debug info is legitimately high-entropy when compressed (Go emits
+# `.zdebug_*`; clang/gcc `.debug_*`) and is NEVER the malicious/packed payload,
+# so flagging it as an "encrypted payload" only misdirects the analyst.
+_BENIGN_HIGH_ENTROPY_PREFIXES = (".debug", ".zdebug")
+
+
+def _resolve_coff_name(pe, raw: bytes) -> str:
+    """Resolve a COFF long section name (`/N` → offset N in the string table).
+
+    The section header truncates a name to 8 bytes; a longer name (the DWARF
+    `.zdebug_*` sections Go emits) is stored as `/<decimal offset>` into the
+    COFF string table. pefile leaves these unresolved, so a Go binary shows
+    opaque `/65` sections — which then read as anonymous high-entropy blobs.
+    Falls back to the raw name when there is no symbol/string table.
+    """
+    name = raw.rstrip(b"\x00").decode("ascii", errors="replace")
+    if not (name.startswith("/") and name[1:].isdigit()):
+        return name
+    ptr = getattr(pe.FILE_HEADER, "PointerToSymbolTable", 0) or 0
+    num = getattr(pe.FILE_HEADER, "NumberOfSymbols", 0) or 0
+    if not ptr:
+        return name
+    off = ptr + num * 18 + int(name[1:])
+    data = pe.__data__
+    if off <= 0 or off >= len(data):
+        return name
+    end = data.find(b"\x00", off)
+    if end < 0:
+        return name
+    return data[off:end].decode("ascii", errors="replace") or name
+
+
 def entropy_anomalies(sections, file_size: int, *,
                       threshold: float = 7.2, min_fraction: float = 0.10) -> list[dict]:
     """Flag sections that look like an encrypted/compressed payload.
@@ -82,9 +114,13 @@ def entropy_anomalies(sections, file_size: int, *,
     ~1.9MB `.data` blob at 7.96 entropy is surfaced while a tiny high-entropy
     resource stub is not. This is the single most actionable structural fact
     on a hand-packed sample, so `analyze` reports it rather than only counting.
+    Compressed DWARF debug sections are excluded — high-entropy by nature, not a
+    payload, and the false positive sends a Go/C++ analyst at the wrong section.
     """
     out: list[dict] = []
     for s in sections:
+        if s.name.startswith(_BENIGN_HIGH_ENTROPY_PREFIXES):
+            continue
         frac = (s.raw_size / file_size) if file_size else 0.0
         if s.entropy >= threshold and frac >= min_fraction:
             out.append({
@@ -120,7 +156,7 @@ def parse_pe(path: Path) -> PEHeaderInfo:
             data = s.get_data()
             chars = s.Characteristics
             sections.append(PESection(
-                name=s.Name.rstrip(b"\x00").decode("ascii", errors="replace"),
+                name=_resolve_coff_name(pe, s.Name),
                 virtual_address=s.VirtualAddress,
                 virtual_size=s.Misc_VirtualSize,
                 raw_size=s.SizeOfRawData,
