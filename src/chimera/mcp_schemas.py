@@ -498,6 +498,18 @@ def all_tools() -> list[Tool]:
                  "max_depth": {"type": "integer", "description": "Bound the search to this many edges."},
              }, "required": ["edges", "start", "accept"]}),
 
+        Tool(name="hdl_sim",
+             description="Compile a Verilog/SystemVerilog design with Icarus Verilog and run it under vvp, capturing the testbench's $display output — the HDL analogue of run_under_wine, for a 'reverse this hardware core' target where the answer is produced by SIMULATING the design (chimera otherwise has no HDL path). Pass `sources` (the .v files) and the `top` module to elaborate; edit a testbench first if you need to drive a specific input. iverilog/vvp are external: on PATH (apt install iverilog) or passed explicitly via iverilog=/vvp= (a rootless dpkg-deb -x extract works — add its ivl backend with flags=['-g2012','-B','<dir>']). Returns {available, compiled, returncode, stdout, stderr}; binary output is decoded leniently.",
+             inputSchema={"type": "object", "properties": {
+                 "sources": {"type": "array", "items": {"type": "string"}, "description": "Verilog source file paths (design + testbench)."},
+                 "top": {"type": "string", "description": "Top module to elaborate (iverilog -s)."},
+                 "flags": {"type": "array", "items": {"type": "string"}, "description": "iverilog flags (default ['-g2012'])."},
+                 "vvp_flags": {"type": "array", "items": {"type": "string"}, "description": "Extra vvp flags."},
+                 "iverilog": {"type": "string", "description": "iverilog path (default: PATH)."},
+                 "vvp": {"type": "string", "description": "vvp path (default: PATH)."},
+                 "timeout": {"type": "integer", "default": 120},
+             }, "required": ["sources"]}),
+
         Tool(name="run_under_wine",
              description="Run a Windows PE on this Linux host under Wine as a dynamic oracle — isolated throwaway WINEPREFIX, debug output silenced. Console apps run headless (stdout captured); set xvfb for GUI apps (virtual display). A memory_scan needle is searched (ASCII + UTF-16LE) in the process memory to lift a MessageBox/window answer. Executes the binary; never raises on the common failures (wine absent, missing exe) — returns an error dict. Returns {ran, returncode, stdout, stderr, timed_out, wineprefix, memory_hits, error}.",
              inputSchema={"type": "object", "properties": {
