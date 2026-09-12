@@ -399,6 +399,28 @@ def all_tools() -> list[Tool]:
                  "max_blocks": {"type": "integer", "default": 4000},
              }, "required": ["path", "entry"]}),
 
+        Tool(name="yara_scan",
+             description="Scan a file (sample/dump/unpacked payload) against YARA rules on demand — the compiled-binary counterpart to run_semgrep's source patterns, for identifying family/packer/capability/IOC. Uses chimera's bundled rule set plus any rules in an optional rules_dir. Returns hits with rule name, tags, meta and matched string identifiers. Needs yara-python. (To AUTHOR a rule from findings, use the `chimera yara` CLI.)",
+             inputSchema={"type": "object", "properties": {
+                 "target": {"type": "string", "description": "Path to the file to scan."},
+                 "rules_dir": {"type": "string", "description": "Optional directory of extra .yar/.yara rules, added to the bundled set."},
+             }, "required": ["target"]}),
+
+        Tool(name="detect_capabilities",
+             description="Run Mandiant capa to detect code-level capabilities in an ELF/Mach-O binary and map them to MITRE ATT&CK techniques and Malware Behavior Catalog (MBC) IDs — answers 'what can this sample DO?' (e.g. 'create TCP socket', 'inject into process', 'encrypt via RC4'). Returns the capability list per rule (namespace, scope, attack, mbc, match addresses). Needs the capa CLI (pip install flare-capa); offline, no API key. Optional backend (vivisect default; pyghidra/binja faster if available).",
+             inputSchema={"type": "object", "properties": {
+                 "target": {"type": "string", "description": "Path to the binary."},
+                 "rules_dir": {"type": "string", "description": "Optional custom capa rules directory."},
+                 "backend": {"type": "string", "description": "capa static backend (vivisect|pyghidra|binja|ida)."},
+             }, "required": ["target"]}),
+
+        Tool(name="deobfuscate_strings",
+             description="Run Mandiant FLOSS to recover strings that plain get_strings misses: STACK strings (built byte-by-byte), TIGHT strings (built in a loop), and DECODED strings (emulated through the deobfuscation routine) — where malware hides its C2, mutexes, paths and keys. Returns the decoded/stack/tight categories with counts. Needs the floss CLI (pip install flare-floss); decoded-string emulation is the slow part.",
+             inputSchema={"type": "object", "properties": {
+                 "target": {"type": "string", "description": "Path to the binary."},
+                 "timeout": {"type": "integer", "default": 90},
+             }, "required": ["target"]}),
+
         Tool(name="find_aes_keys",
              description="Recover AES-128/192/256 keys by locating their expanded key schedule in bytes — a file (memory dump / core / any blob), a live process's memory (via /proc, writable regions), or a hex string. The schedule satisfies the AES KeyExpansion recurrence, so it is self-checking: a key computed at RUNTIME behind obfuscation (derived/decrypted/unpacked, never a literal in the binary) is still recoverable once resident. Reports each key (hex), its bit size, address/offset, and the 16 bytes after the schedule as a candidate IV (tiny-AES-c layout). Pair with a process dump or a frozen target (dynamic-analysis skill).",
              inputSchema={"type": "object", "properties": {

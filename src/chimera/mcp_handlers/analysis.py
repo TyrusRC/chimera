@@ -399,6 +399,43 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         result["blocks_truncated"] = len(blocks) > 400
         return mcpstate.json_reply(result)
 
+    # ── yara_scan (binary pattern / family / IOC matching, on demand) ────
+    if name == "yara_scan":
+        from chimera.adapters.yara_adapter import YaraAdapter
+        target = arguments["target"]
+        if not Path(target).exists():
+            return mcpstate.error(f"file not found: {target}")
+        rules_dir = arguments.get("rules_dir")
+        adapter = YaraAdapter(extra_rules_dir=Path(rules_dir) if rules_dir else None)
+        if not adapter.is_available():
+            return mcpstate.error('yara-python not installed — pip install yara-python')
+        result = await adapter.analyze(target, {})
+        return mcpstate.json_reply(result)
+
+    # ── detect_capabilities (capa → ATT&CK / MBC, on demand) ─────────────
+    if name == "detect_capabilities":
+        from chimera.adapters.capa_adapter import CapaAdapter
+        target = arguments["target"]
+        if not Path(target).exists():
+            return mcpstate.error(f"file not found: {target}")
+        adapter = CapaAdapter(rules_dir=arguments.get("rules_dir"))
+        if not adapter.is_available():
+            return mcpstate.error('capa not found — pip install flare-capa')
+        result = await adapter.analyze(target, {"backend": arguments.get("backend")})
+        return mcpstate.json_reply(result)
+
+    # ── deobfuscate_strings (FLOSS stack/tight/decoded strings) ──────────
+    if name == "deobfuscate_strings":
+        from chimera.adapters.floss import FlossAdapter
+        target = arguments["target"]
+        if not Path(target).exists():
+            return mcpstate.error(f"file not found: {target}")
+        adapter = FlossAdapter()
+        if not adapter.is_available():
+            return mcpstate.error('floss not found — pip install flare-floss')
+        result = await adapter.analyze(target, {"timeout": int(arguments.get("timeout", 90))})
+        return mcpstate.json_reply(result)
+
     # ── find_aes_keys (schedule scan of a file / pid / hex blob) ──────────
     if name == "find_aes_keys":
         from chimera.aes_keyfind import find_in_file, find_in_pid, find_key_schedules
