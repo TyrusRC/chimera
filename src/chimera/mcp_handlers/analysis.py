@@ -432,6 +432,42 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "decompiler": arguments.get("decompiler")})
         return mcpstate.json_reply(result)
 
+    # ── core_triage (ELF process core dump: maps/regs/addr→module/search) ──
+    if name == "core_triage":
+        from chimera.parsers.coredump import CoreDump
+        path = arguments.get("path")
+        if not path or not Path(path).exists():
+            return mcpstate.error("core_triage needs path=<ELF core dump>.")
+        try:
+            c = CoreDump(path)
+        except ValueError as exc:
+            return mcpstate.error(str(exc))
+        try:
+            result = c.triage()
+            ra = arguments.get("resolve_addr")
+            if ra is not None:
+                a = int(ra, 16) if isinstance(ra, str) else int(ra)
+                r = c.address_to_module(a)
+                result["resolved"] = {"address": hex(a),
+                                      "module": r[0] if r else None,
+                                      "offset": hex(r[1]) if r else None}
+            if arguments.get("search_hex"):
+                try:
+                    hits = c.search(bytes.fromhex(arguments["search_hex"]))
+                except ValueError:
+                    return mcpstate.error("search_hex must be a hex string.")
+                result["search_hits"] = [hex(h) for h in hits]
+            dump = arguments.get("dump")
+            if dump:
+                a = dump.get("address")
+                a = int(a, 16) if isinstance(a, str) else int(a)
+                data = c.read(a, int(dump.get("length", 64)))
+                result["dump"] = {"address": hex(a),
+                                  "hex": data.hex() if data else None}
+            return mcpstate.json_reply(result)
+        finally:
+            c.close()
+
     # ── patch (in-place PE/ELF/Mach-O byte + asm patcher, dry-run default) ──
     if name == "patch":
         from chimera.patching import (

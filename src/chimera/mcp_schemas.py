@@ -439,6 +439,17 @@ def all_tools() -> list[Tool]:
                                 "description": "Force a backend (default: pdg then pdc)."},
              }, "required": ["address"]}),
 
+        Tool(name="core_triage",
+             description="Triage an ELF process CORE DUMP (a crashed userspace process), the gap Volatility (`memory`, whole-OS images) doesn't cover. Parses PT_LOAD ranges, the NT_FILE module mappings and the NT_PRSTATUS registers per thread; shows the crashing thread's registers and which module the faulting `rip` and the stack return address fall in (crash→module correlation), and lets you resolve any address to module+offset (resolve_addr), search process memory for bytes (search_hex), or dump a region (dump). This was the whole backbone of the Flare-On sshd (xz-backdoor) solve — correlate the crash to the backdoored lib, then find the attacker payload resident in memory (pair with find_aes_keys over a dumped region). x86-64 decodes registers; other arches still get maps + read/search.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the ELF core dump."},
+                 "resolve_addr": {"type": "string", "description": "Resolve this virtual address (hex) to module+offset."},
+                 "search_hex": {"type": "string", "description": "Find these hex bytes across mapped memory."},
+                 "dump": {"type": "object", "properties": {
+                     "address": {"type": "string"}, "length": {"type": "integer"}},
+                     "description": "Dump memory at {address, length}."},
+             }, "required": ["path"]}),
+
         Tool(name="patch",
              description="Apply in-place byte or assembly patches to a PE / ELF / Mach-O binary and write a patched copy — NOP an anti-debug check, force a conditional jump, stub an import, or drop in new code. Each patch is either raw `bytes_hex` or `asm` source (assembled at its VA via keystone, so relative jmp/call/branch offsets are correct); `arch` defaults to the binary's own machine (x86_64/x86/arm64/arm/thumb). Also applies bundled `recipes` by name (see `chimera patch --list-recipes`). Defaults to dry_run=true — returns the before/after diff without writing; set dry_run=false (and optionally out=) to save. Assembly needs the 'patch' extra (keystone).",
              inputSchema={"type": "object", "properties": {
