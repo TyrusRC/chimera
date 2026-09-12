@@ -38,7 +38,7 @@ EXPECTED_TOOLS = {
     "start_fuzz", "fuzz_status", "dotnet_trace", "py_unwrap", "pdf_tour",
     "evm_tour", "js_deobf", "fw_extract", "find_dispatch_tables", "recover_cfg", "pathfind", "run_under_wine",
     "symexec", "decompile", "yara_scan", "yara_solve", "detect_capabilities", "deobfuscate_strings",
-    "find_aes_keys", "run_with_breakpoints", "run_sandboxed", "hdl_sim", "eth_fetch",
+    "find_aes_keys", "run_with_breakpoints", "run_sandboxed", "hdl_sim", "eth_fetch", "qemu_boot",
     "rename_function", "set_comment", "set_function_type",
     "set_classification", "add_note", "list_annotations", "batch_annotate",
     "emulate_function",

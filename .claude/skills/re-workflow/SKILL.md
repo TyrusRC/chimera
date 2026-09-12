@@ -196,7 +196,11 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   to `fw_extract` (MCP) / `chimera fw-extract`, which carves the firmware volumes
   and lists the FFS PE/TE modules by GUID + UI-name (spot the implant among the
   stock DXEs), extracting each as a normal .efi PE to analyze. To then RUN the
-  firmware, a QEMU boot is the oracle (candidate primitive; not yet wrapped).
+  firmware, `qemu_boot` (MCP) / `chimera qemu-boot` boots it headless under QEMU
+  and captures the console — the firmware analogue of run_under_wine — driving an
+  interactive EFI/DOS shell via `input_lines` (confined: no net, disk
+  copy-on-write). Some flag material appears ONLY at runtime (a boot-stage ransom
+  note, a segment the firmware prints via the shell), which static carving misses.
 - **A section at ~random entropy over a large fraction of the file** is the
   likely encrypted/compressed payload — chimera surfaces it in the summary.
 - **Native desktop binary (PE .exe/.dll/.sys or ELF)? Load the `desktop-re`

@@ -185,6 +185,17 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error("eth_fetch needs tx_hash, or to + method_id.")
         return mcpstate.json_reply(result)
 
+    if name == "qemu_boot":
+        from chimera.dynamic.qemu_boot import qemu_boot
+        result = qemu_boot(
+            bios=arguments.get("bios"), disk=arguments.get("disk"),
+            input_lines=tuple(arguments.get("input_lines") or ()),
+            boot_wait=float(arguments.get("boot_wait", 8.0)),
+            line_delay=float(arguments.get("line_delay", 1.5)),
+            timeout=int(arguments.get("timeout", 90)),
+            net=bool(arguments.get("net", False)))
+        return mcpstate.json_reply(result)
+
     if name == "hdl_sim":
         from chimera.dynamic.hdl_sim import hdl_sim
         sources = arguments.get("sources") or []
