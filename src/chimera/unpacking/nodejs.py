@@ -129,30 +129,75 @@ def extract_nexe(data: bytes) -> tuple[bytes, int]:
     return _maybe_inflate(content), resource_size
 
 
+def _printable_ratio(b: bytes) -> float:
+    if not b:
+        return 0.0
+    ok = sum(1 for c in b if c in (9, 10, 13) or 0x20 <= c <= 0x7E)
+    return ok / len(b)
+
+
+def _read_string_views(data: bytes, pos: int, fmt: str, width: int,
+                       max_blobs: int = 6) -> list[bytes]:
+    """Read consecutive length-prefixed string_views from `pos` while sane.
+
+    Node's BlobSerializer writes each string_view as ``len(size_t) bytes``.
+    Returns the byte blobs; stops at the first implausible length.
+    """
+    out: list[bytes] = []
+    for _ in range(max_blobs):
+        if pos + width > len(data):
+            break
+        n = struct.unpack_from(fmt, data, pos)[0]
+        body = pos + width
+        if not (0 < n <= len(data) - body):
+            break
+        out.append(data[body:body + n])
+        pos = body + n
+    return out
+
+
 def extract_sea(data: bytes) -> tuple[bytes, int]:
     """Carve the main script from a Node SEA blob. Returns (code_bytes, flags).
 
-    Blob: ``magic(u32) flags(u32) len(size_t) code[len] …``. size_t is 8 bytes
-    on the 64-bit builds that produce SEAs; falls back to 4 for a 32-bit host.
-    Scans every magic occurrence and takes the first with a sane length, so a
-    stray constant elsewhere in the node runtime doesn't derail it.
+    The blob is ``magic(u32) flags(u32) …`` followed by BlobSerializer
+    string_views (``len(size_t) bytes``), but the field order is
+    VERSION-DEPENDENT: early Node wrote the code string right after the flags,
+    while Node 22+ inserts an ``exec_argv_extension`` byte and a ``code_path``
+    string before the main code. Rather than trust a fixed offset (which
+    silently misreads on a newer runtime), this walks the string_views from a
+    few candidate alignments and picks the main script by VALIDATION — the
+    largest printable-JS blob — so it emits real source or nothing, never
+    garbage. When the useSnapshot flag is set the payload is a binary V8
+    snapshot, so the largest blob is returned regardless of printability.
     """
+    printable: list[bytes] = []          # (blob) candidates that look like JS
+    snapshots: list[bytes] = []          # blobs seen under a useSnapshot flag
     start = 0
     while True:
         mpos = data.find(_SEA_MAGIC_LE, start)
         if mpos == -1:
-            raise ValueError("no SEA blob magic with a valid length")
+            break
         start = mpos + 4
         if mpos + 8 > len(data):
             continue
         flags = struct.unpack_from("<I", data, mpos + 4)[0]
+        is_snapshot = bool(flags & _SEA_FLAG_USE_SNAPSHOT)
         for width, fmt in ((8, "<Q"), (4, "<I")):
-            hdr_end = mpos + 8 + width
-            if hdr_end > len(data):
-                continue
-            clen = struct.unpack_from(fmt, data, mpos + 8)[0]
-            if 0 < clen <= len(data) - hdr_end:
-                return data[hdr_end:hdr_end + clen], flags
+            # align +8: oldest layout (code first). +8+1: skip the newer
+            # exec_argv_extension uint8 so code_path/main_code parse.
+            for align in (mpos + 8, mpos + 9):
+                for blob in _read_string_views(data, align, fmt, width):
+                    if len(blob) < 32:
+                        continue
+                    if _printable_ratio(blob) >= 0.85:
+                        printable.append((blob, flags))
+                    if is_snapshot:
+                        snapshots.append((blob, flags))
+    if printable:
+        return max(printable, key=lambda t: len(t[0]))
+    if snapshots:
+        return max(snapshots, key=lambda t: len(t[0]))
+    raise ValueError("no SEA main-code string found after the blob magic")
 
 
 def extract_node_js(path: str | Path, out_dir: str | Path | None = None) -> NodeExtractResult:

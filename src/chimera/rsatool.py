@@ -23,7 +23,6 @@ Pure-Python (uses only `math.isqrt` + 3-arg `pow`); never touches the network.
 from __future__ import annotations
 
 import base64
-import binascii
 from dataclasses import dataclass, field
 from math import isqrt
 
