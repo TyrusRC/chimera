@@ -272,6 +272,11 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         native = engine.cache.get_json(
             mcpstate.current_model.binary.sha256, "native_protection") or {}
         merge_native_profile(profile, native)
+        # .NET method-body encryption: ILSpy decompiles only the valid-CIL
+        # stubs, so warn that the C# is partial and the real bodies are
+        # runtime-reconstructed (cached by the PE pipeline's ilspy phase).
+        dotnet_obf = engine.cache.get_json(
+            mcpstate.current_model.binary.sha256, "dotnet_obfuscation") or {}
         return mcpstate.json_reply({
             "root_detection": profile.has_root_detection,
             "jailbreak_detection": profile.has_jailbreak_detection,
@@ -286,6 +291,8 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "has_any_protection": profile.has_any_protection,
             "bypass_order": profile.bypass_order(),
             "details": profile.details[:20],
+            # Present only on a CIL-obfuscated .NET assembly; absent otherwise.
+            "dotnet_obfuscation": dotnet_obf or None,
         })
 
     # ── detect_sdks ─────────────────────────────────────────────────────
