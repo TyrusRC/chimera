@@ -33,8 +33,13 @@ def node_extract(path: str, out_dir: str | None):
     if r.sea_flags is not None:
         click.echo(f"  SEA flags: {r.sea_flags:#06x}")
     if r.resource_size:
-        click.echo(f"  resource blob: {r.resource_size} B (not extracted)")
+        extracted = f"{len(r.resource_files)} file(s) extracted" if r.resource_files else "raw"
+        click.echo(f"  resource blob: {r.resource_size} B ({extracted})")
     if r.note:
         click.echo(f"  note: {r.note}")
     click.echo(f"  {r.js_size} B  {r.out_file}")
-    click.echo(f"  next: chimera js-deobf {r.out_file}")
+    for rf in r.resource_files:
+        click.echo(f"  app file: {rf}")
+    # The app code (in the resource VFS) is the interesting target when present.
+    start = r.resource_files[0] if r.resource_files else r.out_file
+    click.echo(f"  next: chimera js-deobf {start}")

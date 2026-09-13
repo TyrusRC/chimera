@@ -27,8 +27,10 @@ executable is a PE, ELF, or Mach-O.
 """
 from __future__ import annotations
 
+import io
 import logging
 import struct
+import zipfile
 import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,6 +62,7 @@ class NodeExtractResult:
     out_file: str | None = None
     js_size: int | None = None
     resource_size: int | None = None
+    resource_files: list[str] = field(default_factory=list)
     sea_flags: int | None = None
     signals: list[str] = field(default_factory=list)
     note: str | None = None
@@ -69,6 +72,7 @@ class NodeExtractResult:
         return {
             "ok": self.ok, "kind": self.kind, "out_file": self.out_file,
             "js_size": self.js_size, "resource_size": self.resource_size,
+            "resource_files": self.resource_files,
             "sea_flags": self.sea_flags, "signals": self.signals,
             "note": self.note, "error": self.error,
         }
@@ -107,12 +111,15 @@ def _maybe_inflate(blob: bytes) -> bytes:
     return blob
 
 
-def extract_nexe(data: bytes) -> tuple[bytes, int]:
-    """Carve the JS bundle from a nexe binary. Returns (js_bytes, resource_size).
+def extract_nexe(data: bytes) -> tuple[bytes, bytes]:
+    """Carve a nexe binary. Returns (content_bytes, resource_bytes).
 
     Layout: ``[node][content][resources]<nexe~~sentinel>[f64 content][f64 res]``.
-    The sentinel is found from the end (rfind) to tolerate trailing padding.
-    Raises ValueError on a malformed/absent footer.
+    `content` is nexe's bootstrap/loader (and, for older nexe, the inlined app
+    bundle); `resources` is the app's virtual filesystem — a ZIP of the real
+    source files (`snapshot/app.js`, …) on modern nexe. The sentinel is found
+    from the end (rfind) to tolerate trailing padding. Raises ValueError on a
+    malformed/absent footer.
     """
     pos = data.rfind(NEXE_SENTINEL)
     if pos == -1:
@@ -127,7 +134,39 @@ def extract_nexe(data: bytes) -> tuple[bytes, int]:
         raise ValueError(
             f"implausible nexe sizes: content={content_size} resource={resource_size}")
     content = data[content_start:content_start + content_size]
-    return _maybe_inflate(content), resource_size
+    resources = data[pos - resource_size:pos] if resource_size > 0 else b""
+    return _maybe_inflate(content), resources
+
+
+def _extract_nexe_resources(resources: bytes, out_root: Path) -> list[str]:
+    """Unpack the nexe resource blob (the app's virtual FS) into `out_root`.
+
+    Modern nexe stores the real app files as a ZIP here; older nexe leaves a
+    raw concatenated blob (indexed by a map in the bootstrap). Extracts ZIP
+    members safely (no path traversal) — this is where the actual program lives
+    when the content bundle is just the loader. Returns the recovered paths.
+    """
+    if resources[:4] != b"PK\x03\x04":
+        return []
+    written: list[str] = []
+    res_dir = out_root / "resources"
+    try:
+        with zipfile.ZipFile(io.BytesIO(resources)) as zf:
+            for name in zf.namelist():
+                if name.endswith("/"):
+                    continue
+                dest = (res_dir / name).resolve()
+                if not str(dest).startswith(str(res_dir.resolve())):
+                    continue                     # refuse path traversal
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    dest.write_bytes(zf.read(name))
+                except (zipfile.BadZipFile, OSError):
+                    continue
+                written.append(str(dest))
+    except zipfile.BadZipFile:
+        return []
+    return written
 
 
 def _printable_ratio(b: bytes) -> float:
@@ -262,14 +301,14 @@ def extract_node_js(path: str | Path, out_dir: str | Path | None = None) -> Node
                  "V8 bytecode (--target with -C, not plain JS). Use pkg-unpacker "
                  "/ the `pkg/prelude` VFS offsets, then js_deobf the recovered .js.")
 
+    resources = b""
     try:
         if kind == "nexe":
-            js, resource_size = extract_nexe(data)
+            js, resources = extract_nexe(data)
             flags = None
             note = None
         else:  # sea
             js, flags = extract_sea(data)
-            resource_size = None
             note = None
             if flags & _SEA_FLAG_USE_SNAPSHOT:
                 note = ("SEA useSnapshot flag set — payload is a V8 startup "
@@ -283,6 +322,18 @@ def extract_node_js(path: str | Path, out_dir: str | Path | None = None) -> Node
     out_file = out_root / (f"{path.stem}.js" if is_js else f"{path.stem}.snapshot.bin")
     out_file.write_bytes(js)
 
+    # nexe stores the real app files in the resource blob — a ZIP on modern
+    # nexe (the content bundle is only the bootstrap/loader). Unpack it; those
+    # files, not the loader, are the program.
+    resource_files = _extract_nexe_resources(resources, out_root) if kind == "nexe" else []
+    if resource_files:
+        note = (f"app source is in the resource VFS ({len(resource_files)} file(s) "
+                f"under {out_root / 'resources'}) — the .js written above is nexe's "
+                "bootstrap loader.")
+    elif kind == "nexe" and resources and resources[:4] != b"PK\x03\x04":
+        (out_root / f"{path.stem}.resources.bin").write_bytes(resources)
+
     return NodeExtractResult(
         ok=True, kind=kind, out_file=str(out_file), js_size=len(js),
-        resource_size=resource_size, sea_flags=flags, signals=signals, note=note)
+        resource_size=(len(resources) if kind == "nexe" else None),
+        resource_files=resource_files, sea_flags=flags, signals=signals, note=note)
