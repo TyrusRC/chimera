@@ -118,7 +118,10 @@ _BINARY_CHECKS: list[tuple[str, str]] = [
     ("dotnet", "needed for .NET decompile (ilspy) and `chimera dotnet-trace` "
      "— install the .NET SDK from dotnet.microsoft.com"),
     ("docker", "see docs.docker.com/get-docker"),
-    ("node", "needed only for the web UI dev server — see nodejs.org"),
+    ("node", "JS toolchain — webcrack (js-deobf, incl. the node-extract → js-deobf "
+     "flow for nexe/SEA binaries) and the web UI dev server; install from "
+     "nodejs.org, then `npm i -g webcrack`"),
+    ("npm", "installs the JS deobfuscation backend: `npm i -g webcrack` — see nodejs.org"),
 ]
 
 

@@ -100,6 +100,28 @@ def test_extract_sea_v22_layout_skips_codepath():
     assert code == _JS
 
 
+def test_extract_sea_prefers_modern_blob_over_coincidental_legacy_magic():
+    # Regression for the real Node v24 SEA bug: an earlier coincidental magic
+    # hit that parses as the permissive legacy layout (flags=0 + a big printable
+    # region) must NOT shadow the true modern blob (exec_argv_extension +
+    # code_path + code) found later. Modern-layout matching runs first.
+    real = _sea_v22(_JS)
+    filler = b"A" * 200  # a printable region that legacy parsing would grab
+    fake = _SEA_MAGIC_LE + struct.pack("<I", 0) + struct.pack("<Q", len(filler)) + filler
+    data = b"\x00" * 16 + fake + b"\x00" * 16 + real
+    code, _ = extract_sea(data)
+    assert code == _JS
+
+
+def test_extract_sea_rejects_invalid_flags():
+    # A magic hit whose flags word has bits outside SeaFlags (0..5) is a
+    # coincidence, not a header — must not parse.
+    import pytest
+    bad = _SEA_MAGIC_LE + struct.pack("<I", 0xDEADBEEF) + struct.pack("<Q", 64) + b"x" * 64
+    with pytest.raises(ValueError):
+        extract_sea(bad)
+
+
 def test_extract_sea_skips_stray_magic_without_valid_length():
     # a bare magic with a garbage length must not shadow the real blob
     stray = _SEA_MAGIC_LE + struct.pack("<I", 0) + struct.pack("<Q", 1 << 60)

@@ -39,8 +39,9 @@ logger = logging.getLogger(__name__)
 NEXE_SENTINEL = b"<nexe~~sentinel>"
 _NEXE_FOOTER = struct.Struct("<dd")   # contentSize, resourceSize (doubles)
 
-# Node SEA serialized-blob magic (src/node_sea.cc), little-endian on disk.
-SEA_MAGIC = 0x143DB6DE
+# Node SEA serialized-blob magic (kMagic in src/node_sea.h), little-endian on
+# disk. Verified against a real Node v24 SEA blob (`20 da 43 01`).
+SEA_MAGIC = 0x0143DA20
 _SEA_MAGIC_LE = struct.pack("<I", SEA_MAGIC)
 # SeaFlags bits we care about; kUseSnapshot means the payload is a V8 snapshot,
 # not JS source.
@@ -136,24 +137,70 @@ def _printable_ratio(b: bytes) -> float:
     return ok / len(b)
 
 
-def _read_string_views(data: bytes, pos: int, fmt: str, width: int,
-                       max_blobs: int = 6) -> list[bytes]:
-    """Read consecutive length-prefixed string_views from `pos` while sane.
+# SeaFlags occupies bits 0..5 (kDisableExperimentalSeaWarning .. kEnableVfs), so
+# any blob whose flags word has a higher bit set is a coincidental magic hit, not
+# a real header. SeaExecArgvExtension is kNone/kEnv/kCli (0/1/2).
+_SEA_FLAGS_MASK = 0x3F
+_SEA_MAX_EXT = 2
+_SEA_MAX_PATH = 4096
 
-    Node's BlobSerializer writes each string_view as ``len(size_t) bytes``.
-    Returns the byte blobs; stops at the first implausible length.
+
+def _read_sv(data: bytes, pos: int, width: int, fmt: str) -> tuple[bytes | None, int]:
+    """Read one length-prefixed string_view (``len(size_t) bytes``) at `pos`."""
+    if pos + width > len(data):
+        return None, pos
+    n = struct.unpack_from(fmt, data, pos)[0]
+    body = pos + width
+    if not (0 < n <= len(data) - body):
+        return None, pos
+    return data[body:body + n], body + n
+
+
+def _sea_flags(data: bytes, mpos: int) -> int | None:
+    """Return the flags word at a magic hit if it is a valid SeaFlags combo."""
+    if mpos + 8 > len(data):
+        return None
+    flags = struct.unpack_from("<I", data, mpos + 4)[0]
+    return None if (flags & ~_SEA_FLAGS_MASK) else flags
+
+
+def _parse_sea_modern(data: bytes, mpos: int, width: int, fmt: str) -> tuple[bytes, int] | None:
+    """Node 20+ layout: exec_argv_extension u8, code_path string, main code.
+
+    The code_path (a real entry filename) is what makes this reliable — a
+    coincidental magic hit in the runtime won't be followed by a short printable
+    path AND a valid main-code string_view.
     """
-    out: list[bytes] = []
-    for _ in range(max_blobs):
-        if pos + width > len(data):
-            break
-        n = struct.unpack_from(fmt, data, pos)[0]
-        body = pos + width
-        if not (0 < n <= len(data) - body):
-            break
-        out.append(data[body:body + n])
-        pos = body + n
-    return out
+    flags = _sea_flags(data, mpos)
+    if flags is None or data[mpos + 8] > _SEA_MAX_EXT:
+        return None
+    code_path, pos = _read_sv(data, mpos + 9, width, fmt)
+    if (code_path is None or not (1 <= len(code_path) <= _SEA_MAX_PATH)
+            or _printable_ratio(code_path) < 0.95):
+        return None
+    code, _ = _read_sv(data, pos, width, fmt)
+    if code is None:
+        return None
+    if bool(flags & _SEA_FLAG_USE_SNAPSHOT) or _printable_ratio(code) >= 0.5:
+        return code, flags
+    return None
+
+
+def _parse_sea_legacy(data: bytes, mpos: int, width: int, fmt: str) -> tuple[bytes, int] | None:
+    """Oldest layout: the main code string_view sits directly after the flags.
+
+    Kept only as a fallback; requires a highly printable payload so it does not
+    latch onto the runtime's string tables at a coincidental magic hit.
+    """
+    flags = _sea_flags(data, mpos)
+    if flags is None:
+        return None
+    code, _ = _read_sv(data, mpos + 8, width, fmt)
+    if code is None:
+        return None
+    if bool(flags & _SEA_FLAG_USE_SNAPSHOT) or _printable_ratio(code) >= 0.95:
+        return code, flags
+    return None
 
 
 def extract_sea(data: bytes) -> tuple[bytes, int]:
@@ -161,43 +208,31 @@ def extract_sea(data: bytes) -> tuple[bytes, int]:
 
     The blob is ``magic(u32) flags(u32) …`` followed by BlobSerializer
     string_views (``len(size_t) bytes``), but the field order is
-    VERSION-DEPENDENT: early Node wrote the code string right after the flags,
-    while Node 22+ inserts an ``exec_argv_extension`` byte and a ``code_path``
-    string before the main code. Rather than trust a fixed offset (which
-    silently misreads on a newer runtime), this walks the string_views from a
-    few candidate alignments and picks the main script by VALIDATION — the
-    largest printable-JS blob — so it emits real source or nothing, never
-    garbage. When the useSnapshot flag is set the payload is a binary V8
-    snapshot, so the largest blob is returned regardless of printability.
+    VERSION-DEPENDENT: early Node wrote the code right after the flags, while
+    Node 20+ inserts an ``exec_argv_extension`` byte and a ``code_path`` string
+    before the main code. A small magic constant recurs by chance in a 100MB
+    node runtime, so this does NOT trust a fixed offset or a "largest printable
+    blob" heuristic (both misfire on a real binary). Instead it strictly parses
+    the header at every magic hit: the modern layout first across all hits (its
+    code_path uniquely pins the real blob), then the legacy layout as a
+    fallback. When useSnapshot is set the payload is a binary V8 snapshot,
+    returned as-is. Verified against a real Node v24 SEA executable.
     """
-    printable: list[bytes] = []          # (blob) candidates that look like JS
-    snapshots: list[bytes] = []          # blobs seen under a useSnapshot flag
+    hits = []
     start = 0
     while True:
         mpos = data.find(_SEA_MAGIC_LE, start)
         if mpos == -1:
             break
+        hits.append(mpos)
         start = mpos + 4
-        if mpos + 8 > len(data):
-            continue
-        flags = struct.unpack_from("<I", data, mpos + 4)[0]
-        is_snapshot = bool(flags & _SEA_FLAG_USE_SNAPSHOT)
-        for width, fmt in ((8, "<Q"), (4, "<I")):
-            # align +8: oldest layout (code first). +8+1: skip the newer
-            # exec_argv_extension uint8 so code_path/main_code parse.
-            for align in (mpos + 8, mpos + 9):
-                for blob in _read_string_views(data, align, fmt, width):
-                    if len(blob) < 32:
-                        continue
-                    if _printable_ratio(blob) >= 0.85:
-                        printable.append((blob, flags))
-                    if is_snapshot:
-                        snapshots.append((blob, flags))
-    if printable:
-        return max(printable, key=lambda t: len(t[0]))
-    if snapshots:
-        return max(snapshots, key=lambda t: len(t[0]))
-    raise ValueError("no SEA main-code string found after the blob magic")
+    for parse in (_parse_sea_modern, _parse_sea_legacy):
+        for mpos in hits:
+            for width, fmt in ((8, "<Q"), (4, "<I")):
+                res = parse(data, mpos, width, fmt)
+                if res is not None:
+                    return res
+    raise ValueError("no valid SEA blob (magic present but no header parsed)")
 
 
 def extract_node_js(path: str | Path, out_dir: str | Path | None = None) -> NodeExtractResult:
