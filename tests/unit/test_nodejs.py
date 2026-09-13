@@ -25,8 +25,19 @@ def _nexe(content: bytes, resources: bytes = b"") -> bytes:
 
 
 def _sea(code: bytes, flags: int = 0, width: int = 8) -> bytes:
+    """Oldest SEA layout: magic, flags, code string_view directly."""
     lenf = "<Q" if width == 8 else "<I"
     blob = _SEA_MAGIC_LE + struct.pack("<I", flags) + struct.pack(lenf, len(code)) + code
+    return b"\x7fELF" + b"\x00" * 512 + b"NODE_SEA_BLOB\x00" + blob + b"\x00" * 16
+
+
+def _sea_v22(code: bytes, flags: int = 0) -> bytes:
+    """Node 22+ layout: magic, flags, exec_argv_extension(uint8), code_path
+    string_view, THEN the main code string_view."""
+    def sv(b):
+        return struct.pack("<Q", len(b)) + b
+    blob = (_SEA_MAGIC_LE + struct.pack("<I", flags) + b"\x00"   # exec_argv_extension
+            + sv(b"sea-prelude.js") + sv(code))
     return b"\x7fELF" + b"\x00" * 512 + b"NODE_SEA_BLOB\x00" + blob + b"\x00" * 16
 
 
@@ -78,9 +89,15 @@ def test_extract_sea_64bit_length():
 
 
 def test_extract_sea_snapshot_flag_surfaced():
-    r = extract_node_js  # noqa: F841 (documentation of intent)
     _, flags = extract_sea(_sea(_JS, flags=0b10))
     assert flags & 0b10
+
+
+def test_extract_sea_v22_layout_skips_codepath():
+    # Node 22+ inserts exec_argv_extension + code_path before the main code;
+    # the walker must return the JS, not the short code_path string.
+    code, _ = extract_sea(_sea_v22(_JS))
+    assert code == _JS
 
 
 def test_extract_sea_skips_stray_magic_without_valid_length():
