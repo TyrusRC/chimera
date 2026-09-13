@@ -61,16 +61,56 @@ def test_detect_none_on_plain_binary():
 
 # --- nexe carve --------------------------------------------------------------
 
-def test_extract_nexe_returns_exact_bundle():
-    js, res_size = extract_nexe(_nexe(_JS, resources=b"RESRC-BLOB"))
+def test_extract_nexe_returns_content_and_resources():
+    js, resources = extract_nexe(_nexe(_JS, resources=b"RESRC-BLOB"))
     assert js == _JS
-    assert res_size == len(b"RESRC-BLOB")
+    assert resources == b"RESRC-BLOB"
 
 
 def test_extract_nexe_inflates_gzip_bundle():
     packed = gzip.compress(_JS)
     js, _ = extract_nexe(_nexe(packed))
     assert js == _JS
+
+
+def test_extract_node_js_nexe_unpacks_resource_zip(tmp_path):
+    # Modern nexe puts the real app files in the resource blob as a ZIP; the
+    # content bundle is just the bootstrap loader. Verified against a real nexe
+    # binary — the app source lives in resources/snapshot/app.js.
+    import io
+    import zipfile
+    from pathlib import Path
+
+    app = b'const FLAG = "flare-on";\nconsole.log(FLAG);\n'
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("snapshot/app.js", app)
+    zip_blob = buf.getvalue()
+
+    exe = tmp_path / "myapp"
+    exe.write_bytes(_nexe(b"!(function(){process.__nexe={}})();", resources=zip_blob))
+    r = extract_node_js(exe, tmp_path / "out")
+    assert r.ok and r.kind == "nexe"
+    assert r.resource_files and any(f.endswith("snapshot/app.js") for f in r.resource_files)
+    recovered = Path(r.resource_files[0]).read_bytes()
+    assert recovered == app
+
+
+def test_extract_node_js_nexe_resource_zip_rejects_traversal(tmp_path):
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("../evil.js", b"pwned")
+        zf.writestr("ok.js", b"safe")
+    exe = tmp_path / "myapp"
+    exe.write_bytes(_nexe(b"boot", resources=buf.getvalue()))
+    r = extract_node_js(exe, tmp_path / "out")
+    # the traversal entry is skipped; the safe one is kept
+    assert not any("evil" in f for f in r.resource_files)
+    assert any(f.endswith("ok.js") for f in r.resource_files)
+    assert not (tmp_path / "evil.js").exists()
 
 
 def test_extract_nexe_rejects_implausible_footer():
