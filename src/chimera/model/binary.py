@@ -95,6 +95,7 @@ class Framework(Enum):
     VB6 = "vb6"  # classic Visual Basic 6 or twinBASIC (VB6-compatible)
     GO = "go"  # Go toolchain (gc); pclntab + go:buildinfo present
     DOTNET_AOT = "dotnet-aot"  # .NET NativeAOT (native PE; .managed + hydrated sections)
+    DOTNET_MIXED = "dotnet-mixed"  # mixed-mode C++/CLI (IL + native; native entry point)
     UNKNOWN = "unknown"
 
 
