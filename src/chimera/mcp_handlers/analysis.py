@@ -402,6 +402,29 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error(result.get("error", "recover_cmp_string failed"))
         return mcpstate.json_reply(result)
 
+    # ── recover_data_bytes (byte array from inline immediate stores) ─────
+    if name == "recover_data_bytes":
+        from chimera.parsers.cmp_strings import recover_data_bytes
+
+        path = arguments.get("path")
+        if not path or not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        addr = arguments.get("address") or arguments.get("va")
+        if addr is None:
+            return mcpstate.error("recover_data_bytes needs address=<function VA> (hex).")
+        va = int(addr, 16) if isinstance(addr, str) else int(addr)
+        gt = arguments.get("gadget_target")
+        if isinstance(gt, str):
+            gt = int(gt, 16) if gt.lower().startswith("0x") else int(gt)
+        result = recover_data_bytes(
+            path, va,
+            max_bytes=int(arguments.get("max_bytes", 4096)),
+            max_stores=int(arguments.get("max_stores", 512)),
+            gadget_target=gt)
+        if not result.get("available"):
+            return mcpstate.error(result.get("error", "recover_data_bytes failed"))
+        return mcpstate.json_reply(result)
+
     # ── recover_cfg (deflatten computed-goto / MBA VMs) ──────────────────
     if name == "recover_cfg":
         from chimera.parsers.cfg_deflatten import recover_cfg
