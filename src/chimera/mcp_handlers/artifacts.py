@@ -106,7 +106,8 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         if not mcpstate.is_allowed_category(category):
             return mcpstate.error(
                 f"Category '{category}' is not in the allow-list. "
-                f"Allowed: {sorted(_ALLOWED_CACHE_CATEGORIES)} + prefixes {list(_ALLOWED_CACHE_PREFIXES)}"
+                f"Allowed: {sorted(mcpstate._ALLOWED_CACHE_CATEGORIES)} "
+                f"+ prefixes {list(mcpstate._ALLOWED_CACHE_PREFIXES)}"
             )
         data = engine.cache.get_json(mcpstate.current_model.binary.sha256, category)
         if data is None:
