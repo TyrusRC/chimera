@@ -444,10 +444,33 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             data, key,
             algo=str(arguments.get("algo", "rc4")),
             in_encoding=str(arguments.get("in_encoding", "raw")),
-            key_encoding=str(arguments.get("key_encoding", "raw")))
+            key_encoding=str(arguments.get("key_encoding", "raw")),
+            nonce=arguments.get("nonce") or b"",
+            nonce_encoding=str(arguments.get("nonce_encoding", "hex")),
+            counter=int(arguments.get("counter", 0)))
         if result.get("error"):
             return mcpstate.error(result["error"])
         return mcpstate.json_reply(result)
+
+    # ── rsa_recover (modpow from N/e/c, + optional d/p/q or Fermat) ──────
+    if name == "rsa_recover":
+        from chimera.rsatool import RsaError, parse_int, rsa_recover
+        base = str(arguments.get("base", "hex"))
+        try:
+            n = parse_int(arguments.get("n"), base=base)
+            c = parse_int(arguments.get("c"), base=base)
+            if n is None or c is None:
+                return mcpstate.error("rsa_recover needs n=<modulus> and c=<ciphertext>.")
+            r = rsa_recover(
+                n=n, c=c,
+                e=parse_int(arguments.get("e"), base=base) or 0x10001,
+                d=parse_int(arguments.get("d"), base=base),
+                p=parse_int(arguments.get("p"), base=base),
+                q=parse_int(arguments.get("q"), base=base),
+                factor=bool(arguments.get("factor", False)))
+        except RsaError as exc:
+            return mcpstate.error(str(exc))
+        return mcpstate.json_reply(r.to_dict())
 
     # ── recover_cfg (deflatten computed-goto / MBA VMs) ──────────────────
     if name == "recover_cfg":

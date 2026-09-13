@@ -309,6 +309,19 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   factor (an RNG seed, a counter), BRUTE it against a known-plaintext ciphertext
   in the capture (e.g. a fixed handshake word) — derive key per candidate, decrypt,
   compare. Once you have the key, `decrypt_blob` (MCP) / `chimera decrypt --algo
-  rc4|xor` is the cipher step (RC4/XOR, the common malware ciphers; decodes input
-  raw/hex/base64 and the key raw/hex/**utf16le** — utf16le covers a hex-digest key
-  taken as wide chars). Note the plaintext may itself be UTF-16LE.
+  rc4|xor|chacha20|salsa20` is the cipher step (RC4/XOR + the ChaCha20/Salsa20
+  stream ciphers — recognisable by the `expand 32-byte k` constant, and taking a
+  `nonce` + optional `counter`; decodes input raw/hex/base64 and the key
+  raw/hex/**utf16le** — utf16le covers a hex-digest key taken as wide chars).
+  Note the plaintext may itself be UTF-16LE.
+- **A file-encryptor whose key is RSA-wrapped: recover it with `rsa_recover`
+  (MCP) / `chimera rsa-solve`, don't hand-roll `pow()`.** Given N/e/c (+ optional
+  d or p,q) it decrypts, and with only N/e/c it computes m = c^e mod N — which
+  RETURNS THE PLAINTEXT when the encryptor "encrypted" with the private exponent
+  (a classic bug: writing the modinv back over the public exponent, so the stored
+  value is m^d and raising it to e inverts it with no private key). `factor=true`
+  runs Fermat for close primes. Mind endianness — a recovered symmetric key is
+  often little-endian; feed those bytes (key + nonce) to `decrypt_blob`. The
+  cleanest finish is often to let the ORIGINAL binary decrypt: rename so it
+  processes the file, breakpoint the symmetric-decrypt call, patch in the
+  recovered key (it doubles as its own decryptor for a stream cipher).

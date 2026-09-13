@@ -71,6 +71,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     qemuboot_cmd,
     reflutter_cmd,
     report_cmd,
+    rsasolve_cmd,
     sandbox_cmd,
     sdks_cmd,
     serve_cmd,
