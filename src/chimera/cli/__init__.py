@@ -34,6 +34,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     cmpstr_cmd,
     core_cmd,
     decompile_cmd,
+    decrypt_cmd,
     deflatten_cmd,
     devices_cmd,
     diff_cmd,

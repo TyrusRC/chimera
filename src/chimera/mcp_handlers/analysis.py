@@ -425,6 +425,23 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error(result.get("error", "recover_data_bytes failed"))
         return mcpstate.json_reply(result)
 
+    # ── decrypt_blob (RC4 / XOR symmetric decrypt with a known key) ──────
+    if name == "decrypt_blob":
+        from chimera.symcrypt import run as sym_run
+
+        data = arguments.get("data")
+        key = arguments.get("key")
+        if data is None or key is None:
+            return mcpstate.error("decrypt_blob needs data=<ciphertext> and key=<key>.")
+        result = sym_run(
+            data, key,
+            algo=str(arguments.get("algo", "rc4")),
+            in_encoding=str(arguments.get("in_encoding", "raw")),
+            key_encoding=str(arguments.get("key_encoding", "raw")))
+        if result.get("error"):
+            return mcpstate.error(result["error"])
+        return mcpstate.json_reply(result)
+
     # ── recover_cfg (deflatten computed-goto / MBA VMs) ──────────────────
     if name == "recover_cfg":
         from chimera.parsers.cfg_deflatten import recover_cfg

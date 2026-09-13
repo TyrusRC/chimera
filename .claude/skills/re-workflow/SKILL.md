@@ -274,4 +274,10 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   frequently FAILS (it depends on time/user/host/peer that differ on replay, so
   it exits or crashes before the crypto) and burns huge effort. Reach for the
   dynamic key-grab (Wine + `bp-dump`) only after confirming the key genuinely
-  can't be derived from the binary + capture.
+  can't be derived from the binary + capture. When the key derives from a small
+  factor (an RNG seed, a counter), BRUTE it against a known-plaintext ciphertext
+  in the capture (e.g. a fixed handshake word) — derive key per candidate, decrypt,
+  compare. Once you have the key, `decrypt_blob` (MCP) / `chimera decrypt --algo
+  rc4|xor` is the cipher step (RC4/XOR, the common malware ciphers; decodes input
+  raw/hex/base64 and the key raw/hex/**utf16le** — utf16le covers a hex-digest key
+  taken as wide chars). Note the plaintext may itself be UTF-16LE.
