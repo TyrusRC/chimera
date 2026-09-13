@@ -221,6 +221,20 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   metadata. (A named-pipe/socket "server" the managed side talks to is often the
   native half; the password/secret is usually visible in plaintext at the runtime
   `lstrcmpA`/`memcmp` if you'd rather catch it dynamically than reverse the check.)
+- **A ".NET" assembly may be CIL-OBFUSCATED — ILSpy/dnSpy output is PARTIAL, not
+  the whole program.** A method-body-encryption protector stores INVALID CIL in
+  the real methods; at runtime the invalid body throws `InvalidProgramException`,
+  a readable stub catches exactly that, recovers the faulty method's token from
+  the exception's `StackTrace`, decrypts the real CIL (often RC4/XOR'd, sometimes
+  in a non-standard PE section named after a method hash) and rebuilds it as a
+  `DynamicMethod` (`DynamicILInfo.SetCode`). The decompiler silently shows only
+  the ~half of methods with valid CIL — so DON'T trust a clean-looking managed
+  decompile. `detect_protections` now reports `dotnet_obfuscation` when it sees
+  this signature; recover the real bodies per-sample (AsmResolver/dnlib) or
+  dynamically (run it and dump the reconstructed body), and decrypt encrypted
+  bodies from the high-entropy sections with `decrypt_blob`. Full deobfuscation
+  is bespoke per obfuscator — the intended solve is often to drive the sample
+  and let it decrypt the final payload itself.
 - **A UEFI firmware image** (OVMF/BIOS/SPI flash — a `_FVH` volume, e.g. a
   bootkit or a boot-stage CTF) is NOT an ELF: `analyze` now detects it and points
   to `fw_extract` (MCP) / `chimera fw-extract`, which carves the firmware volumes

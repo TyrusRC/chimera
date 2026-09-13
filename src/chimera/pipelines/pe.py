@@ -486,6 +486,7 @@ async def analyze_pe(
     # -----------------------------------------------------------------------
     # Phase 12: ILSpy (only for DOTNET_PE)
     # -----------------------------------------------------------------------
+    dotnet_obf = None
     if is_dotnet and not getattr(config, "skip_ilspy", False):
         ilspy = registry.get("ilspy")
         if not (ilspy and ilspy.is_available()):
@@ -521,6 +522,17 @@ async def analyze_pe(
                 n_t, n_m, n_s = ingest_ilspy_sources(model, ilspy_output)
                 logger.info("ilspy: %d files, %d types, %d methods, %d strings",
                             len(ilspy_result.get("types", [])), n_t, n_m, n_s)
+                # ILSpy silently decompiles only the valid-CIL methods, so scan
+                # its output for the method-body-encryption signature and warn
+                # when the assembly is CIL-obfuscated (the real logic is hidden).
+                from chimera.dotnet.obfuscation import scan_dotnet_obfuscation
+                dotnet_obf = scan_dotnet_obfuscation(
+                    t.get("decompiled") for t in ilspy_result.get("types", []))
+                if dotnet_obf.detected:
+                    cache.put_json(sha, "dotnet_obfuscation", dotnet_obf.to_dict())
+                    logger.warning("ilspy: .NET method-body encryption detected "
+                                   "(%s) — decompiled C# is PARTIAL",
+                                   ", ".join(dotnet_obf.signals))
             except Exception as exc:
                 logger.warning("ilspy phase failed: %s", exc)
                 skipped_phases.append("ilspy:error")
@@ -559,6 +571,8 @@ async def analyze_pe(
         "is_mixed_mode": is_mixed_mode,
         "dotnet_native_entry_rva": (hex(header.dotnet_native_entry_rva)
                                     if header and header.dotnet_native_entry_rva else None),
+        "dotnet_obfuscation": (dotnet_obf.technique
+                               if dotnet_obf and dotnet_obf.detected else None),
         "function_count": len(model.functions),
         "string_count": len(model.get_strings()),
         "import_count": len(model.imports),
