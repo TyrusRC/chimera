@@ -63,7 +63,6 @@ class GhidraAdapter(BackendAdapter):
         return str(path)
 
     async def analyze(self, binary_path: str, options: dict) -> dict:
-        mode = options.get("mode", "decompile")
         project_dir = options.get("project_dir")
         if project_dir is None:
             project_dir = tempfile.mkdtemp(prefix="chimera_ghidra_")

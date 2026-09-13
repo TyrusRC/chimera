@@ -19,7 +19,6 @@ Pure Python, no dependencies. Read-only.
 """
 from __future__ import annotations
 
-import glob
 import logging
 
 logger = logging.getLogger(__name__)

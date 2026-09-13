@@ -163,7 +163,6 @@ def _block_indegrees(blocks: list[list[dict]]) -> dict[int, int]:
     """For each block (keyed by its first op's offset), count incoming edges."""
     if not blocks:
         return {}
-    block_starts = {b[0].get("offset"): i for i, b in enumerate(blocks) if b}
     indeg: dict[int, int] = {b[0].get("offset"): 0 for b in blocks if b}
     for i, block in enumerate(blocks):
         if not block:

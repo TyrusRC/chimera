@@ -25,7 +25,6 @@ from pathlib import Path
 
 from chimera.unpacking.pymagic import (
     PYC_MAGIC as _PYC_MAGIC,
-    pyc_header as _pyc_header,
     reconstruct_pyc as _reconstruct_pyc,
 )
 

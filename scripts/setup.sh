@@ -9,7 +9,8 @@
 #
 # Native mode installs `pip install -e ".[dev]"` into .venv, plus (opt-in,
 # asks first) the apt-installable subset of external tools: radare2,
-# jadx, upx-ucl, gdb, qemu-user. Every other external tool (Ghidra, ilspycmd, capa,
+# jadx, upx-ucl, gdb, qemu-user, nodejs/npm, and then the npm-only webcrack
+# (the js-deobf backend). Every other external tool (Ghidra, ilspycmd, capa,
 # frida, ...) has no single correct package across distros — after this
 # script runs, `chimera doctor` reports exactly what's still missing and
 # how to install it.
@@ -113,15 +114,29 @@ if command -v apt-get >/dev/null; then
     # only way to *execute* an Android/ARM crackme here, and `qemu-aarch64
     # -cpu max` is what emulates ARMv9 FEAT_MTE/PAuth/BTI so a tag-check fault
     # actually fires instead of silently passing.
-    if confirm "Install apt packages (radare2, jadx, upx-ucl, gdb, qemu-user) via sudo apt-get?"; then
+    # nodejs/npm gate the JavaScript path: webcrack backs `chimera js-deobf`
+    # (and the node-extract → js-deobf flow that pulls JS out of a nexe / Node
+    # SEA / pkg binary). Skip if you manage node with nvm — its node wins $PATH.
+    if confirm "Install apt packages (radare2, jadx, upx-ucl, gdb, qemu-user, nodejs, npm) via sudo apt-get?"; then
         sudo apt-get update -qq
-        sudo apt-get install -y radare2 jadx upx-ucl gdb qemu-user qemu-user-static
+        sudo apt-get install -y radare2 jadx upx-ucl gdb qemu-user qemu-user-static nodejs npm
         echo "apt packages installed"
     else
         echo "Skipped apt packages — install manually, or re-run with --yes"
     fi
 else
     echo "apt-get not found — skipping system packages"
+fi
+
+# webcrack is the JS-deobfuscation backend (npm-only, no apt package). Best
+# effort — a global npm install needs network and may need sudo/npm-prefix.
+if command -v npm >/dev/null && ! command -v webcrack >/dev/null; then
+    if confirm "Install the JS deobfuscator webcrack globally (npm i -g webcrack)?"; then
+        npm install -g webcrack && echo "webcrack installed" \
+            || echo "webcrack install failed — run 'npm i -g webcrack' manually (may need sudo)"
+    else
+        echo "Skipped webcrack — install with 'npm i -g webcrack' when you need js-deobf"
+    fi
 fi
 
 echo

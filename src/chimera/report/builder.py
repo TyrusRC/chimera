@@ -8,10 +8,8 @@ truth — HTML is a presentation layer over it.
 
 from __future__ import annotations
 
-import html
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from chimera.core.cache import AnalysisCache

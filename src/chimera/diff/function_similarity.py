@@ -30,7 +30,7 @@ The CLI exposes the knob so analysts can dial it per investigation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Iterable, Protocol
+from typing import Iterable, Protocol
 
 
 SHINGLE_SIZE = 4

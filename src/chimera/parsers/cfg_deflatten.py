@@ -176,7 +176,7 @@ def recover_cfg(path: str, entry: int | str, *, max_blocks: int = 4000,
             return None
         return uc.reg_read(REG_BY_NAME.get(jmp_reg, UR.UC_X86_REG_RAX))
 
-    ZF, SF, OF = 1 << 6, 1 << 7, 1 << 11
+    ZF, SF = 1 << 6, 1 << 7
     BASE_FLAGS = 0x202
 
     def disasm_block(start: int):

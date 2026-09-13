@@ -276,7 +276,6 @@ def _fallback_split(js: str, max_col: int = 200) -> str:
             out.append(line)
             continue
         cur = []
-        depth = 0
         for ch in line:
             cur.append(ch)
             if ch in "\"'`":
