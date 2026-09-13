@@ -18,6 +18,23 @@ def test_mcp_read_cache_rejects_unknown_category():
     assert m.is_allowed_category("ghidra_main")
 
 
+async def test_read_cache_disallowed_category_returns_error_not_nameerror():
+    # Regression: the read_cache error branch referenced _ALLOWED_CACHE_* names
+    # that live in mcp_session but were never imported into the artifacts
+    # handler, so a disallowed category raised NameError instead of the
+    # intended allow-list error message.
+    import chimera.mcp_session as m
+    from chimera.mcp_handlers import artifacts
+
+    m.current_model = object()          # make require_model() pass
+    try:
+        res = await artifacts.dispatch("read_cache", {"category": "definitely_not_allowed"})
+    finally:
+        m.current_model = None
+    assert res is not None
+    assert "allow-list" in res[0].text
+
+
 def test_frida_adapter_exposes_active_sessions():
     from chimera.adapters.frida_adapter import FridaAdapter
     adapter = FridaAdapter()

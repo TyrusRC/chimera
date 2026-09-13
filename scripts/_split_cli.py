@@ -16,7 +16,6 @@ The helper is destructive — back up before running (we use git).
 from __future__ import annotations
 
 import ast
-import textwrap
 from collections import defaultdict
 from pathlib import Path
 
