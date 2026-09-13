@@ -53,7 +53,7 @@ def cmp_string(path: str, addr: str, max_bytes: int, min_run: int, gap: int, as_
               help="Bytes of code to disassemble from the VA.")
 @click.option("--gadget-target", "gadget_target", default=None, metavar="BYTE",
               help="Invert an additive gadget: input[i]=(target-data[i])&0xff, "
-                   "e.g. 0xC3 for a `ret` (darn_mice-style byte=data[i]+input[i] exec).")
+                   "e.g. 0xC3 for a `ret` (byte=data[i]+input[i] exec-gadget).")
 @click.option("--json", "as_json", is_flag=True, help="Emit the full result as JSON.")
 def data_bytes(path: str, addr: str, max_bytes: int, gadget_target: str | None, as_json: bool):
     """Reassemble a byte array built by inline `mov [buf+i], imm` stores at --addr."""

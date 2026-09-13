@@ -1,4 +1,4 @@
-"""Mergen — VMProtect / Themida devirtualizer (DEF CON 33, 2025).
+"""Mergen — VMProtect / Themida devirtualizer.
 
 Mergen (NaC-L/Mergen, MIT) is an LLVM-IR-based devirtualizer for VM-
 protected regions in commercial packers like VMProtect and Themida.
@@ -22,7 +22,7 @@ when VMP/Themida is detected — analysts trigger it explicitly via
 heavy lifting only runs when wanted.
 
 Reference:
-  https://github.com/NaC-L/Mergen — MIT, DEF CON 33 (Aug 2025)
+  https://github.com/NaC-L/Mergen — MIT
 """
 
 from __future__ import annotations

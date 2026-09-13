@@ -1,6 +1,6 @@
 """Recover the real control-flow graph of a computed-goto / MBA-obfuscated function.
 
-Flattening compilers (and hand-rolled VM obfuscators like Flare-On 12 ch8's Qt
+Flattening compilers (and hand-rolled VM obfuscators, such as a Qt GUI
 authenticator) replace every branch with a block that *computes* its successor
 address into a register via MBA arithmetic + data-blob reads and ends in a bare
 `jmp rax`. A linear disassembler sees one giant basic block with an opaque

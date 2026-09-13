@@ -46,7 +46,7 @@ context bloat. **Breadth before depth. Name the path before drilling.**
    for `recover_cfg` (MCP) / `chimera deflatten` — it liveness-backtracks each
    block's footer expression and emulates it (whole image mapped) to resolve the
    computed successors, returning the real edges + a DOT (this is the Ghidra-
-   script deflattening from Flare-On-style write-ups, in chimera, no Ghidra);
+   script deflattening technique from public write-ups, in chimera, no Ghidra);
    `emulate_function full_image=true` / `chimera emulate --full-image` runs an
    obfuscated routine end-to-end (maps the whole PE, stubs import/Qt/syscall
    calls, lazily maps faults, MS-x64 ABI, captures printable writes) when the
@@ -127,7 +127,7 @@ argv and let the solver invert the constraints); when a check is a straight
 ## Recipe: control-flow-flattened / MBA / computed-goto VM
 
 When a function is a wall of pointer-encrypted calls + MBA arithmetic ending in
-`jmp rax` (Flare-On-style obfuscation), do NOT hand-trace it and do NOT try to
+`jmp rax` (this VM-obfuscation style), do NOT hand-trace it and do NOT try to
 force a single branch in an emulator (the dispatch is keyed on the exact state,
 so a forced/foreign value derails into garbage). Instead:
 
@@ -162,14 +162,14 @@ method. For VMProtect/Themida, cluster 20–30 handler samples by operand patter
 ## Recipe: generated obfuscated-function/DLL swarm (n-funcs / matryoshka verifier)
 A binary with thousands of near-identical generated functions (or embedded
 DLLs/resources), each doing one small obfuscated op, composed into a giant
-verifier (DEFCON `nfuncs`/`ncuts`, Flare-On "10000"). Do NOT try to emulate the
+verifier (the "thousands of tiny generated functions" pattern). Do NOT try to emulate the
 whole thing (one op can be millions of instructions — full run ~10^13):
 1. **Blackbox one primitive.** If a self-contained routine (decompressor,
    transform) has no external calls, don't identify its algorithm — copy/emulate
    it. `emulate_function full_image=true` with **`input_buffers`** (inject the
    input blob at a scratch VA, point an arg reg at it, `read_back` the output) is
-   a buffer-in/out oracle that recovers its exact output. (This peeled the
-   Flare-On "10000" custom decompressor and modelled its transforms.)
+   a buffer-in/out oracle that recovers its exact output. (This peels a
+   custom decompressor and models its transforms.)
 2. **Recognize the template's algebra.** The swarm is generated from a few
    templates differing only in constants. Emulate ONE instance on chosen inputs
    to identify the op — substitution / permutation / **modular exponentiation

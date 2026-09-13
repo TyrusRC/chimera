@@ -9,8 +9,7 @@ with flexible decoding on both sides:
 
 * input encoding — raw / hex / base64 (traffic is usually base64 or hex),
 * key encoding — raw / hex / **utf16le** (a key that is a hex-DIGEST string
-  encoded as UTF-16LE, e.g. Flare-On "T8": `md5("FO9"+seed).hexdigest()` taken as
-  UTF-16LE bytes).
+  encoded as UTF-16LE — e.g. an md5/SHA hexdigest string taken as UTF-16LE bytes).
 
 Recovering the key itself (a brute-forced RNG seed, a KDF) is target-specific and
 left to the analyst; this is the reusable cipher step.
@@ -124,7 +123,7 @@ def run(data: str | bytes, key: str | bytes, *, algo: str = "rc4",
     """Decode + decrypt, returning the bytes plus readable previews.
 
     Also surfaces a UTF-16LE decode of the plaintext, since Windows malware
-    (and T8) frequently keeps the plaintext as wide chars. `nonce`/`counter`
+    frequently keeps the plaintext as wide chars. `nonce`/`counter`
     apply to the stream ciphers (chacha20/salsa20); the nonce decodes with the
     same raw/hex/base64 scheme as the ciphertext.
     """
