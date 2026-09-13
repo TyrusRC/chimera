@@ -438,6 +438,16 @@ def all_tools() -> list[Tool]:
                  "gadget_target": {"type": "string", "description": "Invert an additive gadget: return (target - data[i]) & 0xff, e.g. \"0xC3\" for ret."},
              }, "required": ["path", "address"]}),
 
+        Tool(name="decrypt_blob",
+             description="Decrypt a captured / embedded blob with a KNOWN key using a common symmetric cipher — RC4 or XOR (single or multi-byte). The reusable last step of a network-capture RE challenge once the key is recovered, and for malware config/traffic decryption (RC4 and XOR are among the most common such ciphers); chimera otherwise only FOUND AES keys (find_aes_keys) and hid an RC4 inside the PDF decryptor. Decodes the ciphertext from raw/hex/base64 and the key from raw/hex/utf16le — utf16le covers a key that is a hex-DIGEST string encoded as UTF-16LE (Flare-On 'T8': md5(\"FO9\"+seed).hexdigest() taken as UTF-16LE). Returns the plaintext hex, a printable preview, and best-effort UTF-8 / UTF-16LE text (Windows malware often keeps wide-char plaintext). Recovering the key itself (an RNG seed brute-force, a KDF) is target-specific and not done here.",
+             inputSchema={"type": "object", "properties": {
+                 "data": {"type": "string", "description": "Ciphertext (encoding set by in_encoding)."},
+                 "key": {"type": "string", "description": "Key (encoding set by key_encoding)."},
+                 "algo": {"type": "string", "enum": ["rc4", "xor"], "default": "rc4", "description": "Cipher."},
+                 "in_encoding": {"type": "string", "enum": ["raw", "hex", "base64"], "default": "raw", "description": "How `data` is encoded."},
+                 "key_encoding": {"type": "string", "enum": ["raw", "hex", "utf16le"], "default": "raw", "description": "How `key` is encoded (utf16le = a hex-digest string as UTF-16LE)."},
+             }, "required": ["data", "key"]}),
+
         Tool(name="symexec",
              description="Symbolic execution (angr): find the INPUT that drives the binary to a target — a win address (`find`) or a state whose stdout contains a string (`find_stdout`), while avoiding failure addresses/strings. Declare the symbolic input as `stdin_len` bytes of stdin and/or `sym_argv` (byte-lengths of symbolic argv entries). Returns the concrete stdin/argv that reaches it. Use for crackme/keygen/serial checks where pathfind (needs a recovered FSM) and emulate_function (runs one chosen path) can't discover an unknown input. Needs angr (pip install angr); bounded by timeout + state cap.",
              inputSchema={"type": "object", "properties": {
