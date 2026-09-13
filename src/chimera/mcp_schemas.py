@@ -446,14 +446,30 @@ def all_tools() -> list[Tool]:
              }, "required": ["path", "address"]}),
 
         Tool(name="decrypt_blob",
-             description="Decrypt a captured / embedded blob with a KNOWN key using a common symmetric cipher — RC4 or XOR (single or multi-byte). The reusable last step of a network-capture RE challenge once the key is recovered, and for malware config/traffic decryption (RC4 and XOR are among the most common such ciphers); chimera otherwise only FOUND AES keys (find_aes_keys) and hid an RC4 inside the PDF decryptor. Decodes the ciphertext from raw/hex/base64 and the key from raw/hex/utf16le — utf16le covers a key that is a hex-DIGEST string encoded as UTF-16LE (Flare-On 'T8': md5(\"FO9\"+seed).hexdigest() taken as UTF-16LE). Returns the plaintext hex, a printable preview, and best-effort UTF-8 / UTF-16LE text (Windows malware often keeps wide-char plaintext). Recovering the key itself (an RNG seed brute-force, a KDF) is target-specific and not done here.",
+             description="Decrypt a captured / embedded blob with a KNOWN key using a common symmetric cipher — RC4, XOR (single or multi-byte), or the ChaCha20 / Salsa20 stream ciphers. The reusable last step of a network-capture or file-encryptor RE challenge once the key is recovered, and for malware config/traffic decryption; chimera otherwise only FOUND AES keys (find_aes_keys) and hid an RC4 inside the PDF decryptor. ChaCha20/Salsa20 (recognisable by the \"expand 32-byte k\" constant) take a `nonce` (ChaCha20: 8 or 12 bytes, 12 = RFC 7539; Salsa20: 8 bytes) and an optional initial block `counter` (the `in[12]` state word). Decodes the ciphertext + nonce from raw/hex/base64 and the key from raw/hex/utf16le (utf16le = a hex-DIGEST string as UTF-16LE). Returns the plaintext hex, a printable preview, and best-effort UTF-8 / UTF-16LE text (Windows malware often keeps wide-char plaintext). Recovering the key itself (an RNG-seed brute-force, a KDF, or an RSA decrypt — see rsa_recover) is target-specific and not done here.",
              inputSchema={"type": "object", "properties": {
                  "data": {"type": "string", "description": "Ciphertext (encoding set by in_encoding)."},
                  "key": {"type": "string", "description": "Key (encoding set by key_encoding)."},
-                 "algo": {"type": "string", "enum": ["rc4", "xor"], "default": "rc4", "description": "Cipher."},
+                 "algo": {"type": "string", "enum": ["rc4", "xor", "chacha20", "salsa20"], "default": "rc4", "description": "Cipher."},
                  "in_encoding": {"type": "string", "enum": ["raw", "hex", "base64"], "default": "raw", "description": "How `data` is encoded."},
                  "key_encoding": {"type": "string", "enum": ["raw", "hex", "utf16le"], "default": "raw", "description": "How `key` is encoded (utf16le = a hex-digest string as UTF-16LE)."},
+                 "nonce": {"type": "string", "description": "Nonce for chacha20/salsa20 (decoded per nonce_encoding)."},
+                 "nonce_encoding": {"type": "string", "enum": ["raw", "hex", "base64"], "default": "hex", "description": "How `nonce` is encoded."},
+                 "counter": {"type": "integer", "default": 0, "description": "Initial ChaCha20 block counter (in[12] state word)."},
              }, "required": ["data", "key"]}),
+
+        Tool(name="rsa_recover",
+             description="Recover an RSA plaintext from the material an encryptor leaves behind — a modulus N, ciphertext c, and public exponent e (default 0x10001), optionally a private exponent d or the primes p,q. With d (or p,q → derive d) it decrypts m = c^d mod N. With only N/e/c it computes m = c^e mod N, which returns the plaintext when the encryptor 'encrypted' with the PRIVATE exponent — a classic bug where the modinv is written back over the public exponent, so the stored value is m^d and raising it to e recovers m with no private key (Flare-On 'encryptor') — and otherwise verifies a signature. `factor=true` tries Fermat factorization of N (only works when the primes are close). Returns m as int/hex and as big- AND little-endian bytes with text previews (mind the endianness — a recovered symmetric key is often little-endian; feed it to decrypt_blob). Focused: modpow + Fermat only, no Wiener/common-modulus/factordb (use RsaCtfTool for those). No network.",
+             inputSchema={"type": "object", "properties": {
+                 "n": {"type": "string", "description": "Modulus N (hex by default; see base)."},
+                 "c": {"type": "string", "description": "Ciphertext c."},
+                 "e": {"type": "string", "description": "Public exponent e (default 0x10001)."},
+                 "d": {"type": "string", "description": "Private exponent d, if known."},
+                 "p": {"type": "string", "description": "Prime p, if known."},
+                 "q": {"type": "string", "description": "Prime q, if known."},
+                 "base": {"type": "string", "enum": ["hex", "dec", "b64"], "default": "hex", "description": "How bare (no-0x) numeric inputs are read."},
+                 "factor": {"type": "boolean", "default": False, "description": "Attempt Fermat factorization of N (close primes)."},
+             }, "required": ["n", "c"]}),
 
         Tool(name="symexec",
              description="Symbolic execution (angr): find the INPUT that drives the binary to a target — a win address (`find`) or a state whose stdout contains a string (`find_stdout`), while avoiding failure addresses/strings. Declare the symbolic input as `stdin_len` bytes of stdin and/or `sym_argv` (byte-lengths of symbolic argv entries). Returns the concrete stdin/argv that reaches it. Use for crackme/keygen/serial checks where pathfind (needs a recovered FSM) and emulate_function (runs one chosen path) can't discover an unknown input. Needs angr (pip install angr); bounded by timeout + state cap.",

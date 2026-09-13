@@ -57,3 +57,54 @@ def test_t8_rc4_decrypts_captured_ahoy():
 def test_run_reports_error_dict_on_bad_input():
     r = symcrypt.run("nothex!!", "k", algo="rc4", in_encoding="hex")
     assert r["available"] and "error" in r
+
+
+# --- ChaCha20 / Salsa20 (ch9 encryptor) --------------------------------------
+
+def test_chacha20_rfc8439_test_vector():
+    """RFC 8439 §2.4.2: key = 00..1f, nonce = 00 00 00 00 00 00 00 4a 00 00 00 00,
+    counter = 1, over the known 'Ladies and Gentlemen…' plaintext."""
+    key = bytes(range(32))
+    nonce = bytes.fromhex("000000000000004a00000000")
+    plaintext = (b"Ladies and Gentlemen of the class of '99: If I could offer you "
+                 b"only one tip for the future, sunscreen would be it.")
+    ct = decrypt(plaintext, key, "chacha20", nonce=nonce, counter=1)
+    assert ct[:8].hex() == "6e2e359a2568f980"        # RFC 8439 keystream start
+    # Involutive: decrypting the ciphertext returns the plaintext.
+    assert decrypt(ct, key, "chacha20", nonce=nonce, counter=1) == plaintext
+
+
+def test_chacha20_recovers_flag_after_rsa_key(tmp_path):
+    """The ch9 last mile: given the RSA-recovered 32-byte key + 12-byte nonce,
+    ChaCha20 decrypts the file body. Round-trip with a known key/nonce."""
+    key = bytes.fromhex("01b097a12a39fc420524a2e775a743c928d5a550b1879aa8b415571e38329b98")
+    nonce = bytes.fromhex("0249fc0fc83340fe4d928f95")
+    flag = b"R$A_$16n1n6_15_0pp0$17e_0f_3ncryp710n@flare-on.com"
+    ct = decrypt(flag, key, "chacha20", nonce=nonce)     # counter defaults to 0
+    assert decrypt(ct, key, "chacha20", nonce=nonce) == flag
+
+
+def test_chacha20_via_run_with_hex_nonce():
+    key = bytes(range(32))
+    nonce = bytes.fromhex("000000000000004a00000000")
+    ct = decrypt(b"hello world", key, "chacha20", nonce=nonce, counter=1)
+    r = run(ct.hex(), key.hex(), algo="chacha20", in_encoding="hex",
+            key_encoding="hex", nonce=nonce.hex(), nonce_encoding="hex", counter=1)
+    assert r["text_utf8"] == "hello world"
+
+
+def test_salsa20_round_trip():
+    key = bytes(range(32))
+    nonce = bytes.fromhex("0011223344556677")   # salsa20 nonce = 8 bytes
+    ct = decrypt(b"secret bytes", key, "salsa20", nonce=nonce)
+    assert decrypt(ct, key, "salsa20", nonce=nonce) == b"secret bytes"
+
+
+def test_chacha20_bad_key_length_errors():
+    with pytest.raises(SymCryptError):
+        decrypt(b"x", b"shortkey", "chacha20", nonce=bytes(12))
+
+
+def test_counter_rejected_for_salsa20():
+    with pytest.raises(SymCryptError):
+        decrypt(b"x", bytes(32), "salsa20", nonce=bytes(8), counter=1)

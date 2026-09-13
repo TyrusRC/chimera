@@ -22,7 +22,8 @@ import binascii
 
 from chimera.unpacking.pdfcrypt import rc4 as _rc4
 
-ALGOS = ("rc4", "xor")
+ALGOS = ("rc4", "xor", "chacha20", "salsa20")
+_STREAM_ALGOS = ("chacha20", "salsa20")   # need a nonce (+ optional counter)
 _INPUT_ENCODINGS = ("raw", "hex", "base64")
 _KEY_ENCODINGS = ("raw", "hex", "utf16le")
 
@@ -37,14 +38,47 @@ def _xor(data: bytes, key: bytes) -> bytes:
     return bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
 
 
-def decrypt(data: bytes, key: bytes, algo: str = "rc4") -> bytes:
-    """Apply `algo` (rc4 / xor) — both are involutive, so decrypt == encrypt."""
+def _chacha_salsa(data: bytes, key: bytes, nonce: bytes, counter: int, algo: str) -> bytes:
+    """ChaCha20 / Salsa20 keystream XOR (involutive). Backed by pycryptodome.
+
+    ChaCha20 takes an 8- or 12-byte nonce (12 = RFC 7539, 32-bit block counter);
+    Salsa20 takes an 8-byte nonce. `counter` is the initial block counter (the
+    `in[12]` word in a hand-rolled ChaCha state) — applied via a keystream seek.
+    """
+    try:
+        if algo == "chacha20":
+            from Crypto.Cipher import ChaCha20 as _C
+        else:
+            from Crypto.Cipher import Salsa20 as _C
+    except ImportError as exc:  # pycryptodome is a hard dep, but fail loud if missing
+        raise SymCryptError(f"{algo} needs pycryptodome: {exc}") from exc
+    if len(key) not in (16, 32):
+        raise SymCryptError(f"{algo} key must be 16 or 32 bytes, got {len(key)}")
+    try:
+        cipher = _C.new(key=key, nonce=nonce)
+    except ValueError as exc:
+        raise SymCryptError(f"{algo} nonce invalid: {exc}") from exc
+    if counter:
+        if algo != "chacha20":
+            raise SymCryptError("counter is only supported for chacha20")
+        cipher.seek(counter * 64)   # skip `counter` 64-byte keystream blocks
+    return cipher.decrypt(data)
+
+
+def decrypt(data: bytes, key: bytes, algo: str = "rc4", *,
+            nonce: bytes = b"", counter: int = 0) -> bytes:
+    """Apply `algo` — all supported ciphers are involutive, so decrypt == encrypt.
+
+    rc4 / xor ignore `nonce`/`counter`; chacha20 / salsa20 require a `nonce`.
+    """
     if algo == "rc4":
         if not key:
             raise SymCryptError("empty RC4 key")
         return _rc4(key, data)
     if algo == "xor":
         return _xor(data, key)
+    if algo in _STREAM_ALGOS:
+        return _chacha_salsa(data, key, nonce, counter, algo)
     raise SymCryptError(f"unknown algo {algo!r}; supported: {', '.join(ALGOS)}")
 
 
@@ -84,16 +118,21 @@ def _printable(b: bytes) -> str:
 
 
 def run(data: str | bytes, key: str | bytes, *, algo: str = "rc4",
-        in_encoding: str = "raw", key_encoding: str = "raw") -> dict:
+        in_encoding: str = "raw", key_encoding: str = "raw",
+        nonce: str | bytes = b"", nonce_encoding: str = "hex",
+        counter: int = 0) -> dict:
     """Decode + decrypt, returning the bytes plus readable previews.
 
     Also surfaces a UTF-16LE decode of the plaintext, since Windows malware
-    (and T8) frequently keeps the plaintext as wide chars.
+    (and T8) frequently keeps the plaintext as wide chars. `nonce`/`counter`
+    apply to the stream ciphers (chacha20/salsa20); the nonce decodes with the
+    same raw/hex/base64 scheme as the ciphertext.
     """
     try:
         raw = decode_input(data, in_encoding)
         k = decode_key(key, key_encoding)
-        out = decrypt(raw, k, algo)
+        n = decode_input(nonce, nonce_encoding) if nonce else b""
+        out = decrypt(raw, k, algo, nonce=n, counter=counter)
     except SymCryptError as exc:
         return {"available": True, "error": str(exc)}
 
