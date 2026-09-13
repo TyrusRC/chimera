@@ -9,10 +9,15 @@ is the disassembler's job.
 from __future__ import annotations
 
 import math
+import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pefile
+
+# COR20 / IMAGE_COR20_HEADER (.NET runtime header at DataDirectory[14]) flags.
+_COMIMAGE_FLAGS_ILONLY = 0x01
+_COMIMAGE_FLAGS_NATIVE_ENTRYPOINT = 0x10
 
 
 _MACHINE_MAP = {
@@ -55,6 +60,29 @@ class PEHeaderInfo:
     has_resources: bool
     has_authenticode_signature: bool
     debug_directory_count: int
+    # Mixed-mode (C++/CLI) .NET: IL_ONLY is clear in the COR20 flags. When the
+    # NATIVE_ENTRYPOINT flag is set the COR20 EntryPoint field is an RVA to native
+    # code (a native DllMain), NOT a managed token — the real logic is native.
+    dotnet_mixed_mode: bool = False
+    dotnet_native_entry_rva: int | None = None
+
+
+def _parse_cor20_flags(pe, clr_dir) -> tuple[bool, int | None]:
+    """Read the COR20 header's Flags + EntryPoint. Returns
+    (is_mixed_mode, native_entry_rva).
+
+    IMAGE_COR20_HEADER layout: cb(4) MajorRV(2) MinorRV(2) MetaData(8)
+    Flags(4)@16 EntryPointToken/RVA(4)@20. IL_ONLY clear ⇒ mixed-mode (C++/CLI);
+    NATIVE_ENTRYPOINT set ⇒ the EntryPoint field is a native-code RVA.
+    """
+    try:
+        off = pe.get_offset_from_rva(clr_dir.VirtualAddress)
+        flags, entry = struct.unpack_from("<II", pe.__data__, off + 16)
+    except Exception:
+        return False, None
+    mixed = not (flags & _COMIMAGE_FLAGS_ILONLY)
+    native_rva = entry if (flags & _COMIMAGE_FLAGS_NATIVE_ENTRYPOINT) else None
+    return mixed, native_rva
 
 
 def _shannon_entropy(data: bytes) -> float:
@@ -150,6 +178,7 @@ def parse_pe(path: Path) -> PEHeaderInfo:
         # CLR header lives at DataDirectory[14]
         clr = pe.OPTIONAL_HEADER.DATA_DIRECTORY[14]
         is_dotnet = clr.VirtualAddress != 0 and clr.Size != 0
+        dotnet_mixed_mode, dotnet_native_entry_rva = _parse_cor20_flags(pe, clr) if is_dotnet else (False, None)
 
         sections: list[PESection] = []
         for s in pe.sections:
@@ -213,6 +242,8 @@ def parse_pe(path: Path) -> PEHeaderInfo:
             exports=exports,
             has_tls_callbacks=has_tls_callbacks,
             has_resources=has_resources,
+            dotnet_mixed_mode=dotnet_mixed_mode,
+            dotnet_native_entry_rva=dotnet_native_entry_rva,
             has_authenticode_signature=has_authenticode_signature,
             debug_directory_count=debug_count,
         )

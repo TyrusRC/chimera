@@ -212,6 +212,15 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   go.buildinfo/pclntab), and **.NET NativeAOT** (framework `dotnet-aot`, via the
   `.managed`+`hydrated` sections — native, no IL, expect a managed crypto stack
   like BouncyCastle); watch for the ones still unlabelled (Delphi, Rust, Nim).
+- **A ".NET" DLL/EXE may be MIXED-MODE (C++/CLI) — the real logic is native.**
+  If the COR20 header's IL_ONLY flag is clear (kernel32 imports next to mscoree,
+  a native entry point), `EntryPointToken` is an RVA to native code (a native
+  DllMain), invisible to dnSpy/ILSpy. chimera labels this framework `dotnet-mixed`,
+  reports `dotnet_native_entry_rva`, and runs BOTH native deep analysis (Ghidra/
+  FLOSS) AND ILSpy — so decompile the native entry, don't stop at the managed
+  metadata. (A named-pipe/socket "server" the managed side talks to is often the
+  native half; the password/secret is usually visible in plaintext at the runtime
+  `lstrcmpA`/`memcmp` if you'd rather catch it dynamically than reverse the check.)
 - **A UEFI firmware image** (OVMF/BIOS/SPI flash — a `_FVH` volume, e.g. a
   bootkit or a boot-stage CTF) is NOT an ELF: `analyze` now detects it and points
   to `fw_extract` (MCP) / `chimera fw-extract`, which carves the firmware volumes

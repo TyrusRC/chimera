@@ -142,6 +142,9 @@ async def analyze_pe(
             "machine": header.machine,
             "is_dll": header.is_dll,
             "is_dotnet": header.is_dotnet,
+            "dotnet_mixed_mode": header.dotnet_mixed_mode,
+            "dotnet_native_entry_rva": (hex(header.dotnet_native_entry_rva)
+                                        if header.dotnet_native_entry_rva else None),
             "pe_class": header.pe_class,
             "timestamp": header.timestamp,
             "entry_point": hex(header.entry_point),
@@ -159,11 +162,30 @@ async def analyze_pe(
     # -----------------------------------------------------------------------
     # Phase 4: CLR detection — set framework
     # -----------------------------------------------------------------------
+    is_mixed_mode = bool(header is not None and header.dotnet_mixed_mode)
     if is_dotnet or (header is not None and header.is_dotnet):
         is_dotnet = True
-        # No Framework.DOTNET exists yet; use NATIVE as placeholder.
-        binary.framework = Framework.NATIVE
-        logger.info("CLR/.NET PE detected — routing to ILSpy; Ghidra/FLOSS skipped")
+        if is_mixed_mode:
+            # Mixed-mode C++/CLI: the DLL has real NATIVE code (a native DllMain /
+            # native entry point) that a .NET-only decompiler like dnSpy/ILSpy does
+            # NOT show. Run BOTH native deep analysis and ILSpy, and signpost the
+            # native entry so the analyst doesn't stop at the managed metadata.
+            binary.framework = Framework.DOTNET_MIXED
+            ep_rva = header.dotnet_native_entry_rva
+            cache.put_json(sha, "dotnet_mixed_mode", {
+                "mixed_mode": True,
+                "native_entry_rva": hex(ep_rva) if ep_rva else None,
+                "note": ("mixed-mode C++/CLI: native code runs alongside the managed "
+                         "assembly — decompile the native entry, not just ILSpy."),
+            })
+            logger.warning(
+                "MIXED-MODE .NET (C++/CLI): native entry point at RVA %s — the real "
+                "logic is native; running native analysis + ILSpy (not ILSpy alone).",
+                hex(ep_rva) if ep_rva else "?")
+        else:
+            # Pure IL: no Framework.DOTNET exists yet; use NATIVE as placeholder.
+            binary.framework = Framework.NATIVE
+            logger.info("CLR/.NET PE detected — routing to ILSpy; Ghidra/FLOSS skipped")
     elif not is_pyinstaller_bundle:
         # Recover the common native runtimes that otherwise hide behind the
         # misleading `native` label (reads as C/C++): the Go toolchain and the
@@ -350,7 +372,7 @@ async def analyze_pe(
     # -----------------------------------------------------------------------
     # Phase 8: FLOSS (skipped for DOTNET_PE and by config)
     # -----------------------------------------------------------------------
-    if is_dotnet:
+    if is_dotnet and not is_mixed_mode:
         skipped_phases.append("floss:dotnet_pe")
     elif getattr(config, "skip_floss", False):
         skipped_phases.append("floss:config")
@@ -419,7 +441,7 @@ async def analyze_pe(
     # -----------------------------------------------------------------------
     # Phase 11: Ghidra deep (skipped for DOTNET_PE and by config/size gate)
     # -----------------------------------------------------------------------
-    if is_dotnet:
+    if is_dotnet and not is_mixed_mode:
         skipped_phases.append("ghidra:dotnet_pe")
     elif is_pyinstaller_bundle:
         skipped_phases.append("ghidra:pyinstaller")
@@ -534,6 +556,9 @@ async def analyze_pe(
         "format": binary.format.value,
         "framework": binary.framework.value,
         "is_dotnet": is_dotnet,
+        "is_mixed_mode": is_mixed_mode,
+        "dotnet_native_entry_rva": (hex(header.dotnet_native_entry_rva)
+                                    if header and header.dotnet_native_entry_rva else None),
         "function_count": len(model.functions),
         "string_count": len(model.get_strings()),
         "import_count": len(model.imports),
