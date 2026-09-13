@@ -1,6 +1,6 @@
 """Symbolic execution — find the input that drives a binary to a target state.
 
-The crackme / keygen / Flare-On endgame: a check compares your input against a
+The crackme / keygen endgame: a check compares your input against a
 constraint and prints SUCCESS (or jumps to a "win" address). Instead of
 hand-inverting the arithmetic, let angr explore paths and let its constraint
 solver hand back the input that reaches the target and avoids the failures. This

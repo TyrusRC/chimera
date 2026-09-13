@@ -7,15 +7,14 @@ and only the printable ones):
 * **Comparison cascade** — a password / key-sequence check compiled as an
   unrolled ``if (buf[0]=='L') if (buf[1]=='L') ...`` leaves the expected value
   only as the immediate operands of a run of ``cmp`` instructions, never
-  contiguous. `recover_compare_string` reads them back. (Flare-On "Magic 8 Ball":
-  the arrow-key sequence "LLURULDUL".)
+  contiguous. `recover_compare_string` reads them back (e.g. a movement
+  sequence like "LLURULDUL").
 * **Inline immediate stores** — a hardcoded byte array (key, blob, shellcode,
   lookup table) built with ``mov <size> ptr [buf+i], imm`` stores instead of a
   contiguous ``.data`` blob. `recover_data_bytes` reassembles it (splitting
   word/dword stores into little-endian bytes), and can invert an additive gadget
-  (`input[i] = (target - data[i]) & 0xff`). (Flare-On "darn_mice": each
-  ``data[i]+input[i]`` byte is executed, so the valid input makes every byte
-  ``0xC3`` = ``ret``.)
+  (`input[i] = (target - data[i]) & 0xff`) — e.g. when each ``data[i]+input[i]``
+  byte is executed, the valid input makes every byte ``0xC3`` = ``ret``.
 
 Both linearly disassemble from a function VA arch-aware (so 32-bit targets work —
 the model's x64 disasm path does not). They read the LAST operand token, so a

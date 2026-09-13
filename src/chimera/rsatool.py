@@ -10,7 +10,7 @@ public exponent e, a ciphertext c, and sometimes p/q or d):
   the recovery when an encryptor **used the private exponent to "encrypt"** (a
   classic bug: computing the modinv in place overwrites the public exponent with
   the private one, so the stored value is m^d and raising it to e returns m —
-  no private key needed). Flare-On 'encryptor' is exactly this.
+  no private key needed).
 * **factor N** (opt-in) — Fermat factorization when the primes are close
   (a common weak-key generation), giving p/q → d → decrypt.
 

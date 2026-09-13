@@ -1,8 +1,8 @@
 """ELF core-dump triage — maps, registers, and address→module for a process core.
 
-chimera could analyze the backdoored library in the Flare-On sshd challenge but
-had NO way to touch the CORE DUMP that captured the attack — yet the whole solve
-lived there: which module the crash `rip`/return address falls in, the register
+chimera could analyze a backdoored library but had NO way to touch the CORE DUMP
+that captured the attack — yet the whole picture can live there: which module the
+crash `rip`/return address falls in, the register
 state, and the attacker payload resident in memory. `memory` (Volatility) is for
 whole-OS images, not a userspace ELF core. This fills that: parse the core's
 PT_LOAD ranges, the NT_FILE module mappings and the NT_PRSTATUS registers (per
