@@ -561,7 +561,7 @@ def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: st
     So rehydration reads each r2_<lib> entry and replays the same add_* calls.
     """
     from chimera.model.function import FunctionInfo
-    from chimera.pipelines.android import _valid_r2_string, _valid_r2_function
+    from chimera.pipelines.android import _valid_r2_string
 
     keys = cache.list_keys(sha256)
     for name in keys:

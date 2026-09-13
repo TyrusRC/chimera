@@ -27,8 +27,7 @@ Variable Name Recovery", IEEE S&P 2024.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
 
 from chimera.adapters.base import BackendAdapter, ResourceRequirement, ToolCategory

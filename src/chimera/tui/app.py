@@ -1,11 +1,10 @@
 """Chimera TUI — terminal interface for analysis browsing + device ops."""
 from __future__ import annotations
-import asyncio
 import json
 import logging
 from pathlib import Path
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Vertical
 from textual.widgets import Header, Footer, Static, DataTable, Input, Log, TabbedContent, TabPane
 
 from chimera.pipelines.common import r2_func_address

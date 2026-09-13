@@ -10,7 +10,6 @@ import logging
 import struct
 from pathlib import Path
 
-from chimera.model.objc import ObjCMethod
 from chimera.model.program import UnifiedProgramModel
 from chimera.parsers.macho_objc import (
     ObjCParseError,

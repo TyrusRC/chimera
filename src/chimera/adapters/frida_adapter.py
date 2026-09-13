@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from chimera.adapters.base import BackendAdapter, ResourceRequirement, ToolCategory
 
@@ -71,7 +71,7 @@ class FridaAdapter(BackendAdapter):
 
     def is_available(self) -> bool:
         try:
-            import frida
+            import frida  # noqa: F401  — availability probe
             return True
         except ImportError:
             return False

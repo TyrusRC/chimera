@@ -246,7 +246,7 @@ def emulate_pe_function(path: str, address: int | str, *, args: tuple[int, ...] 
     if not unicorn_available():
         return _unavailable('unicorn not installed — pip install "chimera[emulate]"')
     try:
-        import pefile  # noqa: PLC0415
+        import pefile  # noqa: F401,PLC0415  — availability probe; pe_image_sections uses it
     except Exception:
         return _unavailable("pefile not installed — required for PE emulation")
 

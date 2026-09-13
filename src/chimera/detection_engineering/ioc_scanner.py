@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable
 
 # Confidence levels

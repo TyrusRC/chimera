@@ -6,7 +6,6 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
 
 from chimera.device.base import DeviceManager, DeviceInfo, DevicePlatform
 
