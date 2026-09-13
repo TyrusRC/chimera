@@ -13,13 +13,16 @@ package-agnostic — not tied to FastAPI.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from chimera.core.config import ChimeraConfig
 from chimera.core.overlay import ProjectOverlay
+
+if TYPE_CHECKING:
+    from chimera.model.program import UnifiedProgramModel
 
 router = APIRouter(prefix="/api/projects/{project_id}/annotations", tags=["annotations"])
 logger = logging.getLogger(__name__)
