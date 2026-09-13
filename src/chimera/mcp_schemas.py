@@ -428,6 +428,16 @@ def all_tools() -> list[Tool]:
                  "gap": {"type": "integer", "default": 128, "description": "Max byte gap between consecutive compares before a new candidate starts."},
              }, "required": ["path", "address"]}),
 
+        Tool(name="recover_data_bytes",
+             description="Reassemble a hardcoded byte array a compiler built with INLINE IMMEDIATE STORES (`mov byte/word/dword ptr [buf+i], imm`) instead of a contiguous .data blob — an embedded key, blob, shellcode or lookup table that get_strings and deobfuscate_strings (FLOSS) miss because it is mixed/non-printable and never contiguous. Disassembles from the function VA (arch-aware, 32-bit included), collects immediate stores to memory in program order, and splits word/dword/qword immediates into little-endian bytes. Optional gadget_target inverts an ADDITIVE gadget: when the target computes and executes `data[i] + input[i]` per byte, the input making every byte == gadget_target is `(gadget_target - data[i]) & 0xff` — pass 0xC3 for a `ret` (Flare-On 'darn_mice' → the input 'see three, C3 C3 ...'). Returns the byte array (hex), the per-store list, and any derived input. Needs capstone ('disasm' extra).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Binary to analyze (PE/ELF/Mach-O)."},
+                 "address": {"type": "string", "description": "Function VA whose inline stores build the array (hex)."},
+                 "max_bytes": {"type": "integer", "default": 4096, "description": "Bytes of code to disassemble from the VA."},
+                 "max_stores": {"type": "integer", "default": 512, "description": "Stop after this many immediate stores."},
+                 "gadget_target": {"type": "string", "description": "Invert an additive gadget: return (target - data[i]) & 0xff, e.g. \"0xC3\" for ret."},
+             }, "required": ["path", "address"]}),
+
         Tool(name="symexec",
              description="Symbolic execution (angr): find the INPUT that drives the binary to a target — a win address (`find`) or a state whose stdout contains a string (`find_stdout`), while avoiding failure addresses/strings. Declare the symbolic input as `stdin_len` bytes of stdin and/or `sym_argv` (byte-lengths of symbolic argv entries). Returns the concrete stdin/argv that reaches it. Use for crackme/keygen/serial checks where pathfind (needs a recovered FSM) and emulate_function (runs one chosen path) can't discover an unknown input. Needs angr (pip install angr); bounded by timeout + state cap.",
              inputSchema={"type": "object", "properties": {

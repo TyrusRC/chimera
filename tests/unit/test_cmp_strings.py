@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import struct
 
-from chimera.parsers.cmp_strings import _last_immediate, recover_compare_string
+from chimera.parsers.cmp_strings import (
+    _last_immediate,
+    _store_immediate,
+    recover_compare_string,
+    recover_data_bytes,
+)
 
 
 def _elf64_one_load(load_vaddr=0x400000, load_size=0x1000) -> bytearray:
@@ -58,3 +63,43 @@ def test_unparseable_file_reports_error(tmp_path):
     junk.write_bytes(b"not a binary" * 4)
     r = recover_compare_string(str(junk), 0x1000)
     assert r["available"] and "error" in r
+
+
+# --- immediate-store byte-array recovery (darn_mice) --------------------------
+
+# 2 dword stores + 2 byte stores at VA 0x400500 → data [0x50,0x5e,0x5e,0xa3,
+# 0x4f,0x5b,0x51,0x5e,0x6b,0x7f]; proves dword immediates split little-endian.
+_STORE_HEX = "c703505e5ea3c743044f5b515ec643086bc643097f"
+_STORE_DATA = [0x50, 0x5e, 0x5e, 0xA3, 0x4F, 0x5B, 0x51, 0x5E, 0x6B, 0x7F]
+
+
+def _plant_stores(tmp_path):
+    raw = _elf64_one_load()
+    code = bytes.fromhex(_STORE_HEX)
+    raw[0x500:0x500 + len(code)] = code
+    f = tmp_path / "dm.elf"
+    f.write_bytes(bytes(raw))
+    return f
+
+
+def test_recover_data_bytes_splits_dword_stores_little_endian(tmp_path):
+    f = _plant_stores(tmp_path)
+    r = recover_data_bytes(str(f), 0x400500)
+    assert r["byte_count"] == 10
+    assert list(bytes.fromhex(r["hex"])) == _STORE_DATA   # dword LE order intact
+
+
+def test_recover_data_bytes_inverts_additive_gadget(tmp_path):
+    f = _plant_stores(tmp_path)
+    r = recover_data_bytes(str(f), 0x400500, gadget_target=0xC3)
+    # input[i] = (0xC3 - data[i]) & 0xff — the darn_mice "make every byte ret" trick
+    assert r["derived_input_ascii"] == "see threXD"
+
+
+def test_store_immediate_distinguishes_dword_from_word(tmp_path):
+    # regression: "word ptr" is a substring of "dword ptr" — must not match width 2
+    assert _store_immediate("dword ptr [rbx], 0xa35e5e50") == (4, 0xA35E5E50)
+    assert _store_immediate("word ptr [rbx], 0x4142") == (2, 0x4142)
+    assert _store_immediate("byte ptr [rbx + 8], 0x6b") == (1, 0x6B)
+    assert _store_immediate("eax, 0x50") is None          # mov reg,imm is not a store
+    assert _store_immediate("byte ptr [rbx], al") is None  # store of a register, no imm

@@ -60,7 +60,12 @@ argv and let the solver invert the constraints); when a check is a straight
    `cmp` immediates (never a contiguous string, so `get_strings` and FLOSS
    `deobfuscate_strings` both miss them): `recover_cmp_string` (MCP) / `chimera
    cmp-string --addr <fn>` reads them back in order (arch-aware, so 32-bit targets
-   work); `pathfind` BFS-searches a
+   work). The store-side mirror — a hardcoded byte array (key/blob/shellcode/table)
+   built with inline `mov [buf+i],imm` stores rather than a `.data` blob — is
+   `recover_data_bytes` / `chimera data-bytes --addr <fn>` (splits word/dword
+   immediates LE); its `gadget_target`/`--gadget-target 0xC3` inverts an ADDITIVE
+   gadget (target runs `data[i]+input[i]` as code per byte → input that makes each
+   byte `0xC3`=`ret`), handing back the required input directly; `pathfind` BFS-searches a
    recovered FSM edge list for the accepting input (`exact_length` = the N-char
    password shape); `run_under_wine` is the one-call Wine oracle; `hdl_sim` /
    `chimera hdl-sim` is the HDL analogue — compile a Verilog/SystemVerilog design
