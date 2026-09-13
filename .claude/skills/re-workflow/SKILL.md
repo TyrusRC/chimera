@@ -256,6 +256,14 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   secret is an element of a constant array literal picked by a hardcoded index
   (the "indexed table → flag" pattern), pass `resolve="NAME[IDX]"` to read that
   element STATICALLY (no node, no eval) instead of hand-reading the array.
+  **A huge native binary that just "asks for a flag" may be a whole JS/Python
+  app frozen into one executable** — don't Ghidra-decompile the runtime.
+  Fingerprint the freezer and carve the source back out first: `node_extract`
+  (MCP) / `chimera node-extract` recovers the embedded JS from a **nexe / Node
+  SEA / pkg** binary (appended `<nexe~~sentinel>` bundle, or an injected
+  `NODE_SEA_BLOB`), and `pyextract` does the same for **PyInstaller**. Then run
+  `js-deobf` / `py_unwrap` on the recovered code — the flag logic is there, not
+  in the native layer.
   **Others**: `rust-decompile`, `vmp-devirt` (VMProtect).
 - **R8/ProGuard-obfuscated Android**: `a.b.c` class names aren't a dead end —
   Kotlin `@Metadata`/`@DebugMetadata` annotations survive R8 and carry the

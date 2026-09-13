@@ -58,6 +58,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     jsdeobf_cmd,
     manifest_cmd,
     memory_cmd,
+    nodeextract_cmd,
     notebook_cmd,
     overlay_cmd,
     patch_cmd,
