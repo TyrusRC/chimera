@@ -45,6 +45,15 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         result = carve_firmware(path, extract_dir=arguments.get("extract_dir"))
         return mcpstate.json_reply(result)
 
+    if name == "node_extract":
+        from chimera.unpacking.nodejs import extract_node_js
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        result = extract_node_js(path, arguments.get("out_dir"))
+        return mcpstate.json_reply(result.to_dict())
+
     if name == "js_deobf":
         from chimera.unpacking.js_deobf import deobfuscate
 

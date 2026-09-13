@@ -377,6 +377,13 @@ def all_tools() -> list[Tool]:
                  "extract_dir": {"type": "string", "description": "Directory to extract the PE/TE modules into."},
              }, "required": ["path"]}),
 
+        Tool(name="node_extract",
+             description="Recover the embedded JavaScript from a Node.js compiled executable — a whole Node app shipped as one native binary (a large `.exe`/ELF that just 'asks for a flag') by nexe, Node SEA (Single Executable Applications), or vercel/pkg. The JS bundle is appended (nexe: `<nexe~~sentinel>` + a float64 size footer) or injected as a resource/section (SEA: a `NODE_SEA_BLOB` with magic 0x143DB6DE, uint32 flags, size-prefixed main script); running `analyze` on such a file wastes a full Ghidra pass on the node runtime and never reaches the app logic. This carves the JS back out (format-agnostic byte scan — PE/ELF/Mach-O), inflating a gzip'd nexe bundle, and writes it to disk so you can hand it straight to js_deobf. nexe and SEA are extracted; a pkg binary is detected with guidance (its virtual-filesystem payload may be V8 bytecode, target-specific). Read-only; never executes the target.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the compiled Node binary (PE/ELF/Mach-O)."},
+                 "out_dir": {"type": "string", "description": "Output directory (default: <name>_node beside the input)."},
+             }, "required": ["path"]}),
+
         Tool(name="js_deobf",
              description="Deobfuscate a standalone JavaScript / HTML file — the web counterpart to py_unwrap, for an obfuscated web CTF page or a malicious dropper's inline script (chimera otherwise only handled JS inside the React Native bundle pipeline, and `analyze` mis-sniffs HTML as a binary). Follows the web module graph from the entry — inline <script> bodies PLUS every local external <script src> and ES-imported file (import/export…from/dynamic import(); remote URLs and bare npm packages are skipped, network stays off) — runs webcrack (undo control-flow flattening, inline the string array, unminify, split modules), then line-splits the result (prettier, or a built-in splitter) so a multi-MB one-liner becomes greppable. Returns the module graph and per-file paths + byte sizes — the cleaned content is left on disk (grep/read it), not inlined. Pass `resolve=\"NAME[IDX]\"` to instead STATICALLY read one element of a `const NAME = [ … ]` array literal across the collected sources (no node needed) — the recurring \"indexed table → flag\" web-CTF pattern. Needs node + webcrack for deobfuscation (npm i -g webcrack, or via npx); --resolve works without it.",
              inputSchema={"type": "object", "properties": {
