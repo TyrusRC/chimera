@@ -17,7 +17,7 @@ from mcp.types import Tool, TextContent
 
 from chimera import mcp_session as mcpstate
 from chimera.mcp_handlers import (
-    analysis, annotations, artifacts, device, hardware, runtime, unpacking,
+    analysis, annotations, artifacts, device, hardware, runtime, skills, unpacking,
 )
 from chimera.mcp_schemas import all_tools
 
@@ -27,7 +27,7 @@ server = Server("chimera")
 #: Tried in order; the first group that owns `name` answers. Each returns
 #: None for a tool it does not handle, so adding a group is a one-line
 #: change here rather than an edit to a shared dispatch chain.
-_HANDLER_GROUPS = (analysis, annotations, artifacts, device, hardware, runtime, unpacking)
+_HANDLER_GROUPS = (skills, analysis, annotations, artifacts, device, hardware, runtime, unpacking)
 
 
 @server.list_tools()
