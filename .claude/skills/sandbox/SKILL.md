@@ -82,3 +82,15 @@ reading the workspace dir directly from the host between calls.
   prefix to avoid paying it each run.
 - No network by default is the point — add `--net` only when the analysis needs
   it, and prefer pointing it at a mock rather than the real internet.
+
+## Isolation tiers (cheapest → strongest)
+1. **bubblewrap** (`run_sandboxed`) — no-root, host-kernel, fast; same-arch Linux.
+2. **Docker** — disposable toolchain env (shares host kernel).
+3. **`qemu_boot`** — single-shot full-system / cross-arch (ARM/MIPS/firmware).
+4. **Managed VM** (`chimera vm` / `vm_*` MCP tools) — a real snapshot-capable
+   Windows/Linux guest on the host hypervisor (VirtualBox), driven from WSL. Use
+   for anti-VM/anti-sandbox-realistic detonation and snapshot-revert loops.
+   `vm_exec` reverts to a clean snapshot before running; network is off by
+   default; guest creds come from `CHIMERA_VM_GUEST_PASSWORD` (never hardcoded).
+   Needs Guest Additions in the guest. On WSL the `VBoxManage.exe` on the Windows
+   host is used automatically; paths are translated with `wslpath`.
