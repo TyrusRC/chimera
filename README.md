@@ -39,6 +39,26 @@ default `analyze` hot path.
 
 ---
 
+## Table of Contents
+
+- [Features](#features)
+- [Desktop reverse engineering](#desktop-reverse-engineering)
+- [Memory image triage (Linux)](#memory-image-triage-linux)
+- [Status](#status)
+- [Architecture](#architecture)
+- [Analysis pipeline](#analysis-pipeline)
+- [Quick start](#quick-start)
+  - [Local install (recommended)](#local-install-recommended)
+  - [Docker (isolation sandbox)](#docker-isolation-sandbox)
+- [Usage](#usage)
+  - [MCP integration](#mcp-integration)
+  - [Install into your agent](#install-into-your-agent-claude-code-codex-gemini-cursor-windsurf-vs-code-dsh)
+- [Backend matrix](#backend-matrix)
+- [Development](#development)
+- [License](#license)
+
+---
+
 ## Features
 
 ### Cross-platform binary analysis
@@ -404,50 +424,44 @@ flowchart LR
 
 ## Quick start
 
-### Docker (recommended)
+### Local install (recommended)
 
-```bash
-docker compose up -d
-docker exec chimera chimera analyze /projects/app.apk
-```
-
-The image bundles pinned versions of radare2, jadx, and Ghidra. Mount your
-binaries into `/projects/`:
-
-```bash
-docker run --rm -v "$PWD:/projects" chimera:latest analyze /projects/app.apk
-```
-
-### Local install
-
-Requires Python 3.12+. External tools (radare2, jadx, Ghidra, Frida) are
-discovered on `PATH` and gracefully skipped when absent.
+Chimera installs and runs on **bare metal** — that is the default. Requires
+Python 3.12+. External tools (radare2, jadx, Ghidra, Frida) are discovered on
+`PATH` and gracefully skipped when absent.
 
 ```bash
 git clone https://github.com/TyrusRC/chimera.git
 cd chimera
-scripts/setup.sh       # interactive: choose native (.venv) or Docker
+scripts/setup.sh --native   # installs chimera[dev] into .venv (uv when available)
 ```
 
-`scripts/setup.sh --native` installs `chimera[dev]` into `.venv` (via
-`uv` when available) and offers to `apt-get install` the free system
-tools (radare2, upx-ucl, gdb). `scripts/setup.sh --docker` builds the
-bundled-toolchain image and starts Postgres instead — see
-[Docker](#docker-recommended) above. Neither is required for the other; add
-`--yes` to skip prompts.
+`scripts/setup.sh --native` offers to `apt-get install` the free system tools
+(radare2, upx-ucl, gdb); add `--yes` to skip prompts.
 
 ```bash
-chimera doctor         # exhaustive external-tool + env health check
+chimera doctor          # exhaustive external-tool + env health check
 chimera info            # quick backend-availability glance
 chimera analyze app.apk
+chimera install         # wire chimera into every agent host on this machine
 ```
 
-`chimera doctor` sweeps every optional tool this README documents
-(Ghidra, jadx, capa, frida, blutter, ...) plus environment config
-(`ANTHROPIC_API_KEY`, `CHIMERA_DB_URL`, Docker) and prints an install
-hint for anything missing. It exits non-zero only if neither core
-decompiler (radare2, Ghidra) is available — everything else is
-optional and never fails the check.
+`chimera doctor` sweeps every optional tool this README documents (Ghidra, jadx,
+capa, frida, blutter, ...) plus environment config (`ANTHROPIC_API_KEY`,
+`CHIMERA_DB_URL`) and prints an install hint for anything missing. It exits
+non-zero only if neither core decompiler (radare2, Ghidra) is available —
+everything else is optional and never fails the check.
+
+### Docker (isolation sandbox)
+
+Docker is **not** the default runtime — it's for reversing an untrusted target
+in a disposable, isolated environment. The image bundles pinned radare2, jadx,
+and Ghidra:
+
+```bash
+docker compose up -d
+docker run --rm -v "$PWD:/projects" chimera:latest analyze /projects/app.apk
+```
 
 ---
 
@@ -595,7 +609,7 @@ chimera mcp
 
 ### MCP integration
 
-Chimera exposes ~49 high-level tools over MCP. **Query** tools (`analyze`,
+Chimera exposes ~80 high-level tools over MCP. **Query** tools (`analyze`,
 `get_functions`, `get_function`, `get_strings`, `get_callgraph`,
 `get_disassembly`, `detect_protections`, `run_semgrep`, `dotnet_trace`, …)
 drive the pipeline; **write-back** tools (`rename_function`, `set_comment`,
@@ -617,6 +631,78 @@ needed). Run `claude` from the repo root, approve the server on first
 launch, then check it connected with `claude mcp list`. For Claude
 Desktop or another client, point it at `<repo>/.venv/bin/chimera mcp`
 (stdio) the same way.
+
+#### Install into your agent (Claude Code, Codex, Gemini, Cursor, Windsurf, VS Code, dsh)
+
+Chimera's MCP server speaks **stdio**, so any MCP-aware agent can launch it — the
+launch command is the same everywhere; only each host's config *format* differs.
+
+**Launch command** — from a local checkout (recommended; no PATH setup):
+
+```
+<repo>/.venv/bin/chimera mcp
+```
+
+or the no-clone form (resolves deps on first run, then cached):
+
+```
+uvx --from "git+https://github.com/TyrusRC/chimera" chimera mcp
+```
+
+**Where each host reads its MCP config** — drop the block below under the listed key:
+
+| Host | Config file | Key |
+|---|---|---|
+| Claude Code | `.mcp.json` (project) · `~/.claude.json` (user) | `mcpServers` |
+| Claude Desktop | `claude_desktop_config.json` | `mcpServers` |
+| OpenAI Codex CLI | `~/.codex/config.toml` | `[mcp_servers.chimera]` (TOML) |
+| Gemini CLI | `~/.gemini/settings.json` | `mcpServers` |
+| Google Antigravity | `~/.gemini/config/mcp_config.json` | `mcpServers` |
+| Cursor | `.cursor/mcp.json` · `~/.cursor/mcp.json` | `mcpServers` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` |
+| VS Code (Copilot) | `.vscode/mcp.json` | `servers` |
+| DeepSeek Harness (dsh) | `~/.dsh/cordis.patch.yml` | `@deepseek-ai/dsh-mcp-client` row → tools become `mcp__chimera__*` |
+
+The JSON hosts all take the same block (VS Code uses the same inner value under a
+`servers` key instead of `mcpServers`):
+
+```json
+{
+  "mcpServers": {
+    "chimera": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/TyrusRC/chimera", "chimera", "mcp"]
+    }
+  }
+}
+```
+
+OpenAI Codex CLI uses TOML:
+
+```toml
+[mcp_servers.chimera]
+command = "uvx"
+args = ["--from", "git+https://github.com/TyrusRC/chimera", "chimera", "mcp"]
+```
+
+DeepSeek Harness bridges MCP through its built-in `@deepseek-ai/dsh-mcp-client`
+plugin — add a row to `~/.dsh/cordis.patch.yml` (skills come in via
+`dsh-skill-filesystem` pointed at `<repo>/.claude/skills`):
+
+```yaml
+- insert:
+    - id: mcp-chimera
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: chimera
+        transport: stdio
+        command: uvx
+        args: ['--from', 'git+https://github.com/TyrusRC/chimera', 'chimera', 'mcp']
+        toolCallTimeoutMs: 120000
+    - name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        customSkillDirs: ['<repo>/.claude/skills']
+```
 
 #### Automate the whole flow from Claude Code — no API key
 

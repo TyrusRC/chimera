@@ -1,0 +1,14 @@
+# Append to ~/.dsh/cordis.patch.yml (or run `chimera install`, which does this).
+# Replace <repo> with the absolute path to your chimera checkout.
+- insert:
+    - id: mcp-chimera
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: chimera
+        transport: stdio
+        command: uvx
+        args: ['--from', 'git+https://github.com/TyrusRC/chimera', 'chimera', 'mcp']
+        toolCallTimeoutMs: 120000
+    - name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        customSkillDirs: ['<repo>/.claude/skills']

@@ -34,3 +34,6 @@ workflow-out/
 # tsc shadows next to .tsx sources (vite consumes .tsx directly)
 web/src/**/*.js
 !web/src/**/*.config.js
+
+# Superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/
