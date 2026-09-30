@@ -650,6 +650,52 @@ def all_tools() -> list[Tool]:
                  "env": {"type": "object", "description": "Extra environment for the target."},
              }, "required": ["argv", "breakpoints"]}),
 
+        # --- Live Windows debugger (x64dbg over its plugin HTTP API) ---
+        Tool(name="x64dbg",
+             description=(
+                 "Drive a REAL x64dbg debugger on a Windows host over the x64dbgmcp "
+                 "plugin's HTTP API — full live control (registers, memory, breakpoints, "
+                 "single-step, assemble, patch, module/thread/callstack inspection) as a "
+                 "chimera tool. Use this when a target can't be driven by chimera's in-host "
+                 "oracles (emulate_function/run_under_wine/run_with_breakpoints): an "
+                 "aggressively anti-analysis Windows PE that fast-fails/self-modifies, or a "
+                 "value that only exists once the process is live on real Windows. Prereq: "
+                 "x64dbg running on the Windows box with the MCP plugin loaded (serves "
+                 "127.0.0.1:8888; on WSL2 mirrored networking that loopback is shared, so the "
+                 "default URL works — otherwise set url= or CHIMERA_X64DBG_URL). Addresses are "
+                 "hex strings ('0x140001070') or x64dbg expressions, in the TARGET's address "
+                 "space. Typical loop: exec (cmd='init C:\\\\path\\\\t.exe') -> bp_set "
+                 "(addr=...) -> run -> regs / mem_read -> stepin. Actions: exec{cmd,offset?,"
+                 "limit?}, is_debugging, is_active, run, pause, stop, stepin, stepover, "
+                 "stepout, step_disasm; bp_set{addr}, bp_del{addr}, bp_list{type?}, "
+                 "hwbp_set{addr,type?}, hwbp_del{addr}; reg_get{register}, reg_set{register,"
+                 "value}, regs, flag_get{flag}, flag_set{flag,value}; mem_read{addr,size}, "
+                 "mem_write{addr,data}, mem_valid{addr}, mem_protect{addr}, mem_base{addr}, "
+                 "mem_map, mem_alloc{size,addr?}, mem_free{addr}, set_page_rights{addr,rights}; "
+                 "disasm{addr,count?}, assemble{addr,instruction}, assemble_mem{addr,"
+                 "instruction}, patch_list, patch_get{addr}; modules, symbols{module,offset?,"
+                 "limit?}, threads, teb{tid}, callstack, string_at{addr}, xref_get{addr}, "
+                 "xref_count{addr}, branch_dest{addr}, parse_expr{expression}, "
+                 "getprocaddr{module,api}, pattern_find{start,size,pattern}, tcp_conns, "
+                 "handles; stack_pop, stack_push{value}, stack_peek{offset?}; label_set{addr,"
+                 "text}, label_get{addr}, label_list, comment_set{addr,text}, comment_get{addr}. "
+                 "'raw'{endpoint,method?} reaches any endpoint not named here. Never raises: a "
+                 "plugin that's down returns an error dict."),
+             inputSchema={"type": "object", "properties": {
+                 "action": {"type": "string",
+                            "description": "Operation name (see description), or 'raw'."},
+                 "params": {"type": "object",
+                            "description": "Endpoint params, forwarded verbatim as the query string (e.g. {\"addr\":\"0x140001070\",\"size\":\"32\"})."},
+                 "endpoint": {"type": "string",
+                              "description": "For action='raw': the plugin endpoint path (e.g. 'Memory/Read')."},
+                 "method": {"type": "string",
+                            "description": "For action='raw': HTTP method (default GET)."},
+                 "url": {"type": "string",
+                         "description": "Override the plugin base URL (default env CHIMERA_X64DBG_URL or http://127.0.0.1:8888/)."},
+                 "timeout": {"type": "number", "default": 10,
+                             "description": "Per-call HTTP timeout in seconds."},
+             }, "required": ["action"]}),
+
         # --- Configuration ---
         Tool(name="get_config",
              description="Get or modify Chimera analysis configuration. Call with no params to read current config.",

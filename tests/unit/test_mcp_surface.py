@@ -40,6 +40,7 @@ EXPECTED_TOOLS = {
     "rsa_recover",
     "symexec", "recover_cmp_string", "recover_data_bytes", "decrypt_blob", "decompile", "yara_scan", "yara_solve", "core_triage", "detect_capabilities", "deobfuscate_strings",
     "find_aes_keys", "run_with_breakpoints", "run_sandboxed", "hdl_sim", "eth_fetch", "qemu_boot",
+    "x64dbg",
     "rename_function", "set_comment", "set_function_type",
     "set_classification", "add_note", "list_annotations", "batch_annotate",
     "emulate_function",

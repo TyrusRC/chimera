@@ -276,4 +276,20 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             h["registers"] = {k: hex(v) for k, v in h.get("registers", {}).items()}
         return mcpstate.json_reply(result)
 
+    if name == "x64dbg":
+        from chimera.dynamic.x64dbg import x64dbg_call
+
+        action = arguments.get("action")
+        if not action:
+            return mcpstate.error("x64dbg needs action=... (e.g. 'is_debugging').")
+        result = x64dbg_call(
+            action,
+            arguments.get("params") or {},
+            endpoint=arguments.get("endpoint"),
+            method=arguments.get("method"),
+            url=arguments.get("url"),
+            timeout=float(arguments.get("timeout", 10)),
+        )
+        return mcpstate.json_reply(result)
+
     return None

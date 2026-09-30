@@ -77,7 +77,19 @@ argv and let the solver invert the constraints); when a check is a straight
    default off), the capability for an **EtherHiding/ClearFake** dropper that
    hides its payload on-chain;
    `bp-dump`/`run_with_breakpoints` reads a runtime-computed value (a derived key)
-   at a breakpoint with no sudo; `aeskeys`/`find_aes_keys` recovers an AES key
+   at a breakpoint with no sudo. **When the in-host oracles can't drive it** — an
+   aggressively anti-analysis Windows PE that fast-fails/self-modifies under Wine,
+   or a value that only exists once the process is live on real Windows —
+   `x64dbg` (MCP) / `chimera x64dbg` drives a REAL x64dbg on a Windows box over
+   the x64dbgmcp plugin's HTTP API: full live control (registers, memory,
+   breakpoints, single-step, assemble, patch, module/thread/callstack) as a
+   chimera tool instead of a separate MCP server. On WSL2 mirrored networking the
+   Windows loopback IS the Linux loopback, so the default 127.0.0.1:8888 works;
+   else set `url=`/`CHIMERA_X64DBG_URL`. Loop: `exec cmd="init C:\path\t.exe"` →
+   `bp_set addr=` → `run` → `regs`/`mem_read` → `stepin`; `raw` reaches any
+   endpoint. NOTE: the plugin must be running in x64dbg; a debugger-aware target
+   may need ScyllaHide first (it can raise/fast-fail before your bp hits).
+   `aeskeys`/`find_aes_keys` recovers an AES key
    from a memory dump or live process. **A crashed process left an ELF CORE
    dump?** `core_triage` (MCP) / `chimera core` parses it — PT_LOAD maps, NT_FILE
    module mappings, NT_PRSTATUS registers — and correlates the faulting `rip` /

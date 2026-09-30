@@ -2,7 +2,7 @@
   "mcpServers": {
     "chimera": {
       "type": "stdio",
-      "command": ".venv/bin/chimera",
+      "command": "scripts/mcp-launch.sh",
       "args": [
         "mcp"
       ],

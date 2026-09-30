@@ -81,6 +81,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     varbert_cmd,
     vmp_cmd,
     wine_cmd,
+    x64dbg_cmd,
     yara_cmd,
 )
 
