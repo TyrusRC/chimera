@@ -66,6 +66,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     pathfind_cmd,
     pdf_cmd,
     persistence_cmd,
+    polyglot_cmd,
     protection,
     pyextract_cmd,
     pyunwrap_cmd,
