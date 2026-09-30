@@ -80,6 +80,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     triage_cmd,
     unpack_cmd,
     varbert_cmd,
+    vm_cmd,
     vmp_cmd,
     wine_cmd,
     x64dbg_cmd,
