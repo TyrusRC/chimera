@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 from chimera.adapters.base import BackendAdapter, ResourceRequirement, ToolCategory
+from chimera.dynamic.vm.runner import to_windows_path
 
 _SCRIPT = Path(__file__).parent / "ida_scripts" / "decompile_one.py"
 
@@ -25,15 +26,16 @@ class IdaAdapter(BackendAdapter):
 
     @staticmethod
     def _resolve_idat() -> str | None:
+        exes = ("idat64", "idat", "idat64.exe", "idat.exe")
         env = os.environ.get("IDA_PATH")
         if env:
             p = Path(env)
             if p.is_file():
                 return str(p)
-            for exe in ("idat64", "idat"):
+            for exe in exes:
                 if (p / exe).is_file():
                     return str(p / exe)
-        for exe in ("idat64", "idat"):
+        for exe in exes:
             found = shutil.which(exe)
             if found:
                 return found
@@ -62,13 +64,21 @@ class IdaAdapter(BackendAdapter):
             return {"ok": False, "error": "IDA not found",
                     "hint": "install IDA Pro and set IDA_PATH (dir or idat64), "
                             "or put idat64 on PATH"}
+        # A Windows idat64.exe driven from WSL cannot read Linux paths — the temp
+        # binary, the IDAPython script and the output file must be Windows paths
+        # (translated via wslpath; they resolve to the same files over \\wsl$).
+        windows = self._idat.lower().endswith(".exe")
+
+        def host(p: str) -> str:
+            return to_windows_path(p) if windows else p
+
         with tempfile.TemporaryDirectory(prefix="chimera_ida_") as td:
             tmpbin = Path(td) / Path(binary_path).name
             shutil.copy2(binary_path, tmpbin)
             outfile = Path(td) / "out.c"
             env = {**os.environ, "TVHEADLESS": "1",
-                   "CHIMERA_IDA_ADDR": str(addr), "CHIMERA_IDA_OUT": str(outfile)}
-            argv = [self._idat, "-A", f"-S{_SCRIPT}", "-c", str(tmpbin)]
+                   "CHIMERA_IDA_ADDR": str(addr), "CHIMERA_IDA_OUT": host(str(outfile))}
+            argv = [self._idat, "-A", f"-S{host(str(_SCRIPT))}", "-c", host(str(tmpbin))]
             try:
                 subprocess.run(argv, env=env, timeout=self._timeout, capture_output=True)
             except subprocess.TimeoutExpired:
