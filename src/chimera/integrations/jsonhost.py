@@ -11,14 +11,19 @@ from chimera.integrations.base import backup
 
 
 class JsonHost:
-    def __init__(self, name: str, path: Path, root_key: str = "mcpServers"):
+    def __init__(self, name: str, path: Path, root_key: str = "mcpServers",
+                 markers: list[Path] | None = None):
         self.name = name
         self._path = Path(path)
         self.root_key = root_key
+        # A host is "present" if its config file or one of these markers
+        # exists. Defaults to the parent dir — fine for a host rooted in its
+        # own dir (~/.gemini/…), but a host rooted in an always-present dir
+        # (cwd/.mcp.json) must pass explicit markers, or it detects everywhere.
+        self._markers = markers if markers is not None else [self._path.parent]
 
     def detect(self) -> bool:
-        # Present if the config file OR its parent dir already exists.
-        return self._path.exists() or self._path.parent.is_dir()
+        return self._path.exists() or any(m.exists() for m in self._markers)
 
     def target_path(self) -> Path:
         return self._path

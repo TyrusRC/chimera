@@ -18,18 +18,30 @@ def _claude_desktop_config(home: Path) -> Path:
     return home / ".config/Claude/claude_desktop_config.json"
 
 
-def build_registry(cwd: Path | None = None, home: Path | None = None) -> dict:
+def build_registry(cwd: Path | None = None, home: Path | None = None,
+                   scope: str = "project") -> dict:
     # Resolved at call time (not import) so callers/tests that chdir or
     # monkeypatch Path.home see the right roots.
     cwd = cwd or Path.cwd()
     home = home or Path.home()
+
+    # Hosts with both a project and a user config location switch on scope.
+    if scope == "user":
+        claude_code = JsonHost("claude-code", home / ".claude.json",
+                               markers=[home / ".claude.json", home / ".claude"])
+        cursor = JsonHost("cursor", home / ".cursor/mcp.json")
+    else:
+        claude_code = JsonHost("claude-code", cwd / ".mcp.json",
+                               markers=[cwd / ".mcp.json", cwd / ".claude"])
+        cursor = JsonHost("cursor", cwd / ".cursor/mcp.json")
+
     hosts: dict = {}
     for h in [
-        JsonHost("claude-code", cwd / ".mcp.json"),
+        claude_code,
         JsonHost("claude-desktop", _claude_desktop_config(home)),
         JsonHost("gemini", home / ".gemini/settings.json"),
         JsonHost("antigravity", home / ".gemini/config/mcp_config.json"),
-        JsonHost("cursor", cwd / ".cursor/mcp.json"),
+        cursor,
         JsonHost("windsurf", home / ".codeium/windsurf/mcp_config.json"),
         JsonHost("vscode", cwd / ".vscode/mcp.json", root_key="servers"),
         DshHost(home / ".dsh/cordis.patch.yml"),

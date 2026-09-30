@@ -7,6 +7,7 @@ construction — backups + never clobbering other entries.
 from __future__ import annotations
 
 import json
+import shutil
 
 import click
 
@@ -21,10 +22,13 @@ from chimera.integrations.command import build_launch_command
 @click.option("--host", "hosts", multiple=True, help="Restrict to named host(s).")
 @click.option("--all", "all_hosts", is_flag=True, help="Write every known host, even if not detected.")
 @click.option("--portable", is_flag=True, help="Use the uvx (no-clone) launch command.")
+@click.option("--user", "scope_user", is_flag=True, help="Wire user-scope config (e.g. ~/.claude.json) instead of project-local.")
+@click.option("--project", "scope_project", is_flag=True, help="Wire project-local config in the current dir (default).")
 @click.option("--status", is_flag=True, help="Report which hosts are wired; write nothing.")
 @click.option("--uninstall", is_flag=True, help="Remove chimera's entry from detected hosts.")
-def install(dry_run, hosts, all_hosts, portable, status, uninstall):
-    registry = build_registry()
+def install(dry_run, hosts, all_hosts, portable, scope_user, scope_project, status, uninstall):
+    scope = "user" if scope_user else "project"
+    registry = build_registry(scope=scope)
     if hosts:
         unknown = [h for h in hosts if h not in registry]
         if unknown:
@@ -43,6 +47,14 @@ def install(dry_run, hosts, all_hosts, portable, status, uninstall):
         raise SystemExit(_run_uninstall(selected, dry_run))
 
     entry = build_launch_command(portable=portable)
+    # Fail loud rather than write a launch command that cannot run: the uvx
+    # form needs uv on PATH, the local form needs the repo checkout.
+    if entry["command"] == "uvx" and shutil.which("uvx") is None:
+        raise click.ClickException(
+            "launch command resolved to 'uvx' but uv is not on PATH. "
+            "Install uv (https://docs.astral.sh/uv/) for the no-clone form, "
+            "or run `uv sync` from a chimera checkout and install without --portable."
+        )
     targets = selected if (hosts or all_hosts) else [h for h in selected if h.detect()]
 
     failures = []
