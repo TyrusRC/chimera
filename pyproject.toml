@@ -114,6 +114,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/chimera"]
 
+# Ship the skills tree inside the wheel so `list_skills`/`get_skill` and the
+# dsh skill-filesystem work when chimera is installed (not just a checkout).
+# Single source: generated from .claude/skills at build time.
+[tool.hatch.build.targets.wheel.force-include]
+".claude/skills" = "chimera/_skills"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
