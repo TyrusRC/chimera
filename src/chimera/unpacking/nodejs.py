@@ -13,6 +13,13 @@ the JS bundle in the executable:
 * **pkg** (vercel/pkg) — embeds a virtual filesystem + a `pkg/prelude`
   bootstrap; the payload can be V8 bytecode, not plain JS.
 
+It also unpacks an **Electron `app.asar`** archive — not an executable but the
+adjacent bundle that holds an Electron desktop app's real JS/HTML/assets. asar
+is a Chromium-Pickle header (a JSON file tree) followed by the concatenated file
+bodies; the whole app lives here, so carving it out is the Electron analogue of
+the above. (The Electron `.exe` itself is just the runtime — point this at the
+`app.asar` under `resources/`, not the launcher.)
+
 Chimera wrapped native packers (UPX) and PyInstaller but had no path for a
 Node compiled binary, so a 50MB nexe/SEA `.exe` was a dead end (analyze would
 try to Ghidra-decompile the whole node runtime). This carves the JS back out
@@ -28,6 +35,7 @@ executable is a PE, ELF, or Mach-O.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import struct
 import zipfile
@@ -53,6 +61,12 @@ _SEA_MARKERS = (b"NODE_SEA_BLOB", b"NODE_SEA_FUSE_")
 
 # pkg leaves its bootstrap path in the embedded VFS even after patching.
 _PKG_MARKERS = (b"pkg/prelude/bootstrap.js", b"pkg/prelude", b"PAYLOAD_POSITION")
+
+# Electron asar header: four LE uint32s — data_size(=4), header_size,
+# object_size(=header_size-4), string_size — then the JSON file tree, then the
+# concatenated file bodies. File bodies begin at 8 + header_size (verified
+# against a real `asar pack`). See extract_asar.
+_ASAR_HDR = struct.Struct("<4I")
 
 
 @dataclass
@@ -274,6 +288,101 @@ def extract_sea(data: bytes) -> tuple[bytes, int]:
     raise ValueError("no valid SEA blob (magic present but no header parsed)")
 
 
+def _asar_header(data: bytes) -> tuple[dict, int] | None:
+    """Parse an asar header. Returns (file-tree dict, data-region base) or None.
+
+    The four size fields are cross-checked (data_size==4, object_size==
+    header_size-4, string_size fits inside object_size) so a random binary that
+    happens to start with 0x04 is rejected rather than mis-parsed.
+    """
+    if len(data) < 16:
+        return None
+    data_size, header_size, object_size, string_size = _ASAR_HDR.unpack_from(data, 0)
+    if data_size != 4 or object_size != header_size - 4:
+        return None
+    if not (0 < string_size <= object_size - 4) or 16 + string_size > len(data):
+        return None
+    head = data[16:16 + string_size]
+    if head.lstrip()[:1] != b"{" or b'"files"' not in head:
+        return None
+    try:
+        tree = json.loads(head.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(tree, dict) or not isinstance(tree.get("files"), dict):
+        return None
+    return tree, 8 + header_size
+
+
+def detect_asar(data: bytes) -> bool:
+    """True if `data` is an Electron asar archive."""
+    return _asar_header(data) is not None
+
+
+def extract_asar(data: bytes, out_root: Path) -> tuple[list[str], list[str]]:
+    """Unpack an asar archive into `out_root`. Returns (written, unpacked_names).
+
+    `unpacked_names` are entries flagged ``unpacked`` — their bytes live in the
+    sibling ``app.asar.unpacked/`` dir, not in this archive. Symlinks and any
+    entry without an in-archive ``offset``/``size`` are skipped. Writes are
+    confined to `out_root` (path-traversal guard), mirroring the nexe-resource
+    unpacker. Raises ValueError if the header will not parse.
+    """
+    parsed = _asar_header(data)
+    if parsed is None:
+        raise ValueError("not an asar archive / malformed header")
+    tree, base = parsed
+    total = len(data)
+    root_resolved = str(out_root.resolve())
+    written: list[str] = []
+    unpacked: list[str] = []
+
+    def walk(node: dict, rel: Path) -> None:
+        for name, info in node.get("files", {}).items():
+            if not isinstance(info, dict):
+                continue
+            child = rel / name
+            if isinstance(info.get("files"), dict):
+                walk(info, child)
+                continue
+            if info.get("unpacked"):
+                unpacked.append(str(child))
+                continue
+            if "offset" not in info or "size" not in info:
+                continue                              # symlink / special entry
+            try:
+                off = base + int(info["offset"])
+                size = int(info["size"])
+            except (TypeError, ValueError):
+                continue
+            if off < base or size < 0 or off + size > total:
+                continue
+            dest = (out_root / child).resolve()
+            if not str(dest).startswith(root_resolved):
+                continue                              # refuse path traversal
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                dest.write_bytes(data[off:off + size])
+            except OSError:
+                continue
+            written.append(str(dest))
+
+    walk(tree, Path())
+    return written, unpacked
+
+
+def _asar_entry(written: list[str]) -> str | None:
+    """Pick the most useful file for the `next: js-deobf` hint."""
+    for want in ("index.js", "main.js"):
+        for p in written:
+            if Path(p).name == want:
+                return p
+    for p in written:
+        if p.endswith(".js"):
+            return p
+    return written[0] if written else None
+
+
 def extract_node_js(path: str | Path, out_dir: str | Path | None = None) -> NodeExtractResult:
     """Detect a Node compiled binary and write its embedded JS to `out_dir`.
 
@@ -288,8 +397,27 @@ def extract_node_js(path: str | Path, out_dir: str | Path | None = None) -> Node
 
     kind = detect_node_binary(data)
     if kind is None:
-        return NodeExtractResult(ok=False, error="not a Node compiled binary "
-                                 "(no nexe / SEA / pkg marker found)")
+        if detect_asar(data):
+            out_root = Path(out_dir) if out_dir else path.with_name(path.stem + "_asar")
+            out_root.mkdir(parents=True, exist_ok=True)
+            try:
+                written, unpacked = extract_asar(data, out_root)
+            except ValueError as exc:
+                return NodeExtractResult(ok=False, kind="asar", signals=["asar"],
+                                         error=f"asar extraction failed: {exc}")
+            if not written:
+                return NodeExtractResult(ok=False, kind="asar", signals=["asar"],
+                                         error="asar header parsed but no files extracted")
+            note = None
+            if unpacked:
+                note = (f"{len(unpacked)} entr{'y' if len(unpacked) == 1 else 'ies'} "
+                        "flagged unpacked — bytes are in the sibling "
+                        "app.asar.unpacked/ dir, not this archive.")
+            return NodeExtractResult(
+                ok=True, kind="asar", out_file=_asar_entry(written),
+                resource_files=written, signals=["asar"], note=note)
+        return NodeExtractResult(ok=False, error="not a Node compiled binary / asar "
+                                 "(no nexe / SEA / pkg / asar marker found)")
 
     out_root = Path(out_dir) if out_dir else path.with_name(path.stem + "_node")
     signals = [kind]

@@ -204,3 +204,84 @@ def test_extract_node_js_rejects_non_node(tmp_path):
     exe.write_bytes(b"\x7fELF" + b"\x00" * 256)
     r = extract_node_js(exe, tmp_path / "out")
     assert not r.ok and r.kind is None and "not a Node" in r.error
+
+
+# --- Electron asar -----------------------------------------------------------
+# Layout verified against a real `npx asar pack`: four LE uint32 sizes
+# (4, header_size, header_size-4, json_len), the JSON tree (4-byte padded),
+# then the concatenated file bodies starting at 8 + header_size.
+
+def _asar(entries, unpacked=()):
+    """Build a real-format asar. `entries`: [(relpath, bytes)]; `unpacked`:
+    [relpath] for entries whose bytes live outside the archive."""
+    import json as _json
+
+    tree = {"files": {}}
+
+    def insert(path, node):
+        parts = path.split("/")
+        cur = tree
+        for p in parts[:-1]:
+            cur = cur["files"].setdefault(p, {"files": {}})
+        cur["files"][parts[-1]] = node
+
+    bodies = b""
+    offset = 0
+    for path, body in entries:
+        insert(path, {"size": len(body), "offset": str(offset)})
+        bodies += body
+        offset += len(body)
+    for path in unpacked:
+        insert(path, {"size": 0, "offset": str(offset), "unpacked": True})
+
+    hdr = _json.dumps(tree).encode()
+    pad = (-len(hdr)) % 4
+    header_size = 8 + len(hdr) + pad
+    prefix = struct.pack("<4I", 4, header_size, header_size - 4, len(hdr))
+    return prefix + hdr + b"\x00" * pad + bodies
+
+
+def test_detect_asar():
+    from chimera.unpacking.nodejs import detect_asar
+    assert detect_asar(_asar([("index.js", _JS)]))
+    # a random blob that merely starts with 0x04 must not be mistaken for asar
+    assert not detect_asar(b"\x04\x00\x00\x00" + b"A" * 128)
+    assert not detect_asar(b"\x7fELF" + b"\x00" * 256)
+
+
+def test_extract_asar_nested_and_entry(tmp_path):
+    from pathlib import Path
+    arc = tmp_path / "app.asar"
+    arc.write_bytes(_asar([
+        ("index.js", _JS),
+        ("lib/util.js", b"module.exports = 1;\n"),
+        ("package.json", b'{"main":"index.js"}'),
+    ]))
+    r = extract_node_js(arc, tmp_path / "out")
+    assert r.ok and r.kind == "asar"
+    # nested dir preserved, bytes intact
+    got = {Path(p).name: Path(p).read_bytes() for p in r.resource_files}
+    assert got["index.js"] == _JS
+    assert got["util.js"] == b"module.exports = 1;\n"
+    assert (tmp_path / "out" / "lib" / "util.js").exists()
+    # entry hint prefers index.js
+    assert r.out_file.endswith("index.js")
+
+
+def test_extract_asar_flags_unpacked_entries(tmp_path):
+    arc = tmp_path / "app.asar"
+    arc.write_bytes(_asar([("index.js", _JS)], unpacked=["native.node"]))
+    r = extract_node_js(arc, tmp_path / "out")
+    assert r.ok and r.note and "unpacked" in r.note.lower()
+
+
+def test_extract_asar_rejects_path_traversal(tmp_path):
+    from pathlib import Path
+    arc = tmp_path / "evil.asar"
+    arc.write_bytes(_asar([("../../escape.js", b"pwned"), ("safe.js", _JS)]))
+    r = extract_node_js(arc, tmp_path / "out")
+    assert r.ok
+    # the traversal entry is dropped; only the safe file is written under out/
+    assert not (tmp_path / "escape.js").exists()
+    assert all(str(Path(p).resolve()).startswith(str((tmp_path / "out").resolve()))
+               for p in r.resource_files)

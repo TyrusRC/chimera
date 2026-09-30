@@ -287,9 +287,11 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   Fingerprint the freezer and carve the source back out first: `node_extract`
   (MCP) / `chimera node-extract` recovers the embedded JS from a **nexe / Node
   SEA / pkg** binary (appended `<nexe~~sentinel>` bundle, or an injected
-  `NODE_SEA_BLOB`), and `pyextract` does the same for **PyInstaller**. Then run
-  `js-deobf` / `py_unwrap` on the recovered code — the flag logic is there, not
-  in the native layer.
+  `NODE_SEA_BLOB`) — and also unpacks an **Electron `app.asar`** (point it at the
+  asar under `resources/`, not the launcher .exe: the app's real JS/HTML lives in
+  the asar, the .exe is just the runtime). `pyextract` does the same for
+  **PyInstaller**. Then run `js-deobf` / `py_unwrap` on the recovered code — the
+  flag logic is there, not in the native layer.
   **Others**: `rust-decompile`, `vmp-devirt` (VMProtect).
 - **R8/ProGuard-obfuscated Android**: `a.b.c` class names aren't a dead end —
   Kotlin `@Metadata`/`@DebugMetadata` annotations survive R8 and carry the
@@ -299,6 +301,21 @@ runtime flag can be read from the dialog if you can drive input; if you can't
   UI → ViewModel → repository → network rather than grepping for endpoints.
 
 ## Anti-patterns
+- **Dead-end circuit breaker (model, not input, is usually the bug).** When a
+  hand-derived transform (a cipher, a hash, a decode loop) produces garbage
+  across *multiple* plausible inputs, suspect the MODEL before the inputs — stop
+  generating more input guesses. Re-derive the transform from ground truth: the
+  live `get_function` disassembly, or a single input→output pair from
+  `emulate_function` (esp. with `input_buffers`) / `run_with_breakpoints` /
+  `x64dbg` on the real routine. One ground-truth pair catches an off-by-one that
+  hours of key-guessing never will. Set an **attempt budget**: after a few failed
+  tries on ONE hypothesis, switch to ground-truth verification instead of more
+  variants. And **never trust a compacted/summarized "validated" model** — a
+  "byte-exact validated" claim carried across a context boundary must be
+  re-verified against the binary before you build on it (a real time-sink: a
+  remembered PRGA step of 19 was actually 18 — 19 was a different constant's
+  length — and corrupted every output). `emulate_function` is the cheap "validate
+  my hand model" oracle, not just a blind solver.
 - Running `analyze` (slow, Ghidra-heavy) before cheap detection has told you
   it's even the right instrument — a source-provided or bytecode target may
   need no disassembly at all (see the `python-bytecode` skill).

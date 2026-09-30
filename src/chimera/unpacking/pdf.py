@@ -371,6 +371,8 @@ def _decode_rl(data: bytes) -> bytes:
 def _apply_filters(data: bytes, filters: list) -> tuple[bytes, str]:
     codec = "raw"
     for f in filters:
+        if not isinstance(f, str):
+            continue                       # numeric/None filter token — not a codec
         canon = _FILTER_ALIASES.get(f, f)
         if canon in _TERMINAL_CODEC:
             codec = _TERMINAL_CODEC[canon]
@@ -396,7 +398,12 @@ def inline_images(content: bytes) -> list:
         em = re.compile(rb"\s(EI)(\s|$)").search(content, data_start)
         raw = content[data_start:em.start()] if em else content[data_start:]
         filt = params.get("F", [])
-        filt = [filt] if isinstance(filt, str) else filt
+        # /F may parse as a name (str), an array (list), or — on garbage/binary
+        # content mis-matched as an inline image — a number (int) or nothing.
+        if isinstance(filt, str):
+            filt = [filt]
+        elif not isinstance(filt, list):
+            filt = []
         try:
             data, codec = _apply_filters(raw, filt)
         except (binascii.Error, ValueError, zlib.error) as e:

@@ -171,6 +171,16 @@ def test_inline_image_none_when_absent():
     assert pdf.inline_images(b"q 1 0 0 1 0 0 cm (hi) Tj Q") == []
 
 
+def test_inline_image_numeric_filter_does_not_crash():
+    # Regression: binary/encrypted content mis-matched as a BI..ID inline image
+    # can parse /F as a NUMBER (a file-size ref, or noise) rather than a name.
+    # inline_images must degrade to raw, not raise `'int' object is not iterable`.
+    content = b"BI /W 1 /H 1 /F 12345 ID\x00\x01\x02\x03 EI"
+    imgs = pdf.inline_images(content)
+    assert len(imgs) == 1
+    assert imgs[0].codec == "raw"
+
+
 # --- one-shot pdf_tour ------------------------------------------------------
 
 def test_pdf_tour_surfaces_traps_and_objects(tmp_path):
