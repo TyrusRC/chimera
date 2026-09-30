@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/mcp-skill.json",
+  "name": "chimera",
+  "display_name": "Chimera",
+  "description": "Reverse-engineering platform: Ghidra/r2/Frida/capa/angr/Unicorn + native RE primitives, exposed over MCP so any agent host can drive the full triage->decompile->annotate->patch->solve pipeline for PE/ELF/Mach-O/.NET/Android/iOS.",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/TyrusRC/chimera",
+  "repository": "https://github.com/TyrusRC/chimera",
+  "author": "TyrusRC",
+  "category": "security",
+  "tags": ["mcp", "reverse-engineering", "malware-analysis", "ctf", "decompiler", "frida"],
+  "capabilities": {
+    "transport": "stdio",
+    "language": "python>=3.12"
+  },
+  "mcp_server": {
+    "command": "uvx",
+    "args": ["--from", "git+https://github.com/TyrusRC/chimera", "chimera", "mcp"],
+    "alternative_installs": {
+      "local": ".venv/bin/chimera mcp",
+      "auto": "chimera install"
+    }
+  }
+}

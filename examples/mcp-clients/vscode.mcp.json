@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "chimera": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/TyrusRC/chimera", "chimera", "mcp"]
+    }
+  }
+}
