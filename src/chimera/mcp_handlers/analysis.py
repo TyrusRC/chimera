@@ -514,6 +514,16 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             target = mcpstate.analysis_config.get("path") or str(mcpstate.current_model.binary.path)
         if not target or not Path(target).exists():
             return mcpstate.error("decompile needs path=<binary> (or a loaded analysis).")
+        if arguments.get("decompiler") == "ida":
+            from chimera.adapters.ida import IdaAdapter
+            ida = IdaAdapter()
+            if not ida.is_available():
+                return mcpstate.error(
+                    "IDA not found — install IDA Pro and set IDA_PATH (or put "
+                    "idat64 on PATH); pdg/pdc remain available.")
+            result = await ida.analyze(target, {
+                "mode": "decompile", "address": arguments["address"]})
+            return mcpstate.json_reply(result)
         adapter = Radare2Adapter()
         if not adapter.is_available():
             return mcpstate.error("radare2 not found on PATH.")

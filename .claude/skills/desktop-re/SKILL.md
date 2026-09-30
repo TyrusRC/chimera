@@ -31,6 +31,11 @@ do" map.
 - `find_dispatch_tables` / `get_callgraph` / xrefs to zero in; `decompile`
   (r2ghidra `pdg` → `pdc`) or `get_function` for C; `get_disassembly` (paged) for
   the exact instructions. `pathfind` walks a recovered FSM to the accepting input.
+- **Choose your decompiler.** `decompile(addr, decompiler=…)` / `chimera decompile
+  --decompiler …` offers three engines returning the same `{backend, code, lines}`
+  shape: `pdg` (r2ghidra — Ghidra-quality C, default), `pdc` (radare2 built-in,
+  always available), and `ida` (IDA Pro Hex-Rays — needs IDA installed + `IDA_PATH`;
+  opt-in, best for a function Ghidra mangles). Compare a tricky function across engines.
 - Leaf hash/decrypt/checksum → `emulate_function` (or `full_image` for an
   obfuscated one) to get its output without running the program.
 - Unknown input to a check (crackme/keygen/serial) → `symexec` (angr): declare
