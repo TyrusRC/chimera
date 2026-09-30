@@ -535,12 +535,12 @@ def all_tools() -> list[Tool]:
              }, "required": []}),
 
         Tool(name="decompile",
-             description="Decompile ONE native function to C at a given address, on demand (no prior analyze needed — pass path=). Prefers r2ghidra's `pdg` (the real Ghidra decompiler, genuine C) and falls back to radare2's built-in `pdc` when r2ghidra isn't installed; `decompiler` can force pdg or pdc. Does a targeted `af` (not a full analysis) so it's fast on large binaries. For a whole loaded project's functions use get_function instead. Returns the C code + which backend produced it.",
+             description="Decompile ONE native function to C at a given address, on demand (no prior analyze needed — pass path=). Prefers r2ghidra's `pdg` (the real Ghidra decompiler, genuine C) and falls back to radare2's built-in `pdc` when r2ghidra isn't installed; `decompiler` can force pdg, pdc, or ida. `ida` uses IDA Pro's Hex-Rays (needs IDA installed + IDA_PATH); opt-in, best for functions Ghidra mangles. Does a targeted `af` (not a full analysis) so it's fast on large binaries. For a whole loaded project's functions use get_function instead. Returns the C code + which backend produced it.",
              inputSchema={"type": "object", "properties": {
                  "address": {"type": "string", "description": "Function address (e.g. 0x401000)."},
                  "path": {"type": "string", "description": "Binary to decompile (defaults to the loaded analysis)."},
-                 "decompiler": {"type": "string", "enum": ["pdg", "pdc"],
-                                "description": "Force a backend (default: pdg then pdc)."},
+                 "decompiler": {"type": "string", "enum": ["pdg", "pdc", "ida"],
+                                "description": "Force a backend (default: pdg then pdc; 'ida' = Hex-Rays, needs IDA)."},
              }, "required": ["address"]}),
 
         Tool(name="core_triage",
