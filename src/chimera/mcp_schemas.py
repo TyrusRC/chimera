@@ -143,6 +143,11 @@ def all_tools() -> list[Tool]:
              inputSchema={"type": "object", "properties": {
                  "name": {"type": "string", "description": "Skill name, kebab-case"},
              }, "required": ["name"]}),
+        Tool(name="polyglot_scan",
+             description="Scan a file for EMBEDDED formats at ANY offset — the polyglot / carved-container triage a first-format parser misses (a CTF file that is PDF+ZIP+Mach-O+VHD+EICAR at once, real payload at a non-zero offset). Finds magics for PE/ELF/Mach-O (incl. fat, with its arch slices) / PDF / ZIP / gzip / 7z / PNG / RAR / VHD / ISO-UDF / EICAR, with a computed size where the format allows. Use `chimera polyglot --extract <offset>` to carve one out. Read-only.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "File to scan for embedded formats."},
+             }, "required": ["path"]}),
         Tool(name="get_bypass_scripts",
              description="Get Frida bypass scripts for detected protections. Returns a combined JS script ready to load via Frida.",
              inputSchema={"type": "object", "properties": {}}),

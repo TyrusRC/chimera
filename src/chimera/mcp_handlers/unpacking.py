@@ -16,6 +16,15 @@ logger = logging.getLogger(__name__)
 
 
 async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
+    if name == "polyglot_scan":
+        from chimera.unpacking.polyglot import scan
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        hits = scan(path)
+        return mcpstate.json_reply({"count": len(hits), "formats": hits})
+
     if name == "py_unwrap":
         from chimera.unpacking.pybytecode import disassemble, unwrap
 
