@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 
+from chimera.integrations.dsh import DshHost
 from chimera.integrations.jsonhost import JsonHost
 
 
@@ -30,6 +31,7 @@ def build_registry(cwd: Path | None = None, home: Path | None = None) -> dict:
         JsonHost("cursor", cwd / ".cursor/mcp.json"),
         JsonHost("windsurf", home / ".codeium/windsurf/mcp_config.json"),
         JsonHost("vscode", cwd / ".vscode/mcp.json", root_key="servers"),
+        DshHost(home / ".dsh/cordis.patch.yml"),
     ]:
         hosts[h.name] = h
     return hosts
