@@ -15,6 +15,14 @@ def backup(path: Path) -> Path:
     return dst
 
 
+def write_with_backup(path: Path, text: str) -> None:
+    """Create parents, back up an existing file, then write `text`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup(path)
+    path.write_text(text)
+
+
 class Host(Protocol):
     name: str
 

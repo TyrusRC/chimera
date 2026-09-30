@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from chimera.integrations.base import backup
+from chimera.integrations.base import write_with_backup
 from chimera.integrations.skills_root import skills_root
 
 
@@ -57,10 +57,7 @@ class DshHost:
         summary = f"dsh: {self._path} [+mcp-chimera row]"
         if dry_run:
             return summary
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         existing = self._path.read_text() if self._path.exists() else ""
-        if self._path.exists():
-            backup(self._path)
         sep = "" if existing.endswith("\n") or existing == "" else "\n"
-        self._path.write_text(existing + sep + self._block(entry))
+        write_with_backup(self._path, existing + sep + self._block(entry))
         return summary

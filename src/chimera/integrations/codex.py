@@ -11,7 +11,7 @@ import re
 import tomllib
 from pathlib import Path
 
-from chimera.integrations.base import backup
+from chimera.integrations.base import write_with_backup
 
 _HEADER = "[mcp_servers.chimera]"
 # Match our table from its header to the next top-level "[" or EOF.
@@ -67,8 +67,5 @@ class CodexHost:
         else:
             sep = "" if text.endswith("\n") or text == "" else "\n"
             text = text + sep + ("\n" if text else "") + block
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        if self._path.exists():
-            backup(self._path)
-        self._path.write_text(text)
+        write_with_backup(self._path, text)
         return summary

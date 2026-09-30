@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from chimera.integrations.base import backup
+from chimera.integrations.base import write_with_backup
 
 
 class JsonHost:
@@ -51,10 +51,7 @@ class JsonHost:
             return summary
         servers["chimera"] = entry
         data[self.root_key] = servers
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        if self._path.exists():
-            backup(self._path)
-        self._path.write_text(json.dumps(data, indent=2) + "\n")
+        write_with_backup(self._path, json.dumps(data, indent=2) + "\n")
         return summary
 
     def remove(self, *, dry_run: bool) -> bool:
@@ -66,8 +63,7 @@ class JsonHost:
             return False
         if dry_run:
             return True
-        backup(self._path)
         del servers["chimera"]
         data[self.root_key] = servers
-        self._path.write_text(json.dumps(data, indent=2) + "\n")
+        write_with_backup(self._path, json.dumps(data, indent=2) + "\n")
         return True
