@@ -192,3 +192,7 @@ parse with `int(x, 16)` and don't require a `0x` prefix.
 - One leaf computes a value from fixed inputs → `emulate_function`.
 - No partial oracle AND enormous logic AND running won't reveal it → say the
   cost honestly; don't fake a result.
+- **Needs a real OS / anti-VM-evasive sample / snapshot-revert detonation?** Use
+  the managed-VM tier (`vm_*` tools / `chimera vm`) — see the `sandbox` skill's
+  isolation tiers. It runs the sample inside a real guest from a clean snapshot,
+  network off by default.
