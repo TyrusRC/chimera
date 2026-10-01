@@ -96,6 +96,8 @@ class Framework(Enum):
     GO = "go"  # Go toolchain (gc); pclntab + go:buildinfo present
     DOTNET_AOT = "dotnet-aot"  # .NET NativeAOT (native PE; .managed + hydrated sections)
     DOTNET_MIXED = "dotnet-mixed"  # mixed-mode C++/CLI (IL + native; native entry point)
+    RUST = "rust"  # Rust (rustc/cargo); /rustc/<hash>, cargo/registry, library/std/src
+    CRYSTAL = "crystal"  # Crystal-lang (Mach-O/ELF); __crystal_main, Fiber::ExecutionContext
     UNKNOWN = "unknown"
 
 

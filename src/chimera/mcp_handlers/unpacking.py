@@ -25,6 +25,45 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         hits = scan(path)
         return mcpstate.json_reply({"count": len(hits), "formats": hits})
 
+    if name == "zip_legacy":
+        from chimera.unpacking.zip_legacy import extract_file
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        pw = arguments.get("password")
+        pw_b = pw.encode() if isinstance(pw, str) else pw
+        entries = []
+        for e in extract_file(path, pw_b):
+            d = e.pop("data", None)
+            if d is not None:
+                e["hex"] = d[:4096].hex()
+                try:
+                    e["text"] = d.decode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+            entries.append(e)
+        return mcpstate.json_reply({"count": len(entries), "entries": entries})
+
+    if name == "macho_codesign":
+        from chimera.parsers.macho_codesign import (
+            MachoCodeSignError, extract_slice, read_code_signatures,
+        )
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        try:
+            sigs = [s.to_dict() for s in read_code_signatures(path)]
+            result = {"signatures": sigs}
+            idx = arguments.get("extract_slice")
+            if idx is not None:
+                out = arguments.get("out_path") or f"{path}.slice{idx}"
+                result["extracted"] = {"index": int(idx), "out_path": out,
+                                       "bytes": extract_slice(path, int(idx), out)}
+            return mcpstate.json_reply(result)
+        except MachoCodeSignError as exc:
+            return mcpstate.error(str(exc))
+
     if name == "py_unwrap":
         from chimera.unpacking.pybytecode import disassemble, unwrap
 

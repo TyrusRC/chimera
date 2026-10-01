@@ -91,6 +91,17 @@ async def analyze_macho(
     # -----------------------------------------------------------------------
     model = UnifiedProgramModel(binary)
     binary.framework = Framework.NATIVE
+    # Recover a native runtime hiding behind the `native` label (reads as C/C++),
+    # e.g. Crystal-lang — mirrors the PE path's native_runtime fingerprint.
+    try:
+        from chimera.frameworks.native_macho import detect_macho_runtime
+        rt = detect_macho_runtime(macho_path.read_bytes())
+        if rt:
+            binary.framework = Framework(rt[0])
+            cache.put_json(sha, "native_runtime", {"framework": rt[0], "detail": rt[1]})
+            logger.info("native runtime fingerprint: %s", rt[1])
+    except Exception as exc:
+        logger.warning("native runtime detection failed: %s", exc)
     skipped_phases: list[str] = []
     is_fat = binary.format == BinaryFormat.FAT
     logger.info("Mach-O pipeline: %s [%s]", macho_path.name, binary.format.value)

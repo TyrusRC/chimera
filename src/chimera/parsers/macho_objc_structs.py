@@ -10,7 +10,11 @@ import struct
 
 # --- Mach-O load command IDs -------------------------------------------------
 LC_SEGMENT_64 = 0x19
+LC_CODE_SIGNATURE = 0x1D
 LC_DYLD_CHAINED_FIXUPS = 0x80000034
+
+# linkedit_data_command (cmd, cmdsize, dataoff, datasize) — LC_CODE_SIGNATURE et al.
+LINKEDIT_DATA_COMMAND = struct.Struct("<IIII")
 
 # --- Chained-fixup pointer formats ------------------------------------------
 DYLD_CHAINED_PTR_ARM64E = 1

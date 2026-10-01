@@ -33,6 +33,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     classify_cmd,
     cmpstr_cmd,
     core_cmd,
+    crypto_triage_cmd,
     decompile_cmd,
     decrypt_cmd,
     deflatten_cmd,
@@ -57,13 +58,16 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     ioc_cmd,
     jni_cmd,
     jsdeobf_cmd,
+    macho_cmd,
     manifest_cmd,
     memory_cmd,
+    native_cmd,
     nodeextract_cmd,
     notebook_cmd,
     overlay_cmd,
     patch_cmd,
     pathfind_cmd,
+    pcap_cmd,
     pdf_cmd,
     persistence_cmd,
     polyglot_cmd,
@@ -87,6 +91,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     wine_cmd,
     x64dbg_cmd,
     yara_cmd,
+    ziplegacy_cmd,
 )
 
 # Register the database CLI group (defined in chimera/cli_db.py — separate

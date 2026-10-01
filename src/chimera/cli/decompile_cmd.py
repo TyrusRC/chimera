@@ -12,8 +12,9 @@ from chimera.cli._root import main
 @main.command("decompile")
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--addr", "address", required=True, help="Function address (0x…).")
-@click.option("--decompiler", type=click.Choice(["pdg", "pdc", "ida"]), default=None,
-              help="Force a backend (default: r2ghidra pdg, then pdc; 'ida' = Hex-Rays).")
+@click.option("--decompiler", type=click.Choice(["pdg", "pdc", "ida", "ghidra"]), default=None,
+              help="Force a backend (default: r2ghidra pdg, then pdc; 'ida' = Hex-Rays; "
+                   "'ghidra' = standalone Ghidra headless, needs GHIDRA_HOME).")
 @click.option("--json", "as_json", is_flag=True)
 def decompile(path: str, address: str, decompiler: str | None, as_json: bool):
     """Decompile the function at --addr in PATH to C."""
@@ -23,6 +24,13 @@ def decompile(path: str, address: str, decompiler: str | None, as_json: bool):
         a = IdaAdapter()
         if not a.is_available():
             raise click.ClickException("IDA not found — install IDA Pro and set IDA_PATH.")
+        r = asyncio.run(a.analyze(path, {"mode": "decompile", "address": address}))
+    elif decompiler == "ghidra":
+        from chimera.adapters.ghidra import GhidraAdapter
+
+        a = GhidraAdapter()
+        if not a.is_available():
+            raise click.ClickException("Ghidra not found — set GHIDRA_HOME (or install to /opt/ghidra).")
         r = asyncio.run(a.analyze(path, {"mode": "decompile", "address": address}))
     else:
         from chimera.adapters.radare2 import Radare2Adapter

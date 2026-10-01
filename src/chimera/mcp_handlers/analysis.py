@@ -452,6 +452,19 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error(result["error"])
         return mcpstate.json_reply(result)
 
+    if name == "crypto_triage":
+        from chimera.crypto_triage import run as triage_run
+
+        inputs = arguments.get("ciphertexts") or []
+        if len(inputs) < 2:
+            return mcpstate.error("crypto_triage needs ciphertexts=[>=2 blobs].")
+        result = triage_run([str(s) for s in inputs],
+                            enc=str(arguments.get("enc", "hex")),
+                            crib=arguments.get("crib"))
+        if result.get("error"):
+            return mcpstate.error(result["error"])
+        return mcpstate.json_reply(result)
+
     # ── rsa_recover (modpow from N/e/c, + optional d/p/q or Fermat) ──────
     if name == "rsa_recover":
         from chimera.rsatool import RsaError, parse_int, rsa_recover
@@ -523,6 +536,17 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
                     "idat64 on PATH); pdg/pdc remain available.")
             result = await ida.analyze(target, {
                 "mode": "decompile", "address": arguments["address"]})
+            return mcpstate.json_reply(result)
+        if arguments.get("decompiler") == "ghidra":
+            from chimera.adapters.ghidra import GhidraAdapter
+            g = GhidraAdapter()
+            if not g.is_available():
+                return mcpstate.error(
+                    "Ghidra not found — set GHIDRA_HOME (or install to /opt/ghidra); "
+                    "pdg/pdc remain available.")
+            result = await g.analyze(target, {
+                "mode": "decompile", "address": arguments["address"],
+                "analysis_timeout": int(arguments.get("analysis_timeout", 300))})
             return mcpstate.json_reply(result)
         adapter = Radare2Adapter()
         if not adapter.is_available():

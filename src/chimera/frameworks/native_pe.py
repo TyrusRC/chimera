@@ -23,6 +23,12 @@ _GO_VERSION_RE = re.compile(rb"go1\.\d+(?:\.\d+)?")
 
 _DOTNET_CORE_RE = re.compile(rb"\.NETCoreApp,Version=v(\d+\.\d+)")
 
+# The compiler embeds panic/location strings referencing the toolchain source
+# tree under `/rustc/<40-char commit hash>/library/...`; that path, the cargo
+# registry path, and the std source path are the cheapest reliable "this is
+# Rust" markers, independent of symbol stripping.
+_RUSTC_RE = re.compile(rb"/rustc/[0-9a-f]{16,}")
+
 
 def _present(data: bytes, needle: bytes) -> bool:
     """True if `needle` appears as ASCII or UTF-16LE (VB stores both)."""
@@ -65,6 +71,28 @@ def _detect_dotnet_aot(data: bytes) -> Optional[tuple[str, str]]:
     return ("dotnet-aot", f".NET NativeAOT{ver} (native, no IL)")
 
 
+def _detect_rust(data: bytes) -> Optional[tuple[str, str]]:
+    """Recognise a Rust binary behind a bare `native` label.
+
+    Rust (rustc/cargo) binaries carry `/rustc/<hash>/library/...` panic-location
+    strings, the `cargo/registry` dependency path, and `library/std/src/...`;
+    any is a reliable marker and survives stripping (they are in panic metadata,
+    not symbols). Tagging it steers the analyst to Rust-aware reversing (heavy
+    monomorphised generics, `core::`/`alloc::` noise, often `ring`/`rustls`),
+    not C/C++.
+    """
+    is_rust = (
+        _RUSTC_RE.search(data) is not None
+        or b"cargo/registry" in data
+        or b"cargo\\registry" in data
+        or b"library/std/src/" in data
+        or b"library/core/src/panicking.rs" in data
+        or b"rust_begin_unwind" in data
+        or b"rust_eh_personality" in data
+    )
+    return ("rust", "Rust (rustc/cargo)") if is_rust else None
+
+
 def detect_native_runtime(
     data: bytes, import_dlls: Iterable[str]
 ) -> Optional[tuple[str, str]]:
@@ -77,6 +105,10 @@ def detect_native_runtime(
     aot = _detect_dotnet_aot(data)
     if aot:
         return aot
+
+    rust = _detect_rust(data)
+    if rust:
+        return rust
 
     # twinBASIC self-identifies in its runtime error strings.
     if _present(data, b"twinBASIC"):

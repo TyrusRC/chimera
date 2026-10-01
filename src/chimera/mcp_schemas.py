@@ -148,6 +148,19 @@ def all_tools() -> list[Tool]:
              inputSchema={"type": "object", "properties": {
                  "path": {"type": "string", "description": "File to scan for embedded formats."},
              }, "required": ["path"]}),
+        Tool(name="zip_legacy",
+             description="Extract a ZIP that stdlib `zipfile`/`unzip`/`7z` refuse — legacy **Reduce** compression (methods 2-5) and **ZipCrypto** (traditional PKWARE) encryption. Scans LOCAL file headers directly (robust to a mangled/absent central directory, as CTF ZIPs use), decrypts with `password` where needed, and decompresses stored/deflate (stdlib) or Reduce (this tool). FLARE-On 13 ch3 hid an answer in a method-2-Reduce + ZipCrypto `flag.txt` (password `infected` → `reduce_not_deflate`). Returns per entry {name, method, encrypted, usize, text/hex or error}. Shrink(1)/Implode(6) are reported, not decoded.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "ZIP file (or any container holding a ZIP)."},
+                 "password": {"type": "string", "description": "ZipCrypto password (if encrypted)."},
+             }, "required": ["path"]}),
+        Tool(name="macho_codesign",
+             description="Read a Mach-O's code signature — the CodeDirectory **identifier** + CDHash — and list/extract its universal (fat) slices. The identifier is an analyst signal: an author can label which fat slice is the real one through it (FLARE-On 13 ch3: the real Crystal slice signs as `true_honest_flag`, the decoy as `totally_fake_flag`), and for malware it's the bundle id. Returns one entry per arch (thin → one, fat → one per slice) with {arch_offset, identifier, cdhash, hash_type, has_signature}. Pass `extract_slice` (index) [+ `out_path`] to write that slice out as a standalone thin Mach-O. Read-only except the optional extract.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Mach-O (thin or fat/universal) to read."},
+                 "extract_slice": {"type": "integer", "description": "Fat-slice index to extract (optional)."},
+                 "out_path": {"type": "string", "description": "Where to write the extracted slice (default <path>.sliceN)."},
+             }, "required": ["path"]}),
         Tool(name="get_bypass_scripts",
              description="Get Frida bypass scripts for detected protections. Returns a combined JS script ready to load via Frida.",
              inputSchema={"type": "object", "properties": {}}),
@@ -513,6 +526,14 @@ def all_tools() -> list[Tool]:
                  "counter": {"type": "integer", "default": 0, "description": "Initial ChaCha20 block counter (in[12] state word)."},
              }, "required": ["data", "key"]}),
 
+        Tool(name="crypto_triage",
+             description="Detect keystream REUSE across several ciphertexts (the multi-time-pad weakness) and crib-drag to recover plaintext — NO key needed. A stream cipher (RC4/ChaCha/AES-CTR/hand-rolled XOR) is broken the moment the same key+nonce encrypts two messages: C_i⊕C_j = P_i⊕P_j. This scores the reuse signal (shared ciphertext prefixes, zero-XOR runs, printable-XOR fraction — random independent streams XOR to ~31% printable and share no prefix) across ≥2 blobs and, given a `crib` (a guessed plaintext fragment), slides it to recover the other plaintexts at matched offsets (the classic two-time-pad attack). FLARE-On 13 ch5 'catthief' re-keyed RC4 per message → all exfil bodies shared one keystream; this flags it. Complements decrypt_blob (which applies a KNOWN key). Returns pairwise stats, a verdict, and crib hits.",
+             inputSchema={"type": "object", "properties": {
+                 "ciphertexts": {"type": "array", "items": {"type": "string"}, "description": "≥2 ciphertext blobs (encoding set by enc)."},
+                 "enc": {"type": "string", "enum": ["hex", "base64", "file", "raw"], "default": "hex", "description": "How each ciphertext is given (file = a path)."},
+                 "crib": {"type": "string", "description": "Optional known/guessed plaintext fragment to drag (recovers other plaintexts where it matches)."},
+             }, "required": ["ciphertexts"]}),
+
         Tool(name="rsa_recover",
              description="Recover an RSA plaintext from the material an encryptor leaves behind — a modulus N, ciphertext c, and public exponent e (default 0x10001), optionally a private exponent d or the primes p,q. With d (or p,q → derive d) it decrypts m = c^d mod N. With only N/e/c it computes m = c^e mod N, which returns the plaintext when the encryptor 'encrypted' with the PRIVATE exponent — a classic bug where the modinv is written back over the public exponent, so the stored value is m^d and raising it to e recovers m with no private key — and otherwise verifies a signature. `factor=true` tries Fermat factorization of N (only works when the primes are close). Returns m as int/hex and as big- AND little-endian bytes with text previews (mind the endianness — a recovered symmetric key is often little-endian; feed it to decrypt_blob). Focused: modpow + Fermat only, no Wiener/common-modulus/factordb (use RsaCtfTool for those). No network.",
              inputSchema={"type": "object", "properties": {
@@ -540,12 +561,12 @@ def all_tools() -> list[Tool]:
              }, "required": []}),
 
         Tool(name="decompile",
-             description="Decompile ONE native function to C at a given address, on demand (no prior analyze needed — pass path=). Prefers r2ghidra's `pdg` (the real Ghidra decompiler, genuine C) and falls back to radare2's built-in `pdc` when r2ghidra isn't installed; `decompiler` can force pdg, pdc, or ida. `ida` uses IDA Pro's Hex-Rays (needs IDA installed + IDA_PATH); opt-in, best for functions Ghidra mangles. Does a targeted `af` (not a full analysis) so it's fast on large binaries. For a whole loaded project's functions use get_function instead. Returns the C code + which backend produced it.",
+             description="Decompile ONE native function to C at a given address, on demand (no prior analyze needed — pass path=). Prefers r2ghidra's `pdg` (the real Ghidra decompiler, genuine C) and falls back to radare2's built-in `pdc` when r2ghidra isn't installed; `decompiler` can force pdg, pdc, ida, or ghidra. `ida` uses IDA Pro's Hex-Rays (needs IDA + IDA_PATH); `ghidra` drives a STANDALONE Ghidra headless (needs GHIDRA_HOME) — the fallback when r2ghidra won't build, giving genuine Ghidra C (it imports + analyzes the whole binary, so it's the HEAVY option). Does a targeted `af` (not a full analysis) for pdg/pdc so they're fast on large binaries. For a whole loaded project's functions use get_function instead. Returns the C code + which backend produced it.",
              inputSchema={"type": "object", "properties": {
                  "address": {"type": "string", "description": "Function address (e.g. 0x401000)."},
                  "path": {"type": "string", "description": "Binary to decompile (defaults to the loaded analysis)."},
-                 "decompiler": {"type": "string", "enum": ["pdg", "pdc", "ida"],
-                                "description": "Force a backend (default: pdg then pdc; 'ida' = Hex-Rays, needs IDA)."},
+                 "decompiler": {"type": "string", "enum": ["pdg", "pdc", "ida", "ghidra"],
+                                "description": "Force a backend (default: pdg then pdc; 'ida' = Hex-Rays; 'ghidra' = standalone Ghidra headless, needs GHIDRA_HOME)."},
              }, "required": ["address"]}),
 
         Tool(name="core_triage",
@@ -664,6 +685,27 @@ def all_tools() -> list[Tool]:
                  "vvp": {"type": "string", "description": "vvp path (default: PATH)."},
                  "timeout": {"type": "integer", "default": 120},
              }, "required": ["sources"]}),
+
+        Tool(name="pcap_extract",
+             description="Extract application-layer payloads from a packet capture (.pcap/.pcapng) via tshark — for the malware+capture class (reconstruct what was exfiltrated / C2'd). `action`: `http` (default) returns every HTTP request/response + their reconstructed (de-chunked, de-gzipped) bodies — FLARE-On 13 ch5 'catthief' POSTed the stolen files as HTTP bodies; `follow` + `stream` dumps a raw TCP stream (direction both|c2s|s2c); `conversations` lists the TCP conversation table. Bodies return as hex (or saved to `out_dir`). Needs tshark (`apt install tshark`).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Capture file (.pcap/.pcapng)."},
+                 "action": {"type": "string", "enum": ["http", "follow", "conversations"], "default": "http"},
+                 "stream": {"type": "integer", "description": "tcp.stream index (for action=follow)."},
+                 "direction": {"type": "string", "enum": ["both", "c2s", "s2c"], "default": "both"},
+                 "out_dir": {"type": "string", "description": "Save HTTP bodies here instead of returning hex."},
+             }, "required": ["path"]}),
+        Tool(name="native_oracle",
+             description="Run a self-contained function FROM a target binary at NATIVE speed as an oracle — for a brute/oracle loop that emulate_function (unicorn, ~ms/call) is far too slow for, e.g. a 2^32 key/serial search over a tweaked-crypto routine (FLARE-On 13 ToxicMiner: flag=RC4(customSHA256d(diskSerial‖const)[:16], ct); ~180 ns/call → 2^32 in ~80s on 10 cores). It auto-derives the binary's loadable segments (PE sections / ELF PT_LOAD, non-PIE), maps them at their real VAs (MAP_FIXED), and runs your C `body` against them; the body reaches the target by absolute VA through a WIN64/SYSV typedef, e.g. `typedef void (WIN64 *f)(uint32_t,uint32_t,void*); ((f)0x140134ca0)(...)`, and prints findings to stdout (`IMG`=mapped base, `CHIMERA_BASE`=image base are in scope). Compiled with gcc and run CONFINED under bubblewrap (network off) because it executes untrusted native code — needs gcc+bwrap. Use `cflags` (e.g. ['-O3','-fopenmp']) and `preamble` (file-scope C: tables, helpers). Returns {available, compiled, ran, returncode, stdout, stderr, image_base, span, nsegments, source, error}. Reimplementing a tweaked algorithm by hand is error-prone; running the real bytes is exact — cross-check one input against emulate_function.",
+             inputSchema={"type": "object", "properties": {
+                 "binary": {"type": "string", "description": "Path to the target PE/ELF (bound read-only into the sandbox)."},
+                 "body": {"type": "string", "description": "C inserted into main() after the image loads; calls target VAs and prints to stdout."},
+                 "preamble": {"type": "string", "description": "File-scope C (typedefs, tables, helper functions)."},
+                 "cflags": {"type": "array", "items": {"type": "string"}, "description": "gcc flags (default ['-O2']); add '-fopenmp' for a parallel brute."},
+                 "timeout": {"type": "number", "default": 300, "description": "Kill the run after N seconds."},
+                 "confine": {"type": "boolean", "default": True, "description": "Run under bwrap (default). false runs UNCONFINED — only for code you trust."},
+                 "net": {"type": "boolean", "default": False, "description": "Allow network in the sandbox (default off)."},
+             }, "required": ["binary", "body"]}),
 
         Tool(name="run_under_wine",
              description="Run a Windows PE on this Linux host under Wine as a dynamic oracle — isolated throwaway WINEPREFIX, debug output silenced. Console apps run headless (stdout captured); set xvfb for GUI apps (virtual display). A memory_scan needle is searched (ASCII + UTF-16LE) in the process memory to lift a MessageBox/window answer. Executes the binary; never raises on the common failures (wine absent, missing exe) — returns an error dict. Returns {ran, returncode, stdout, stderr, timed_out, wineprefix, memory_hits, error}.",

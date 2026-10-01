@@ -74,6 +74,12 @@ class GhidraAdapter(BackendAdapter):
         analysis_timeout = int(options.get("analysis_timeout", 300))
         post_script = Path(__file__).resolve().parent.parent / "ghidra_scripts"
 
+        # mode == "decompile": decompile ONE function (options["address"]) via
+        # DecompileOne.java — the standalone-Ghidra `pdg`-equivalent backend used
+        # when r2ghidra can't be built; otherwise export the whole program.
+        decompile_mode = options.get("mode") == "decompile"
+        post_script_name = "DecompileOne.java" if decompile_mode else "ExportFunctions.java"
+
         # `-Xmx` is a JVM flag, not a Ghidra CLI flag — pass it via
         # GHIDRA_JVM_ARGS, otherwise analyzeHeadless aborts with
         # `InvalidInputException: Bad argument: -Xmx4g`.
@@ -83,8 +89,12 @@ class GhidraAdapter(BackendAdapter):
             "-max-cpu", "2",
             "-analysisTimeoutPerFile", str(analysis_timeout),
             "-scriptPath", str(post_script),
-            "-postScript", "ExportFunctions.java",
+            "-postScript", post_script_name,
         ]
+        if decompile_mode:
+            # Pass out-dir + address as script ARGS (GHIDRA_JVM_ARGS -D props are
+            # not reliably forwarded to the script JVM across Ghidra versions).
+            cmd += [str(output_dir), str(options["address"])]
         processor = options.get("processor")
         if processor:
             cmd.extend(["-processor", processor])
@@ -95,9 +105,10 @@ class GhidraAdapter(BackendAdapter):
         # Ghidra abort during startup with `Failed to create directory`. Same
         # mitigation we use in the jadx adapter: substitute a writable path.
         env = os.environ.copy()
-        env["GHIDRA_JVM_ARGS"] = (
-            f"-Xmx{self._max_mem} -Dchimera.out.dir={output_dir}"
-        )
+        jvm = f"-Xmx{self._max_mem} -Dchimera.out.dir={output_dir}"
+        if decompile_mode:
+            jvm += f" -Dchimera.decompile.addr={options['address']}"
+        env["GHIDRA_JVM_ARGS"] = jvm
         home = env.get("HOME")
         if not home or not os.access(home, os.W_OK):
             ghidra_home_dir = Path(project_dir) / "ghidra_home"
@@ -141,6 +152,16 @@ class GhidraAdapter(BackendAdapter):
                 result[output_file.stem] = output_file.read_text()
         if proc.returncode != 0:
             result["error"] = stderr.decode(errors="replace")[-2000:]
+        if decompile_mode:
+            one = result.get("decompile_one")
+            if isinstance(one, dict) and one.get("ok"):
+                code = one.get("code", "")
+                return {"ok": True, "backend": "ghidra",
+                        "address": one.get("address", options["address"]),
+                        "code": code, "lines": code.count("\n") + 1}
+            err = one.get("error") if isinstance(one, dict) else None
+            return {"ok": False, "backend": "ghidra", "address": options["address"],
+                    "error": err or result.get("error") or "ghidra produced no decompilation"}
         return result
 
     async def cleanup(self) -> None:

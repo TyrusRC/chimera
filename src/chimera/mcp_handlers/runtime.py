@@ -210,6 +210,55 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             timeout=int(arguments.get("timeout", 120)))
         return mcpstate.json_reply(result)
 
+    if name == "pcap_extract":
+        from pathlib import Path as _P
+
+        from chimera.dynamic.pcap_extract import (
+            PcapError, conversations, extract_http_bodies, follow_tcp_stream,
+            list_http, tshark_available,
+        )
+        path = arguments.get("path")
+        if not path or not _P(path).exists():
+            return mcpstate.error(f"capture not found: {path}")
+        if not tshark_available():
+            return mcpstate.error("tshark not found — `apt install tshark`")
+        action = arguments.get("action", "http")
+        try:
+            if action == "http":
+                bodies = extract_http_bodies(path, out_dir=arguments.get("out_dir"))
+                return mcpstate.json_reply({"requests": list_http(path), "bodies": bodies})
+            if action == "follow":
+                if arguments.get("stream") is None:
+                    return mcpstate.error("follow needs stream=<tcp.stream index>")
+                data = follow_tcp_stream(path, int(arguments["stream"]),
+                                         arguments.get("direction", "both"))
+                return mcpstate.json_reply({"stream": arguments["stream"], "size": len(data),
+                                            "hex": data[:8192].hex()})
+            if action == "conversations":
+                return mcpstate.json_reply({"conversations": conversations(path)})
+            return mcpstate.error(f"unknown action {action!r} (http|follow|conversations)")
+        except PcapError as exc:
+            return mcpstate.error(str(exc))
+
+    if name == "native_oracle":
+        from pathlib import Path as _P
+
+        from chimera.dynamic.native_oracle import run_native_oracle
+        binary = arguments.get("binary")
+        body = arguments.get("body")
+        if not binary or not _P(binary).exists():
+            return mcpstate.error(f"binary not found: {binary}")
+        if not body:
+            return mcpstate.error("native_oracle needs a 'body' (C run inside main()).")
+        result = run_native_oracle(
+            binary, body,
+            preamble=arguments.get("preamble", ""),
+            cflags=tuple(arguments.get("cflags") or ("-O2",)),
+            timeout=float(arguments.get("timeout", 300)),
+            confine=bool(arguments.get("confine", True)),
+            net=bool(arguments.get("net", False)))
+        return mcpstate.json_reply(result)
+
     if name == "run_under_wine":
         from chimera.dynamic.wine import run_under_wine
 
