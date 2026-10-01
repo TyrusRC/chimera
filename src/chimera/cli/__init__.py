@@ -36,6 +36,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     crypto_triage_cmd,
     decompile_cmd,
     decrypt_cmd,
+    ida_cmd,
     deflatten_cmd,
     devices_cmd,
     diff_cmd,

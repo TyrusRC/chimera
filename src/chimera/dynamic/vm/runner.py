@@ -7,6 +7,7 @@ missing binary or a timeout; the caller sees it in the RunResult.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -32,8 +33,14 @@ def resolve_cli(name: str, windows_default: str | None = None) -> str | None:
 
 
 def is_wsl() -> bool:
+    # Env markers are the most reliable: WSL always sets these for interop, and
+    # they survive custom kernels whose /proc/version drops the "microsoft" tag
+    # (e.g. a xanmod WSL2 build reads "...-WSL2-xanmod1 (clang ...)").
+    if os.environ.get("WSL_INTEROP") or os.environ.get("WSL_DISTRO_NAME"):
+        return True
     try:
-        return "microsoft" in Path("/proc/version").read_text().lower()
+        v = Path("/proc/version").read_text().lower()
+        return "microsoft" in v or "wsl" in v
     except OSError:
         return False
 
