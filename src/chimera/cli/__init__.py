@@ -42,6 +42,7 @@ from chimera.cli import (  # noqa: F401  — import for decorator side effects
     dispatch_cmd,
     doctor,
     dotnet_trace_cmd,
+    dotnetextract_cmd,
     emulate_cmd,
     ethfetch_cmd,
     evm_cmd,

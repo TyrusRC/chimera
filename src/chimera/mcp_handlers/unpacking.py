@@ -102,6 +102,17 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         result = extract_node_js(path, arguments.get("out_dir"))
         return mcpstate.json_reply(result.to_dict())
 
+    if name == "dotnet_extract":
+        from chimera.unpacking.dotnet_bundle import extract_bundle
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        result = extract_bundle(path, arguments.get("out_dir"))
+        if not result.ok:
+            return mcpstate.error(result.error or "extraction failed")
+        return mcpstate.json_reply(result.to_dict())
+
     if name == "js_deobf":
         from chimera.unpacking.js_deobf import deobfuscate
 

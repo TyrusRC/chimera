@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 
 from chimera.adapters.base import BackendAdapter, ResourceRequirement, ToolCategory
+from chimera.dotnet.ilspy_compat import compat_assembly
 from chimera.dotnet.toolpath import find_dotnet_tool
 
 logger = logging.getLogger(__name__)
@@ -69,28 +70,31 @@ class IlspyAdapter(BackendAdapter):
         out_dir = Path(out_dir_str)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        cmd = [self._ilspy_bin, binary_path, "-o", str(out_dir)]
         timeout = int(options.get("timeout", 120))
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout,
+        # ilspycmd crashes on a TargetFramework newer than it knows (e.g. .NET 10
+        # on ILSpy 8.x); decompile a version-clamped temp copy when needed.
+        with compat_assembly(binary_path) as decompile_target:
+            cmd = [self._ilspy_bin, decompile_target, "-o", str(out_dir)]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            return {
-                "available": True,
-                "assembly": Path(binary_path).stem,
-                "types": [],
-                "type_count": 0,
-                "error": "timeout",
-            }
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return {
+                    "available": True,
+                    "assembly": Path(binary_path).stem,
+                    "types": [],
+                    "type_count": 0,
+                    "error": "timeout",
+                }
 
         if proc.returncode != 0:
             return {

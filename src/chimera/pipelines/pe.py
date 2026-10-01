@@ -118,6 +118,25 @@ async def analyze_pe(
             "`chimera pyextract %s` to recover the .pyc; Ghidra deep skipped.",
             pe_path.name, pe_path.name)
 
+    # .NET single-file guard: a `PublishSingleFile` app looks like a plain PE but
+    # the native host is just a bootstrapper — the managed assembly + CoreCLR are
+    # appended as a bundle overlay. Deep-decompiling the ~100MB host is wasted;
+    # signpost `chimera dotnet-extract` to carve out the app assembly.
+    from chimera.unpacking.dotnet_bundle import is_single_file_bundle
+    is_dotnet_single_file = is_single_file_bundle(pe_path)
+    if is_dotnet_single_file:
+        cache.put_json(sha, "dotnet_single_file", {
+            "single_file_bundle": True,
+            "note": ("`.NET` single-file (self-contained) app: managed assembly + "
+                     "CoreCLR bundled as an overlay. Run `chimera dotnet-extract` "
+                     "to recover the app DLL; decompiling the native host is wasted."),
+        })
+        logger.info(
+            "NET single-file bundle detected (%s) — managed app + CoreCLR in an "
+            "appended bundle. Run `chimera dotnet-extract %s` to recover the "
+            "managed assembly; native-host deep analysis is low value.",
+            pe_path.name, pe_path.name)
+
     # -----------------------------------------------------------------------
     # Phase 3: PE header parse
     # -----------------------------------------------------------------------

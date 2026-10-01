@@ -37,3 +37,7 @@ web/src/**/*.js
 
 # Superpowers SDD scratch (ledger, briefs, review packages)
 .superpowers/
+
+# Wine oracle run artifacts (run_under_wine / sandbox drives) — local only
+wine*.out
+wineprefix/
