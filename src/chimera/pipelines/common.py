@@ -75,6 +75,8 @@ def detect_binary_format(path: Path) -> str:
     with open(path, "rb") as fh:
         magic = fh.read(8)
 
+    if magic[:4] == b"\x00asm":
+        return "wasm"
     if magic[:4] == b"\x7fELF":
         return _classify_elf_context(path)
     if magic[:4] in (b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe"):
@@ -95,7 +97,8 @@ def detect_binary_format(path: Path) -> str:
         return "memory_raw"
     if suffix == ".lime":
         return "memory_lime"
-    ext_map = {".so": "elf", ".dylib": "dylib", ".dll": "dll", ".hbc": "hbc"}
+    ext_map = {".so": "elf", ".dylib": "dylib", ".dll": "dll", ".hbc": "hbc",
+               ".wasm": "wasm"}
     return ext_map.get(suffix, "unknown")
 
 
@@ -145,6 +148,8 @@ def detect_platform(path: Path) -> str:
         return "linux_memory"
     if fmt == "jar":
         return "jvm"
+    if fmt == "wasm":
+        return "wasm"
     if fmt == "elf":
         return "android"  # JNI library context
     return "unknown"

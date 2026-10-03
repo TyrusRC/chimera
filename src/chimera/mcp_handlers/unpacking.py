@@ -102,6 +102,15 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         result = extract_node_js(path, arguments.get("out_dir"))
         return mcpstate.json_reply(result.to_dict())
 
+    if name == "tauri_extract":
+        from chimera.unpacking.tauri import extract_tauri
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        result = extract_tauri(path, arguments.get("out_dir"))
+        return mcpstate.json_reply(result.to_dict())
+
     if name == "dotnet_extract":
         from chimera.unpacking.dotnet_bundle import extract_bundle
 
@@ -174,5 +183,45 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.json_reply({"return": "0x" + (out or b"").hex()})
 
         return mcpstate.json_reply(evm_tour(code).to_dict())
+
+    if name == "wasm_decompile":
+        from chimera.adapters import wabt
+        from chimera.adapters.wabt import WasmToolError
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        out_dir = arguments.get("out_dir") or f"{Path(path).with_suffix('')}_wasm"
+        try:
+            result = wabt.decompile(Path(path), Path(out_dir))
+            if arguments.get("wat"):
+                wat = Path(out_dir) / "module.wat"
+                wabt.wat_disassemble(Path(path), wat)
+                result["wat"] = str(wat)
+        except WasmToolError as exc:
+            return mcpstate.error(str(exc))
+        return mcpstate.json_reply(result)
+
+    if name == "wasm_oracle":
+        from chimera.dynamic import wasm_oracle as wo
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        inputs = arguments.get("inputs") or []
+        export = arguments.get("export", "check")
+        wasm_exec = arguments.get("wasm_exec")
+        wasm_exec_p = Path(wasm_exec) if wasm_exec else None
+        go = arguments.get("go")
+        try:
+            if arguments.get("trace"):
+                result = wo.trace(Path(path), inputs, export=export, go=go,
+                                  wasm_exec=wasm_exec_p)
+            else:
+                result = wo.run_oracle(Path(path), inputs, export=export, go=go,
+                                       wasm_exec=wasm_exec_p)
+        except wo.WasmOracleError as exc:
+            return mcpstate.error(str(exc))
+        return mcpstate.json_reply(result)
 
     return None

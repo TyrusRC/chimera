@@ -43,6 +43,7 @@ class UnsupportedFormatError(Exception):
         "ELF                    -> linux native",
         "JAR                    -> jvm (jadx)",
         "MEMORY_LIME/RAW        -> memory forensics",
+        "WASM                   -> webassembly (Go-WASM aware)",
     )
 
     def __init__(self, detected_format: str | None, path: str):
@@ -131,6 +132,11 @@ class ChimeraEngine:
         elif platform == "linux_memory":
             from chimera.pipelines.memory import analyze_memory
             return await analyze_memory(
+                path, self.config, self.registry, self.resource_mgr, self.cache,
+            )
+        elif platform == "wasm":
+            from chimera.pipelines.wasm import analyze_wasm
+            return await analyze_wasm(
                 path, self.config, self.registry, self.resource_mgr, self.cache,
             )
         else:

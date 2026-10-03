@@ -29,6 +29,53 @@ _DOTNET_CORE_RE = re.compile(rb"\.NETCoreApp,Version=v(\d+\.\d+)")
 # Rust" markers, independent of symbol stripping.
 _RUSTC_RE = re.compile(rb"/rustc/[0-9a-f]{16,}")
 
+# Tauri (Rust desktop app: Rust host + a system webview) leaves several reliable
+# markers: the JS bridge global `__TAURI_INTERNALS__`/`__TAURI__` injected into the
+# webview, the `tauri-<ver>` crates.io dependency path, and the `wry`/`tao`
+# (webview/windowing) crates it always pulls in. Tauri is Rust-based, so this is a
+# refinement of the plain `rust` tag — it tells the analyst the real logic is a
+# Rust `#[tauri::command]` surface behind a webview IPC (`plugin:<name>|<cmd>`),
+# and the UI is embedded web assets (see the tauri_extract carver).
+_TAURI_VER_RE = re.compile(rb"tauri-(\d+\.\d+\.\d+)")
+# A native app that statically links its OWN V8 (rusty_v8) — common in a Tauri app
+# that runs game/business logic in an embedded isolate and often runtime-decrypts
+# its script (the startup snapshot is usually stock). Worth flagging: the logic may
+# not be in the static web assets at all.
+_RUSTY_V8_RE = re.compile(rb"rusty_v8-(\d+\.\d+\.\d+)")
+_V8_VER_RE = re.compile(rb"\b(\d+\.\d+\.\d+\.\d+)\b")
+
+
+def _detect_embedded_v8(data: bytes) -> Optional[str]:
+    """If the binary statically links rusty_v8, return a short detail string.
+
+    e.g. "embedded V8 via rusty_v8-0.32.1 (V8 9.5.172.19)". Returns None otherwise.
+    """
+    m = _RUSTY_V8_RE.search(data)
+    if not m and b"rusty_v8" not in data:
+        return None
+    rusty = m.group(1).decode() if m else "?"
+    # The V8 version string (x.y.z.w) is emitted near the snapshot/version blob.
+    v8 = _V8_VER_RE.search(data)
+    v8s = f" (V8 {v8.group(1).decode()})" if v8 else ""
+    return f"embedded V8 via rusty_v8-{rusty}{v8s}"
+
+
+def _detect_tauri(data: bytes) -> Optional[tuple[str, str]]:
+    """Recognise a Tauri (Rust + webview) app behind a bare `native`/`rust` label."""
+    is_tauri = (
+        b"__TAURI_INTERNALS__" in data
+        or b"__TAURI__" in data
+        or _TAURI_VER_RE.search(data) is not None
+        or (b"wry-" in data and b"tao-" in data)
+    )
+    if not is_tauri:
+        return None
+    m = _TAURI_VER_RE.search(data)
+    ver = f" v{m.group(1).decode()}" if m else ""
+    v8 = _detect_embedded_v8(data)
+    extra = f"; {v8}" if v8 else ""
+    return ("tauri", f"Tauri{ver} (Rust host + webview{extra})")
+
 
 def _present(data: bytes, needle: bytes) -> bool:
     """True if `needle` appears as ASCII or UTF-16LE (VB stores both)."""
@@ -105,6 +152,12 @@ def detect_native_runtime(
     aot = _detect_dotnet_aot(data)
     if aot:
         return aot
+
+    # Tauri is checked before Rust: it IS Rust, but the more specific tag is more
+    # useful (steers to the webview-IPC command surface + embedded web assets).
+    tauri = _detect_tauri(data)
+    if tauri:
+        return tauri
 
     rust = _detect_rust(data)
     if rust:

@@ -77,6 +77,14 @@ pdf = [
 disasm = [
     "capstone>=5.0",
 ]
+# Brotli decompression for `chimera tauri-extract` / MCP tauri_extract — Tauri's
+# EmbeddedAssets are usually brotli-compressed. Without it, the carver still finds
+# and writes each asset but leaves brotli blobs as raw (codec "undecoded"); a
+# stored/identity asset (small HTML/JSON) still comes out readable. zstd assets
+# additionally need `zstandard` (install separately if a build uses it).
+tauri = [
+    "brotli>=1.0",
+]
 # Assembly patching for `chimera patch --asm` / MCP patch (assemble mnemonics to
 # bytes at the target VA). keystone is a per-platform wheel, so it's opt-in;
 # without it byte-level and recipe patching still work and --asm reports the

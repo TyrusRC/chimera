@@ -110,6 +110,18 @@ async def analyze_elf(
     model = UnifiedProgramModel(binary)
     skipped_phases: list[str] = []
     binary.framework = Framework.NATIVE
+    # Fingerprint the native toolchain (Tauri/Rust/Go) — ELF was never fingerprinted
+    # before, so a Rust/Go/Tauri ELF read as bare C/C++. Mirrors the PE pipeline.
+    try:
+        from chimera.frameworks.native_elf import detect_elf_runtime
+
+        rt = detect_elf_runtime(elf_path.read_bytes())
+        if rt:
+            binary.framework = Framework(rt[0])
+            cache.put_json(sha, "native_runtime", {"framework": rt[0], "detail": rt[1]})
+            logger.info("native runtime fingerprint: %s", rt[1])
+    except Exception as exc:  # detection is best-effort; never fail the pipeline
+        logger.warning("ELF native runtime detection failed: %s", exc)
     logger.info("ELF pipeline: %s [%s]", elf_path.name, binary.format.value)
 
     # -----------------------------------------------------------------------

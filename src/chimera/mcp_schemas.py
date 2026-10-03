@@ -452,6 +452,13 @@ def all_tools() -> list[Tool]:
                  "out_dir": {"type": "string", "description": "Output directory (default: <name>_node beside the input)."},
              }, "required": ["path"]}),
 
+        Tool(name="tauri_extract",
+             description="Carve the embedded web frontend out of a Tauri (Rust desktop app) binary — the analogue of node_extract/dotnet_extract for Tauri's packaging. Tauri compiles its UI (HTML/JS/CSS/images) INTO the Rust executable via EmbeddedAssets; on an ELF build that's a table in `.data.rel.ro` of 32-byte `[key_ptr,key_len,blob_ptr,blob_len]` entries whose pointers are R_X86_64_RELATIVE relocations and whose blobs are usually brotli-compressed. This finds that table with NO hardcoded offsets (scans the relocated data section for the entry shape), resolves the relocs, decompresses each asset (brotli→zstd→stored), and writes them to disk — plus it fingerprints the Tauri version and whether the app statically links its own V8 (rusty_v8). CRUCIAL caveat it flags: some Tauri apps DON'T ship their real logic in these static assets — they embed a V8 isolate and runtime-decrypt the script; when index.html references a script that isn't among the carved assets, or rusty_v8 is linked, the carved frontend is only a shell and the logic must be recovered dynamically. ELF carving is implemented; PE/Mach-O Tauri is detected (version + V8) but not yet carved. Read-only; never executes the target. Hand recovered .js/.html to js_deobf.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the Tauri executable (ELF carved; PE/Mach-O detected only)."},
+                 "out_dir": {"type": "string", "description": "Output directory (default: <name>_tauri_assets beside the input)."},
+             }, "required": ["path"]}),
+
         Tool(name="dotnet_extract",
              description="Extract the files from a .NET single-file (self-contained) application — a `dotnet publish -p:PublishSingleFile=true` app that bundles the managed assembly, the whole CoreCLR runtime, every framework DLL and the `.deps.json`/`.runtimeconfig.json` into ONE native executable (a small apphost + the bundle appended as an overlay). On disk it's a plain PE/ELF/Mach-O, so `analyze` would hand ~100MB of CoreCLR host to Ghidra and never reach the app's managed assembly — the .NET analogue of the nexe/SEA/PyInstaller dead ends. This locates the bundle via its fixed signature, parses the Microsoft.NET.HostModel manifest, inflates any DEFLATE-compressed entries, and writes every file to disk — then points at the recovered main managed assembly (the app DLL, skipping System.*/Microsoft.* framework + satellite resources) so you can run `analyze`/ILSpy on it. Read-only; never executes the target. (The ILSpy pass auto-handles an assembly targeting a .NET newer than the installed ilspycmd.)",
              inputSchema={"type": "object", "properties": {
@@ -485,6 +492,31 @@ def all_tools() -> list[Tool]:
                  "calldata": {"type": "string",
                               "description": "Optional hex calldata (selector||abi-args). When given, runs the runtime as a pure function and returns the output bytes instead of the tour."},
              }, "required": ["source"]}),
+
+        Tool(name="wasm_decompile",
+             description="Decompile a WebAssembly (.wasm) module to a readable C-like form — chimera otherwise has no WASM path (analyze used to mis-sniff the `\\0asm` magic as ELF and abort). Ships the recipe that actually works on a STRIPPED / Go-compiled module: a binaryen round-trip (`wasm-opt -all` re-serialises the module, which is what un-breaks wabt's wasm-decompile; Go 1.24+ wasm needs the `-all` flag) then `wasm-decompile`. Also emits the `.wat` text disassembly when `wat` is set. The output is large (a 6 MB Go module decompiles to ~780k lines), so it is written to disk — the tool returns the file paths, the line count, and a head preview; grep/read the file for the rest. Pair with `analyze` (section/import/export + Go-WASM recon) and `wasm_oracle` (run it). Needs wabt + binaryen (apt install wabt binaryen, or set $CHIMERA_WASM_TOOLS).",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the .wasm module."},
+                 "out_dir": {"type": "string", "description": "Output directory (default: <name>_wasm beside the input)."},
+                 "wat": {"type": "boolean", "default": False,
+                         "description": "Also emit the full .wat text disassembly (wasm2wat)."},
+             }, "required": ["path"]}),
+
+        Tool(name="wasm_oracle",
+             description="Run a WebAssembly module headless under Node and call one of its functions with your inputs — the dynamic lever for a Go-WASM target (a Chrome-extension verifier, a crackme) whose real entry point is published at runtime via `js.Global().Set(\"check\", …)` and so is NOT a wasm export and can't be reached statically. Reusing the Go runtime glue (`wasm_exec.js`, auto-located beside the module), it instantiates with `go.importObject`, runs `go.run(instance)` WITHOUT awaiting (Go's main blocks to keep the JS callbacks alive), then calls `export(input)` for each input and captures the return — the black-box oracle an all-or-nothing validator needs. Set `trace=true` to instead build an instrumented copy (binaryen `--log-execution`) and return, per input, the exact function subtree that executed (function indices, highest-first — Go compiles the main package last, so the real check routine is near the top): the \"which functions did input X hit\" lever that locates the check among thousands of anonymous funcs. Needs node (+ wabt/binaryen for trace). Confined: the module only reads its own files.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the .wasm module."},
+                 "inputs": {"type": "array", "items": {"type": "string"},
+                            "description": "Input string(s) to pass to the exported function."},
+                 "export": {"type": "string", "default": "check",
+                            "description": "Name of the js.Global().Set-exported function to call."},
+                 "trace": {"type": "boolean", "default": False,
+                           "description": "Instrument with --log-execution and return the executed function subtree per input."},
+                 "go": {"type": "boolean",
+                        "description": "Force Go-WASM mode (default: auto-detect via a sibling wasm_exec.js)."},
+                 "wasm_exec": {"type": "string",
+                               "description": "Path to wasm_exec.js (default: sibling of the module)."},
+             }, "required": ["path", "inputs"]}),
 
         Tool(name="find_dispatch_tables",
              description="Scan a PE for arrays of code pointers (a state-handler dispatch table or jump table) and validate each entry against the real function starts from the .pdata table — so it works even when a disassembler's call-graph walk is ILT-defeated. The largest table's length is typically the state/handler count of a generated state machine or VM interpreter. Returns candidate tables (section, base VA, entry count, pointer size 8=absolute-VA/4=RVA), largest first. When no strong plain table exists it hints at recover_cfg — a control-flow-flattened / MBA VM computes its successors per block (jmp rax) and has no pointer table to find.",

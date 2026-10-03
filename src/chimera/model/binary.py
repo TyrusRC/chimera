@@ -35,6 +35,7 @@ class BinaryFormat(Enum):
     MEMORY_RAW = "memory_raw"
     JAR = "jar"
     UEFI_FIRMWARE = "uefi_firmware"
+    WASM = "wasm"
 
     @property
     def is_mobile(self) -> bool:
@@ -47,6 +48,7 @@ class BinaryFormat(Enum):
             BinaryFormat.ELF_STANDALONE,
             BinaryFormat.MEMORY_LIME,
             BinaryFormat.MEMORY_RAW,
+            BinaryFormat.WASM,
         }
         return self not in non_mobile
 
@@ -67,6 +69,7 @@ class Architecture(Enum):
     X86_64 = "x86_64"
     MIPS = "mips"
     RISCV = "riscv"
+    WASM = "wasm"
     UNKNOWN = "unknown"
 
 
@@ -77,6 +80,7 @@ class Platform(Enum):
     LINUX_NATIVE = "linux_native"
     LINUX_MEMORY = "linux_memory"
     JVM = "jvm"
+    WASM = "wasm"
     UNKNOWN = "unknown"
 
 
@@ -97,6 +101,7 @@ class Framework(Enum):
     DOTNET_AOT = "dotnet-aot"  # .NET NativeAOT (native PE; .managed + hydrated sections)
     DOTNET_MIXED = "dotnet-mixed"  # mixed-mode C++/CLI (IL + native; native entry point)
     RUST = "rust"  # Rust (rustc/cargo); /rustc/<hash>, cargo/registry, library/std/src
+    TAURI = "tauri"  # Tauri (Rust host + webview); __TAURI_INTERNALS__, tauri-N crate, wry/tao
     CRYSTAL = "crystal"  # Crystal-lang (Mach-O/ELF); __crystal_main, Fiber::ExecutionContext
     UNKNOWN = "unknown"
 
@@ -149,7 +154,7 @@ def _detect_format(path: Path) -> BinaryFormat:
         ".apks": BinaryFormat.XAPK, ".ipa": BinaryFormat.IPA,
         ".dex": BinaryFormat.DEX, ".so": BinaryFormat.ELF,
         ".dylib": BinaryFormat.DYLIB, ".dll": BinaryFormat.DLL,
-        ".hbc": BinaryFormat.HBC,
+        ".hbc": BinaryFormat.HBC, ".wasm": BinaryFormat.WASM,
     }
     if suffix in format_map:
         # Even with a "known" suffix, an IPA may be mislabeled .zip; disambiguate ZIPs below
@@ -160,6 +165,8 @@ def _detect_format(path: Path) -> BinaryFormat:
     with open(path, "rb") as fh:
         magic = fh.read(8)
 
+    if magic[:4] == b"\x00asm":
+        return BinaryFormat.WASM
     if magic[:4] == b"\x7fELF":
         return BinaryFormat.ELF
     if magic[:4] in (b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe"):
@@ -275,6 +282,8 @@ def _guess_platform(fmt: BinaryFormat) -> Platform:
     windows = {BinaryFormat.PE, BinaryFormat.PE32, BinaryFormat.PE64, BinaryFormat.DOTNET_PE, BinaryFormat.DLL}
     linux = {BinaryFormat.ELF_STANDALONE}
     memory = {BinaryFormat.MEMORY_LIME, BinaryFormat.MEMORY_RAW}
+    if fmt == BinaryFormat.WASM:
+        return Platform.WASM
     if fmt in android:
         return Platform.ANDROID
     if fmt in ios:
@@ -305,4 +314,6 @@ def _guess_arch(fmt: BinaryFormat) -> Architecture:
         return Architecture.X86
     if fmt == BinaryFormat.ELF_STANDALONE:
         return Architecture.X86_64  # default; refined later via parse_elf
+    if fmt == BinaryFormat.WASM:
+        return Architecture.WASM
     return Architecture.UNKNOWN
