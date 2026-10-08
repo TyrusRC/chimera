@@ -54,7 +54,7 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
                 await mgr.cleanup()
         return mcpstate.error(f"Failed to pull {package} from device {device_id}. Check device connection and package name.")
 
-    # ── run_semgrep ─────────────────────────────────────────────────────
+    # ── run_opengrep ─────────────────────────────────────────────────────
     if name == "list_devices":
         from chimera.device.android import AndroidDeviceManager
         from chimera.device.ios import IOSDeviceManager

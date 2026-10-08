@@ -40,9 +40,9 @@ def info():
     click.echo(f"  YARA rules:           {yara_count}")
     sdk_count = _count_sdk_signatures()
     click.echo(f"  SDK signatures:       {sdk_count}")
-    semgrep_dir = _semgrep_rules_dir()
-    if semgrep_dir is not None:
-        click.echo(f"  Semgrep rules dir:    {semgrep_dir}")
+    rules_dir = _opengrep_rules_dir()
+    if rules_dir is not None:
+        click.echo(f"  OpenGrep rules dir:    {rules_dir}")
 
 
 
@@ -72,14 +72,16 @@ def _count_sdk_signatures() -> int:
 
 
 
-def _semgrep_rules_dir() -> Path | None:
-    """Best-effort discovery of a bundled or env-provided Semgrep rule dir."""
+def _opengrep_rules_dir() -> Path | None:
+    """Best-effort discovery of a bundled or env-provided OpenGrep rule dir."""
     import os
-    env = os.environ.get("CHIMERA_SEMGREP_RULES")
+    env = os.environ.get("CHIMERA_OPENGREP_RULES") or os.environ.get("CHIMERA_SEMGREP_RULES")
     if env and Path(env).exists():
         return Path(env)
-    # Some installs bundle rules at /opt/chimera/semgrep_rules.
-    bundled = Path("/opt/chimera/semgrep_rules")
+    # Some installs bundle rules at /opt/chimera/opengrep_rules (legacy: semgrep_rules).
+    bundled = Path("/opt/chimera/opengrep_rules")
+    if not bundled.exists():
+        bundled = Path("/opt/chimera/semgrep_rules")
     if bundled.exists():
         return bundled
     return None

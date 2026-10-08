@@ -1,4 +1,4 @@
-"""Semgrep adapter — pattern-based source code scanning."""
+"""OpenGrep adapter — pattern-based source-code scanning (Semgrep-schema rules)."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ import shutil
 from chimera.adapters.base import BackendAdapter, ResourceRequirement, ToolCategory
 
 
-class SemgrepAdapter(BackendAdapter):
+class OpengrepAdapter(BackendAdapter):
     def name(self) -> str:
-        return "semgrep"
+        return "opengrep"
 
     def is_available(self) -> bool:
-        return shutil.which("semgrep") is not None
+        return shutil.which("opengrep") is not None
 
     def supported_formats(self) -> list[str]:
         return ["java", "kotlin", "swift", "objc", "javascript"]
@@ -23,11 +23,11 @@ class SemgrepAdapter(BackendAdapter):
         return ResourceRequirement(memory_mb=512, category=ToolCategory.LIGHT, estimated_seconds=30)
 
     async def analyze(self, binary_path: str, options: dict) -> dict:
-        """Run semgrep on a directory of decompiled source code."""
+        """Run opengrep on a directory of decompiled source code."""
         rules = options.get("rules", "auto")
 
         cmd = [
-            "semgrep", "scan",
+            "opengrep", "scan",
             "--config", rules,
             "--json",
             "--quiet",

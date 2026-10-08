@@ -50,7 +50,7 @@ def _adapter_groups():
     from chimera.adapters.oatdump_adapter import OatDumpAdapter
     from chimera.adapters.oxidizer_adapter import OxidizerAdapter
     from chimera.adapters.radare2 import Radare2Adapter
-    from chimera.adapters.semgrep import SemgrepAdapter
+    from chimera.adapters.opengrep import OpengrepAdapter
     from chimera.adapters.swift_demangle import SwiftDemangleAdapter
     from chimera.adapters.varbert_adapter import VarBertAdapter
     from chimera.adapters.volatility import VolatilityAdapter
@@ -75,7 +75,7 @@ def _adapter_groups():
             (IlspyAdapter(), "dotnet tool install -g ilspycmd"),
         ]),
         ("Static analysis", [
-            (SemgrepAdapter(), "pip install semgrep"),
+            (OpengrepAdapter(), "pipx install opengrep"),
             (YaraAdapter(), "pip install yara-python  (core dependency — reinstall with pip install -e .)"),
             (YaraXAdapter(), "cargo install yara-x-cli  (activate with CHIMERA_USE_YARA_X=1)"),
             (CapaAdapter(), 'pip install "chimera[capa]"'),

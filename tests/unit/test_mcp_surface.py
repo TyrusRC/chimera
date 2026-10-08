@@ -32,7 +32,7 @@ EXPECTED_TOOLS = {
     "get_dynamic_hooks", "list_skills", "get_skill", "polyglot_scan", "macho_codesign", "zip_legacy",
     "vm_list", "vm_snapshot", "vm_revert", "vm_start", "vm_stop", "vm_exec", "vm_copy",
     "get_class_headers", "list_source_files",
-    "read_source", "read_cache", "list_artifacts", "run_semgrep",
+    "read_source", "read_cache", "list_artifacts", "run_opengrep",
     "diff_projects", "objc_xref", "list_devices", "connect_device", "list_packages",
     "pull_app", "start_frida_server", "frida_attach", "frida_spawn",
     "frida_detach", "frida_exec", "frida_load_script", "frida_messages",

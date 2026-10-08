@@ -1,7 +1,7 @@
 """Tools that read analysis artifacts off disk.
 
 Decompiled sources, cached backend output, disassembly, and the
-semgrep pass. `read_cache` is a trust boundary — the category name comes
+opengrep pass. `read_cache` is a trust boundary — the category name comes
 from the caller, so it goes through the session allowlist.
 
 Returns None when the tool is not one of this module's, so the server can
@@ -20,18 +20,18 @@ logger = logging.getLogger(__name__)
 
 async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
     engine = mcpstate.get_engine()
-    if name == "run_semgrep":
+    if name in ("run_opengrep", "run_semgrep"):  # run_semgrep kept as a back-compat alias
         if not mcpstate.require_model():
             return mcpstate.error("No analysis loaded.")
-        semgrep = engine.registry.get("semgrep")
-        if not semgrep or not semgrep.is_available():
-            return mcpstate.error("Semgrep is not installed. Install via: pip install semgrep")
+        scanner = engine.registry.get("opengrep")
+        if not scanner or not scanner.is_available():
+            return mcpstate.error("OpenGrep is not installed. Install via: pipx install opengrep")
         sha = mcpstate.current_model.binary.sha256[:12]
         sources_dir = engine.config.project_dir / "jadx" / sha / "sources"
         if not sources_dir.exists():
-            return mcpstate.error("No decompiled sources found. Semgrep requires jadx output.")
+            return mcpstate.error("No decompiled sources found. OpenGrep requires jadx output.")
         rules = arguments.get("rules", "auto")
-        result = await semgrep.analyze(str(sources_dir), {"rules": rules})
+        result = await scanner.analyze(str(sources_dir), {"rules": rules})
         findings_count = len(result.get("results", []))
         return mcpstate.json_reply({
             "return_code": result.get("return_code"),

@@ -17,7 +17,7 @@ from chimera.adapters.ilspy import IlspyAdapter
 from chimera.adapters.jadx import JadxAdapter
 from chimera.adapters.radare2 import Radare2Adapter
 from chimera.adapters.registry import AdapterRegistry
-from chimera.adapters.semgrep import SemgrepAdapter
+from chimera.adapters.opengrep import OpengrepAdapter
 from chimera.adapters.hermes_dec import HermesDecAdapter
 from chimera.adapters.swift_demangle import SwiftDemangleAdapter
 from chimera.adapters.volatility import VolatilityAdapter
@@ -78,7 +78,7 @@ class ChimeraEngine:
         self.registry.register(FridaAdapter())
         self.registry.register(FridaDexdumpAdapter())
         self.registry.register(AFLAdapter())
-        self.registry.register(SemgrepAdapter())
+        self.registry.register(OpengrepAdapter())
         self.registry.register(WebcrackAdapter())
         self.registry.register(HermesDecAdapter())
         self.registry.register(SwiftDemangleAdapter())

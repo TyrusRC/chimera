@@ -11,7 +11,7 @@ from chimera.adapters.jadx import JadxAdapter
 from chimera.adapters.frida_adapter import FridaAdapter
 from chimera.adapters.class_dump import ClassDumpAdapter
 from chimera.adapters.afl import AFLAdapter
-from chimera.adapters.semgrep import SemgrepAdapter
+from chimera.adapters.opengrep import OpengrepAdapter
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -29,7 +29,7 @@ async def get_info():
 async def get_backends():
     adapters = [
         Radare2Adapter(), GhidraAdapter(), JadxAdapter(),
-        FridaAdapter(), ClassDumpAdapter(), AFLAdapter(), SemgrepAdapter(),
+        FridaAdapter(), ClassDumpAdapter(), AFLAdapter(), OpengrepAdapter(),
     ]
     return [
         {
