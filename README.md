@@ -1,435 +1,43 @@
 # Chimera
 
-> Reverse engineering platform for desktop and mobile binaries. Many backends, one beast.
+> Reverse-engineering platform for desktop and mobile binaries. Many backends, one interface.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?logo=python&logoColor=white)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-PE%20%7C%20ELF%20%7C%20Mach--O%20%7C%20.NET%20%7C%20Android%20%7C%20iOS-success.svg)](#features)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg?logo=docker&logoColor=white)](Dockerfile)
 [![MCP](https://img.shields.io/badge/MCP-compatible-5A4FCF.svg)](src/chimera/mcp_server.py)
-[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](#status)
 
-Chimera is a unified wrapper around Ghidra, Radare2, jadx, Frida, capa,
-YARA and a growing set of platform-specific tools. It analyzes Windows
-PE / .NET assemblies, Linux ELF, macOS Mach-O, Android APKs and iOS
-IPAs through one CLI, one project store and one HTTP API — no LLM
-required — and exposes an optional MCP server so Claude or any
+Chimera is a unified wrapper around Ghidra, radare2, jadx, Frida, capa, YARA and
+a growing set of platform-specific tools. It analyzes Windows PE / .NET, Linux
+ELF, macOS Mach-O, Android APKs and iOS IPAs through one CLI, one project store
+and one HTTP API — no LLM required — and exposes an MCP server so Claude or any
 compatible model can drive the pipeline.
-
-The static workflow (triage → decompile → annotate → patch → export)
-runs headless out of the same Docker image as the mobile pipeline. The
-desktop side adds: a FLIRT-equivalent library-function matcher, an r2 /
-Ghidra side-by-side decompiler with substitution-style post-processing,
-persistent renames / comments / type signatures, byte-level patching
-with anti-debug recipes, a UPX auto-unpacker, packer detection
-(YARA + section-name + entropy), and a gdb symbol bridge.
-
-Optional 2024-2026 research add-ons round it out: an Anthropic-backed AI
-assistant (LLM4Decompile V2-style decompiler refinement, SymGen-style
-batch generative naming, Sidekick-style adversarial rename verification,
-DecLLM recompile gate, Idioms / NDSS 2026 refine engine), the VarBERT
-variable-name recovery model (S&P 2024), the EMBER 2024 malware
-classifier, the B(l)utter Flutter / Dart AOT extractor, hermes-decomp
-for React Native HBC bundles, Oxidizer (angr) for Rust binaries, a
-Mergen VMProtect / Themida devirtualization stage, KEENHash + REVDECODE
-similarity backends with BinDiff CSV export, a Sidekick-style notebook
-for narrative findings, oatdump2binexport Android native-similarity, and
-msynth + PseudoFix decompile post-processors — all opt-in, none on the
-default `analyze` hot path.
-
----
-
-## Table of Contents
-
-- [Features](#features)
-- [Desktop reverse engineering](#desktop-reverse-engineering)
-- [Memory image triage (Linux)](#memory-image-triage-linux)
-- [Status](#status)
-- [Architecture](#architecture)
-- [Analysis pipeline](#analysis-pipeline)
-- [Quick start](#quick-start)
-  - [Local install (recommended)](#local-install-recommended)
-  - [Docker (isolation sandbox)](#docker-isolation-sandbox)
-- [Usage](#usage)
-  - [MCP integration](#mcp-integration)
-  - [Install into your agent](#install-into-your-agent-claude-code-codex-gemini-cursor-windsurf-vs-code-dsh)
-- [Backend matrix](#backend-matrix)
-- [Development](#development)
-- [License](#license)
-
----
 
 ## Features
 
-### Cross-platform binary analysis
-- **Six formats, one pipeline** — Windows PE / PE32+ / .NET assemblies, Linux ELF (statically or dynamically linked), macOS Mach-O, Android APK / AAB / DEX / split bundles, iOS IPA / dylib. Format is auto-detected; the right pipeline routes itself.
-- **Standalone CLI, no AI required** — `chimera analyze` runs the full pipeline headless and writes a project to disk.
-- **Cross-layer call graph** — Java / Kotlin ↔ JNI ↔ native ARM64, unified into one model.
-
-### Desktop / native RE
-- **Multi-decompiler picker** — request r2 or Ghidra (or both, side-by-side) per function via the API or web UI; output is post-processed (DAT_/PTR_/FUN_/iVar/uVar → typed locals, Itanium C++ demangling, magic-constant labelling).
-- **FLIRT-equivalent library naming** — masked-byte signature pack ships 176 prefixes covering libc / libssl / libcrypto / libz; matches typed against `arch + format` so x86_64 ELF and PE32+ don't cross-pollute. Static-linked stripped binaries get function names back automatically.
-- **Persistent annotations** — rename functions, add per-address comments, set C-style type signatures, override classification. Stored in `overlay.json` per binary (atomic tempfile + rename), applied to the live model on every load.
-- **Byte-level patching** — `BinaryPatcher` resolves VA→file-offset for PE (section table), ELF (PT_LOAD), and Mach-O (LC_SEGMENT_64). PE checksum is recomputed automatically. Five recipe kinds: write-bytes, nop-range, force-jump-taken (validates 0x70–0x7F short conditional jumps), find-import-and-stub (PE IAT walk), find-elf-plt-and-stub (.rela.plt / .dynsym). Three anti-debug bypass recipes ship out of the box.
-- **Packer detection + UPX auto-unpack** — YARA-first (UPX / ASPack / VMProtect / Themida / MPRESS / PECompact / Enigma / MEW / kkrunchy), section-name fallback (UPX0, .vmpN, .themida, .aspack, …), per-section byte-entropy heuristic on executable sections. `chimera unpack` round-trips UPX byte-identically and ships manual guidance for the VM-protectors no open-source unpacker handles cleanly.
-- **gdb bridge** — `chimera gdb-export` writes a `.gdbinit` of `$convenience` variables + a `chimera-bp` user command so `gdb` lands inside the same address space your renames refer to.
-- **Single-function emulation** — `chimera emulate <bin> --addr 0x… --arch x86_64|arm64 --arg N` runs one function under Unicorn and reads back its return value and any memory it writes (`--read-back ADDR:LEN`) — resolve an API-hash or run a string-decrypt / checksum routine without executing the whole binary. Reuses the `BinaryPatcher` VA→offset reader; targets self-contained leaf routines (a call into an import/syscall stops the run). Exposed over MCP as `emulate_function`. Optional `[emulate]` extra; degrades cleanly when Unicorn is absent.
-- **Python unpacking (frozen + layered)** — `chimera pyextract` recovers the embedded Python from a PyInstaller-frozen EXE (CArchive cookie + TOC + PYZ → loadable `.pyc`), and `analyze` auto-detects such bundles so they aren't misrouted into a full-binary decompile. `chimera pyunwrap` (MCP `py_unwrap`) handles the other common shape — a `.py`/`.pyc`/blob that hides a marshalled code object under a stack of transforms — recursively peeling marshal / zlib / gzip / bz2 / lzma / base64 / base85 layers and dumping the **version-independent** `co_names` / `co_consts` tree for every code object found (imports, embedded keys, call sequence), even when the bytecode was compiled for a different Python than the host. Static and read-only — it lifts literals with `ast` and never `exec`s the target; zip-bomb-guarded (depth + 64 MiB budget). `--disasm` adds cross-version disassembly via the optional `[pybytecode]` extra (`xdis`), degrading to a warned stdlib fallback when absent.
-- **x64 function recovery when the call graph is ILT-defeated** — a `/INCREMENTAL`-linked MSVC PE64 routes every internal call through an Incremental Link Table of `jmp` thunks, which defeats radare2's `aaa` call-graph walk: it silently reports roughly the *import* count (observed: 112) instead of the thousands of real functions. Chimera cross-checks against the authoritative `.pdata` RUNTIME_FUNCTION table, **backfills the missing functions** (→ 3269 surfaced on that sample), and `analyze` warns that recovery was incomplete rather than trusting the undercount. When radare2 can't disassemble such a target, a **capstone fallback** (optional `[disasm]` extra) disassembles the bytes directly and annotates each `call`/`jmp` that goes through an ILT thunk with its resolved real callee, so `get_disassembly` / `get_function` still work.
-- **PDF triage (malformed + encrypted)** — `chimera pdftour` (MCP `pdf_tour`) statically triages a suspicious PDF: it recovers objects even when there is no xref/`%%EOF` (which strict parsers refuse), then runs a raw-bytes pass to **surface the parser-differential traps a normal library silently resolves away** — a duplicate `/Root`, name-hex-obfuscated keys (`/#52#6F#6F#74` → `/Root`), duplicate or commented-out objects, missing xref/EOF — reporting each `/Root`'s resolved target so you can see exactly how two renderers would disagree. When the file uses the Standard security handler (revisions 2–6: RC4 / AESV2 / AESV3), it derives the key from the empty or supplied password (built-in R6 Algorithm 2.B hash), decrypts the streams, and lists or dumps any **inline images** hidden inside (`BI…EI`, decoding the `/AHx` `/A85` `/Fl` `/RL` filter chain). Read-only — it never renders or executes the document; zip-bomb-guarded. AES decryption uses the optional `[pdf]` extra (`pycryptodome`); recon and trap detection work without it.
-- **Solving primitives (beyond triage)** — for the *solving* half of a challenge, not just identifying it: `chimera dispatch-tables` (MCP `find_dispatch_tables`) recovers an array of code pointers — a generated state machine's handler/state table or a jump table — validating each entry against an executable section, so it works even when the handlers are absent from `.pdata` and the disassembler's call-graph walk is ILT-defeated (recovers a 90781-entry state table in ~2s); `disassemble_many` bulk-disassembles the table's targets. `chimera pathfind` (MCP `pathfind`) is a pure BFS over a recovered FSM edge list for the accepting input — the concatenated edge labels — with an `exact_length` mode for the fixed-length-password shape. `chimera run-under-wine` (MCP `run_under_wine`) runs a Windows PE on Linux as a dynamic oracle: isolated throwaway `WINEPREFIX` (warmed up once so a fresh prefix doesn't eat the run timeout), headless console or `--xvfb` GUI, and a `--memory-scan` needle searched (ASCII + UTF-16LE) in process memory for a MessageBox/window answer — argv-list only, never a shell string.
-- **Execution sandbox** — `chimera sandbox-run` (MCP `run_sandboxed`) runs an untrusted target (crackme, malware sample, CTF binary, or a Windows PE via `--wine`) confined by **bubblewrap**: isolated PID/mount/IPC/network namespaces, **network off by default** (a sample can't beacon or pull a payload), throwaway tmpfs for `/tmp` and `$HOME`, and a read-only host filesystem except the paths you explicitly bind. No root, no daemon — it runs on the host kernel, so it's instant and `ptrace`/`bp-dump` still work inside it. The `sandbox` skill covers the isolation model, the one-time `ptrace_scope` config the dynamic tools want, and when to reach for a full QEMU VM (a real Windows guest, or a kernel knob you can't set on the host) instead.
-- **Runtime key/value recovery** — for a value the target *computes at runtime* (a key derived, decrypted, or unpacked behind obfuscation, never a literal in the file): `chimera bp-dump` (MCP `run_with_breakpoints`) launches an x86-64 Linux program under `ptrace`, breaks at an address, and dumps registers + pointer-target memory at the instant it's live — with **no sudo**, because chimera *launches* (parents) the target, which `ptrace` permits even under `kernel.yama.ptrace_scope=1` (only *attaching* to a non-child is blocked). And `chimera aeskeys` (MCP `find_aes_keys`) recovers AES-128/192/256 keys by locating their self-checking expanded key schedule in a file, a memory dump, or a live process — so an obfuscated key still falls out once it's resident (also reporting a candidate IV from the tiny-AES-c ctx layout).
-- **EVM smart-contract triage** — `chimera evm` (MCP `evm_tour`) reads on-chain logic *without an Ethereum node*: it disassembles EVM bytecode (a hex string or a file), splits a constructor blob to its runtime, strips the solc metadata trailer, and recovers the dispatcher's 4-byte function selectors. Given calldata it also **executes** a leaf `pure`/`view` function through a bounded stack-machine interpreter (stack/memory/calldata only — storage/calls/gas raise rather than return a wrong answer), so you can verify an on-chain formula by running it instead of deploying to a testnet.
-- **GPU acceleration awareness** — `chimera gpu` (MCP `detect_gpu`) reports the host's GPU and GPU-capable crackers (hashcat / john) and whether GPU cracking is `usable`, so an agent knows to offload a hash-crack or keyspace search instead of grinding the CPU. The `gpu-acceleration` skill turns that verdict into a plan across three workloads (hash/password cracking, crypto keyspace search, password-protected archives) — and, critically, refuses to brute-force what isn't brute-forceable: a large unknown key derived from a transform is recovered analytically, never searched. Read-only; needs no loaded binary.
-- **PE / ELF imports scoring** — PEStudio-style buckets (process injection, anti-debug, persistence, network, crypto, evasion). Linux: persistence-string scan (cron / systemd / `LD_PRELOAD` / init.d), syscall scoring, XOR-string heuristic.
-- **.NET single-file apps** — `chimera dotnet-extract` (MCP `dotnet_extract`) carves the bundle out of a `PublishSingleFile` self-contained executable: a `dotnet publish` app ships the managed assembly, the whole CoreCLR runtime and every framework DLL inside one ~100MB native binary (apphost + an appended bundle overlay). On disk it's a plain PE/ELF/Mach-O, so `analyze` would hand the CoreCLR host to Ghidra and never reach the app — the .NET analogue of the nexe / PyInstaller dead ends. It locates the bundle via its HostModel signature, parses the manifest, inflates DEFLATE-compressed entries, writes every file out, and points at the recovered app assembly (skipping System.*/Microsoft.* + satellite resources); `analyze` auto-detects the bundle and signposts the command. Pure-Python, read-only.
-- **.NET assemblies** — ILSpy decompilation when `ilspycmd` is on PATH (a version-clamp shim transparently decompiles assemblies targeting a .NET *newer* than the installed ilspycmd — e.g. .NET 10 on ILSpy 8.x, which otherwise hard-crashes in type-system init); Ghidra fallback for mixed-mode (C++/CLI). The decompiled C# is ingested into the model as one entry per type and per method, plus its string literals. For VM-protected / anti-tamper'd assemblies that defeat static devirtualization, `chimera dotnet-trace` runs the binary on Linux (via a .NET Core shim) and hooks methods at runtime with Harmony, which detours JIT'd native code rather than on-disk IL — so an IL-integrity check never sees the hook. It runs Windows-only binaries by stubbing their kernel32/ntdll imports (which also blanks the anti-debug those imports carry — CheckRemoteDebuggerPresent, NtQueryInformationProcess), drives a scripted stdin through any menu to the key prompt, hooks bare or fully-qualified (`System.String::op_Equality`) methods, and reconstructs a key straight from the int/char stream a bytecode-VM's memory primitive moves — the value a hooked comparator never materializes as a string. Exposed over MCP as `dotnet_trace`; the target file is never modified.
-
-### Mobile RE
-- **Framework detection** — React Native (Hermes / JSC), Flutter, Unity IL2CPP, Xamarin, Cordova / Capacitor.
-- **Manifest + NSC hardening** — `chimera manifest app.apk` reports `android:debuggable`, `allowBackup` without rules, exported components without permissions, cleartext-traffic flags, `network_security_config.xml` issues (cleartext base/domain configs, user-CA trust). Each finding cites file and line.
-- **Protection bypass** — root / jailbreak / Frida / debugger / packer detection with bundled bypass scripts. (Devices running `frida-server` must be jailbroken / rooted; `frida-gadget` is fine on a stock device.)
-- **Device connect** — `chimera devices` lists connected Android (ADB) / iOS devices and flags rooted / jailbroken. `chimera devices --connect <host[:port]>` (MCP `connect_device`) attaches a *networked* root device (adb-over-Wi-Fi) or a remote / headless emulator over TCP/IP — USB devices and locally-running emulators already appear without it; the call is time-bounded so an unreachable target fails fast instead of blocking. `--disconnect` tears it down.
-- **Dynamic attach** — `chimera attach --pid <pid>` (local) or `--target <pkg> --device <id>` (mobile) with multi-bypass preload, message drain, interactive REPL.
-
-### Shared workflow
-- **Static + dynamic** — Semgrep + YARA (or optional YARA-X) + capa for static; Frida for runtime confirmation.
-- **Binary-vs-binary diff** — `chimera diff <a> <b>` reports added/removed permissions, exported components, SDKs, native libraries (with sha256), manifest + NSC findings (regression / resolution).
-- **Function-similarity diff (BinDiff-style)** — `chimera diff-functions a.bin b.bin --threshold 0.85` matches functions via opcode-shingled Jaccard, two-pass (same-name first, then greedy bipartite over the cross product); `--heuristic multi` adds call-graph degree + basic-block count + mnemonic cosine. `--export-bindiff out.csv` writes BinDiff-compatible CSV for downstream tools. A whole-binary KEENHash embedding backend (ISSTA 2025) and a REVDECODE Viterbi re-ranker (USENIX Sec 2025) are implemented in the library API (`chimera.diff.function_similarity.diff_models`) but are **not yet wired to `diff-functions` CLI flags**; the KEENHash offline path is a feature-hash surrogate, not the published model.
-- **Reports** — JSON, HTML, Markdown, SARIF v2.1.0, CycloneDX 1.6 SBOM, MASVS coverage matrix, CVSS finding draft.
-- **Annotation sharing** — `chimera overlay export <bin> -o overlay.json` and `chimera overlay import <bin> -i overlay.json --merge|--replace` move renames / comments / types between analysts. Schema includes the binary sha256 so import against a different binary surfaces a warning rather than silently corrupting addresses. Exported payload also carries the project notebook.
-- **Annotation propagation across versions** — `chimera overlay propagate <old> <new> [--threshold 0.85] [--apply]` carries an old build's renames / comments / types onto a new build by matching functions with `diff-functions` similarity, so a rebuild doesn't throw the naming work away. Only matches at or above the threshold carry; drifted and unmatched functions are reported, never guessed. Preview by default.
-- **Notebook** — `chimera notes add --title T --body B --evidence 0xADDR ...` / `notes list [--tag T]` / `notes rm ID`, plus `/api/projects/{id}/notes`. Sidekick-style narrative findings with evidence links to addresses or lines. Stored in the project overlay; round-trips through export/import.
-- **Web UI + TUI** — FastAPI-backed UI with Monaco editor (right-click rename / comment / set-type, plus AI explain / AI rename buttons when an API key is set), Textual TUI for device interaction.
-- **MCP server** — ~49 high-level tools for any MCP-compatible LLM client: query (functions, strings, callgraph, disassembly, protections), **write-back** (rename / comment / type / classify / notes, single or `batch_annotate`, persisted to the overlay), and `emulate_function`. List tools page via `offset`/`limit` to stay inside a small model's context.
-- **OWASP MASVS** — findings tagged with MASVS categories.
-
-### AI-assisted RE (optional, opt-in)
-- **LLM-backed explain / rename / comment** — `chimera ai explain <bin> <addr>` and `/api/projects/{id}/ai/{explain,rename,comment}`. The Web UI exposes "AI explain" + "AI rename" buttons in the CodeView header (hidden when no key configured).
-- **LLM4Decompile-V2-style refinement** — `chimera ai refine-decomp <bin> <addr> --backend ghidra` asks the model to clean up Ghidra pseudo-C (rename `iVar1`/`FUN_xxxxx`, tighten control flow) **without inventing semantics**. Strictly preview; never writes to overlay.
-- **Pluggable refine engines** — `chimera ai engines` lists registered engines; `--engine idioms` switches to the Idioms checkpoint (Dramko et al., NDSS 2026) when `CHIMERA_IDIOMS_CHECKPOINT` and `transformers` are present. Future jTrans-refine / FidelityGPT / SK2Decompile slot in without API churn.
-- **DecLLM recompile gate** — `chimera ai refine-decomp ... --recompile-check` pipes the refined C through `gcc -fsyntax-only`; on failure the model gets one repair round with the literal compiler diagnostics. Off by default.
-- **MBA + PseudoFix post-processing** — `--postprocess` applies msynth-style mixed-boolean-arithmetic simplifications and PseudoFix-style (ASE 2025) safe structural rewrites (collapse `if (x) return a; return b;` → ternary, drop `do {} while(0)` wrappers).
-- **REALTYPE-style eval harness** — `chimera ai eval-decomp dataset.jsonl --engine claude` scores any refine engine against a JSONL of decompiled-vs-ground-truth records: recompile rate, identifier Jaccard, struct-name recall.
-- **SymGen-style batch generative naming** — `chimera ai batch-rename <bin> --max 50 --threshold 0.7 --apply` walks stripped-looking functions (FUN_/sub_/fn_), feeds callgraph neighbours as context, asks for `{name, confidence}` JSON, optionally applies high-confidence names to the overlay. Preview by default.
-- **Sidekick-style adversarial rename verifier** — `chimera ai batch-rename ... --verify` makes a second LLM call that defaults to *refute* the suggested name; refuted names are never auto-applied even with `--apply`.
-- **Configuration** — `ANTHROPIC_API_KEY` env var enables the surface; `CHIMERA_AI_MODEL` overrides the model (default `claude-sonnet-4-6`); urllib-only client, no SDK dep. Missing key → HTTP 503 with a clear message; the CLI prints an actionable install hint.
-- **Research add-ons (extras)** — VarBERT variable-name recovery (`chimera varbert rename`, `pip install "chimera[varbert]"`), EMBER 2024 malware classifier (`chimera classify <pe>`, `pip install "chimera[ml]"`), B(l)utter Flutter / Dart AOT extractor (`chimera flutter-extract <apk> -o out`, external `blutter` binary on PATH or `CHIMERA_BLUTTER_BIN`), hermes-decomp for Hermes HBC bundles (`chimera hermes-decompile <bundle>`, external `hermes-decomp` binary), Oxidizer Rust decompile via angr (`chimera rust-decompile <bin>`, `pip install angr`), Mergen VMProtect / Themida devirtualization (`chimera vmp-devirt <bin> --start 0x…`, external `mergen` binary), oatdump2binexport Android native similarity (`chimera android-similarity a.apk b.apk`, needs `dex2oat` + `oatdump2binexport` + `bindiff`). Each degrades to a clear "not installed / unavailable" result when its external binary or model weights are absent (none ship in-repo). Several are integration scaffolding rather than full in-repo implementations — notably the BinQuery adapter (CLI path unwired), the FirmAgent loop (default hooks are no-ops), the KEENHash offline embedding (feature-hash surrogate), and the EMBER fallback feature extractor.
-
-## Desktop reverse engineering
-
-Chimera ships a desktop RE workflow that mirrors the muscle-memory of
-IDA Pro / Ghidra / Binary Ninja, driven from the same CLI and the same
-HTTP API as the mobile pipeline.
-
-### What you get
-
-| Workflow                                                  | How                                                                              |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Open a PE / ELF / Mach-O / .NET binary, list functions    | `chimera analyze <file>`                                                         |
-| Pick a decompiler per function (r2, Ghidra, or both)      | `GET /api/projects/{id}/functions/{addr}/decomp?backend=r2|ghidra|all`           |
-| Rename, comment, set type — persisted across sessions     | `POST /api/projects/{id}/annotations/{rename,comment,type,classify}`             |
-| Auto-name statically-linked library functions             | Phase 5.5 (ELF) / Phase 6.5 (PE) signature matcher, runs during `analyze`        |
-| Patch a binary (raw bytes, recipes, or nop-range)         | `chimera patch <file> --addr 0x… --bytes 90909090`                               |
-| Bypass `IsDebuggerPresent` / `CheckRemoteDebuggerPresent` / `ptrace` | `chimera patch <file> --recipe pe-isdebuggerpresent-nop --out patched.exe` |
-| Hand the patched binary to `gdb` with your renames        | `chimera gdb-export <file> --out hello.gdbinit` then `gdb -x hello.gdbinit ./hello` |
-| Detect + auto-unpack a packed binary                      | `chimera unpack <file>` (or `--detect-only` to inspect first)                    |
-| Diff two cached projects                                  | `chimera diff <sha-a> <sha-b>`                                                   |
-| Export findings as SARIF for CI                           | `chimera report <file> --format sarif`                                           |
-
-### Quick start (desktop)
-
-```bash
-# Triage a PE
-chimera analyze /path/to/sample.exe
-chimera imports /path/to/sample.exe                   # bucket-grouped suspicious imports
-
-# Triage a Linux ELF (statically linked → signature matcher fires)
-chimera analyze /path/to/server.bin
-chimera persistence /path/to/server.bin               # cron / systemd / LD_PRELOAD strings
-
-# Patch out IsDebuggerPresent and save a clean copy
-chimera patch /path/to/sample.exe --recipe pe-isdebuggerpresent-nop --out clean.exe
-
-# Or patch raw bytes at a virtual address (dry-run first)
-chimera patch /path/to/sample.exe --addr 0x140001000 --bytes 9090909090909090 --dry-run
-
-# Detect packer + auto-unpack (UPX) — emits manual guidance for VM-protectors
-chimera unpack /path/to/packed.bin
-chimera unpack /path/to/packed.bin --detect-only
-
-# Hand the analysis off to gdb
-chimera gdb-export /path/to/server.bin --out server.gdbinit
-gdb -x server.gdbinit /path/to/server.bin
-
-# Open the web UI and right-click → "Rename function…" / "Add comment…"
-chimera serve --port 8765
-# then browse http://localhost:8765
-```
-
-### Interactive workflow (web UI)
-
-Open a project, jump to a function, and the Monaco editor exposes
-three right-click actions backed by the annotation API:
-
-- **Rename function…** (F2) — persisted to `overlay.json`, re-applied
-  on every reload, surfaces in subsequent decompilation passes.
-- **Add comment on this line** — per-address comments keyed by line.
-- **Set function signature…** — C-style prototype, used to retype
-  arguments / return value in the post-processor.
-
-Switch the decompiler dropdown between r2 and Ghidra to compare output
-on the same function side by side.
-
-### Library function naming (FLIRT-equivalent)
-
-A 176-entry signature pack ships at
-`src/chimera/data/sigs/libfn-x86_64.json`, masking call-target / RIP-relative
-operands so the same prefix matches across compiler versions. Build
-your own pack with `scripts/build_libfn_sigs.py` against any reference
-library; the matcher runs after r2 triage so it only renames functions
-the disassembler already extracted.
-
-### Patch recipes
-
-Three anti-debug bypass recipes ship bundled and are listed by
-`chimera patch --list-recipes`:
-
-- `pe-isdebuggerpresent-nop` — find kernel32!IsDebuggerPresent in the
-  IAT, replace the function body with `xor eax, eax; ret`.
-- `pe-checkremotedebuggerpresent-nop` — same for
-  `CheckRemoteDebuggerPresent`.
-- `elf-ptrace-zero` — walk `.rela.plt` / `.dynsym`, stub the `ptrace`
-  PLT thunk so it returns 0 instead of calling through.
-
-Add your own under `src/chimera/patching/recipe_packs/` — JSON, no code
-required for the simple kinds.
-
-### Optional tools
-
-External binaries discovered on `PATH`:
-
-- `floss` (`pip install flare-floss`) — string deobfuscation for PE/ELF.
-- `ilspycmd` (`dotnet tool install -g ilspycmd`) — .NET decompilation.
-- `capa` (`pip install flare-capa`) — capability matching.
-- `upx` (`apt-get install upx-ucl`) — auto-unpack for UPX-packed binaries.
-- `gdb` — for the `gdb-export` handoff.
-- `yara-x` (`cargo install yara-x-cli`) — modern Rust YARA rewrite. Activate with `CHIMERA_USE_YARA_X=1`; falls back to legacy `yara` when absent.
-- `blutter` (build from [worawit/blutter](https://github.com/worawit/blutter)) — Flutter / Dart AOT snapshot extractor. Discovery: `PATH` or `CHIMERA_BLUTTER_BIN`.
-- `hermes-decomp` (build from [SymbioticSec/hermes-decomp](https://github.com/SymbioticSec/hermes-decomp)) — Rust-based React Native Hermes bytecode decompiler. Discovery: `PATH` or `CHIMERA_HERMES_DECOMP_BIN`.
-- `mergen` (build from [NaC-L/Mergen](https://github.com/NaC-L/Mergen)) — LLVM-IR-based VMProtect / Themida devirtualizer. Discovery: `PATH` or `CHIMERA_MERGEN_BIN`.
-- `dex2oat`, `oatdump2binexport`, `bindiff` — needed by `chimera android-similarity` (APK → OAT → BinExport → BinDiff). `oatdump2binexport` via `PATH` or `CHIMERA_OATDUMP2BINEXPORT_BIN`.
-
-Optional Python extras (gated to keep the default wheel lean):
-
-- `pip install "chimera[varbert]"` — VarBERT variable-name recovery model (Pal et al., S&P 2024). Adds `chimera varbert rename` + `/api/projects/{id}/varbert/rename`.
-- `pip install "chimera[ml]"` — LightGBM + lief for the EMBER 2024 malware classifier. Adds `chimera classify`. Drop a model at `src/chimera/detection_engineering/data/ember/model.txt` or point `CHIMERA_EMBER_MODEL` at one.
-- `pip install "chimera[capa]"` — heavyweight capability matching (`flare-capa>=9.4` — PyGhidra backend + span-of-calls dynamic scope). `CHIMERA_CAPA_BACKEND=pyghidra` opts into the faster static analyzer.
-- `pip install "chimera[dynamic]"` — `frida-python` for `chimera attach` / Frida workflows.
-- `pip install angr` — enables `chimera rust-decompile` via Oxidizer (Liu et al., S&P 2026). Heavyweight; left out of any extras to keep environments lean.
-- `pip install transformers torch` + `CHIMERA_IDIOMS_CHECKPOINT=/path/to/squaresLab/idioms-6.7b` — enables `--engine idioms` on `ai refine-decomp` (Dramko et al., NDSS 2026).
-
-AI assistant config (no extra to install — uses urllib):
-
-- `ANTHROPIC_API_KEY` — required to enable `chimera ai ...` and the SPA's AI buttons. Without it, every AI surface fails soft (HTTP 503 with a clear hint).
-- `CHIMERA_AI_MODEL` — override the model (default `claude-sonnet-4-6`).
-- `ANTHROPIC_BASE_URL` — point at a proxy / local endpoint.
-- `CHIMERA_RECOMPILE_CC` — compiler used by the DecLLM-style `--recompile-check` (default: first of `gcc`/`clang`/`cc` on `PATH`).
-
-All optional; pipelines skip gracefully when a tool isn't installed.
-The Docker image bundles all of the external binaries above except
-`floss`, `ilspycmd` and `capa` (off by default to avoid dependency
-clashes — opt in with `--build-arg INSTALL_CAPA=1`).
-
-### Limitations
-
-- **No Hex-Rays-quality decompiler.** Ghidra is good and the
-  post-processor cleans it up, but for heavily-optimised C++ Hex-Rays
-  is still the gold standard. The AI refinement pass closes the gap on
-  readability, not on accuracy — it's instructed never to invent
-  semantics, so it can't recover what Ghidra dropped.
-- **No interactive structure recovery** — you can rename and retype,
-  but there's no "Edit → Structure" editor inside chimera yet. (ReSym
-  CCS 2024 ships struct synthesis with ~10GB checkpoints — tracked as a
-  research-grade follow-up.)
-- **No native debugger UX** — debugging happens via the gdb bridge, not
-  inside chimera.
-- **VMP / Themida devirtualization** ships through Mergen (LLVM-IR
-  lift; `chimera vmp-devirt`) — useful when the protected region is
-  well-bounded, not a magic auto-pwn. The packer-detection table still
-  emits manual guidance for commercial protectors that don't lift
-  cleanly.
-- **No first-class symbolic execution** — angr is reachable through the
-  Oxidizer Rust path, and the Phrack 72.15 E0 selective-symbolic-
-  instrumentation primitive is sketched out as a research shim, but
-  there's no `chimera symex` driver yet.
-- No sandbox.
-- Authenticode signatures are detected (presence) but not validated.
-- Mixed-mode .NET (C++/CLI) falls back to Ghidra.
-
----
-
-## Memory image triage (Linux)
-
-Chimera analyzes Linux memory captures (LiME / raw) via Volatility 3.
-Coverage:
-
-- **Process tree** (`linux.pslist`, `linux.pstree`)
-- **Recovered bash history** (`linux.bash`)
-- **Open sockets** (`linux.sockstat`, falls back to `linux.netstat`)
-- **Malfind RWX hits** (`linux.malfind`)
-- **Kernel modules + rootkit indicators** (`linux.lsmod`,
-  `linux.check_modules`, `linux.check_syscall`)
-- **Persistence-relevant cached files** (`linux.pagecache.Files`
-  cross-referenced against cron / systemd / `LD_PRELOAD` / init.d patterns)
-- **Auto-stub IR findings** mapped to MITRE ATT&CK (T1014, T1055, T1543, T1071)
-
-### Quick start
-
-```sh
-chimera memory /path/to/core.lime           # full pipeline + summary
-chimera memory pslist /path/to/core.lime    # process list only
-chimera memory netstat /path/to/core.lime   # connections only
-chimera memory malfind /path/to/core.lime   # RWX hits only
-chimera memory findings /path/to/core.lime  # IR findings (Markdown)
-chimera report --format ir /path/to/core.lime --out report.ir.md
-```
-
-### Required tools
-
-- **Volatility 3** (`pip install volatility3` or distro package). Make sure
-  `vol` is on PATH. Volatility also needs Linux ISFs (kernel symbol tables)
-  for the target image — see Volatility 3 docs.
-- All optional; when `vol` is missing, the pipeline degrades to detection
-  + format identification only.
-
-### Limitations
-
-- **Linux only** for now. Windows memory triage isn't wired up.
-- **No symbolic execution / behavioral reconstruction.** Volatility
-  output goes through Chimera's parsers as-is; deeper analysis is the
-  analyst's job.
-- **Memory-image fixtures are tiny synthetic stubs.** Real triage runs
-  need GB-scale captures + matching ISF symbols.
-
----
-
-## Status
-
-Alpha. The CLI, pipelines, and adapter layer are usable; the web UI is
-under active development and the database-backed project store is a
-follow-up. Public APIs may move without warning until a tagged release.
-
----
-
-## Architecture
-
-```mermaid
-flowchart TB
-    subgraph Frontends
-        CLI[CLI]
-        Web[Web UI]
-        TUI[TUI]
-        MCP[MCP Server]
-    end
-
-    subgraph Core["Core Engine"]
-        Engine[ChimeraEngine]
-        Pipelines["Pipelines<br/>pe · elf · macho · android · ios · objc_xref · react_native"]
-        ResMgr[ResourceManager]
-        Cache[AnalysisCache]
-        Overlay["Overlay<br/>renames · comments · types"]
-        Patcher[BinaryPatcher]
-        Unpack[Unpacking]
-        SigDB[Signature DB]
-    end
-
-    subgraph Adapters["Backend Adapters"]
-        R2[radare2]
-        Ghidra[Ghidra]
-        Jadx[jadx]
-        Apktool[apktool]
-        Frida[Frida]
-        Semgrep[Semgrep]
-        YARA["YARA / YARA-X"]
-        Capa[capa]
-        Hermes[hermes-dec]
-        ClassDump[class-dump]
-        Swift[swift-demangle]
-        Webcrack[webcrack]
-        AFL[AFL++]
-        UPX[upx]
-        Gdb[gdb]
-        Blutter["B(l)utter<br/>(Dart AOT)"]
-    end
-
-    subgraph AI["AI &amp; ML (opt-in)"]
-        Claude["Anthropic API<br/>explain · rename · refine · batch"]
-        VarBert["VarBERT<br/>S&amp;P 2024 vars"]
-        Ember["EMBER 2024<br/>malware classifier"]
-    end
-
-    Model["Unified Program Model<br/>functions · strings · xrefs · findings"]
-    Findings["Findings + Reports<br/>MASVS · SARIF"]
-
-    CLI --> Engine
-    Web --> Engine
-    TUI --> Engine
-    MCP --> Engine
-    Engine --> Pipelines
-    Engine --> ResMgr
-    Engine --> Cache
-    Engine --> Overlay
-    Engine --> Patcher
-    Engine --> Unpack
-    Engine --> SigDB
-    Pipelines --> Adapters
-    Adapters --> Model
-    Overlay --> Model
-    SigDB --> Model
-    Model --> Findings
-    Model -. opt-in .-> AI
-    AI -. suggestions .-> Overlay
-    Ember -. PE verdict .-> Findings
-```
-
-## Analysis pipeline
-
-```mermaid
-flowchart LR
-    Input[PE / ELF / Mach-O / .NET / APK / IPA / JAR] --> Detect{detect_platform}
-    Detect -->|pe| PE[pe pipeline]
-    Detect -->|elf| ELF[elf pipeline]
-    Detect -->|macho| MO[mach-o pipeline]
-    Detect -->|android| UnpackA[unpack_apk]
-    Detect -->|ios| UnpackI[unpack_ipa]
-    Detect -->|jvm| JAR[jar pipeline]
-
-    PE --> Sigs["Signature match<br/>(FLIRT-equivalent)"]
-    ELF --> Sigs
-    MO --> Triage
-    UnpackA --> Framework[FrameworkDetector]
-    UnpackI --> Framework
-    JAR --> Decompile
-    Framework --> Triage["Triage<br/>radare2 + symbols"]
-    Sigs --> Triage
-    Triage --> Decompile["Decompile<br/>r2 · Ghidra · jadx · class-dump"]
-    Decompile --> Overlay["Overlay<br/>renames · comments · types"]
-    Overlay --> Static["Static analysis<br/>Semgrep + YARA + capa"]
-    Static --> Confirm["Dynamic confirm<br/>Frida (optional)"]
-    Confirm --> Report["Findings · MASVS · SARIF · SBOM"]
-```
-
----
-
-## Quick start
-
-### Local install (recommended)
-
-Chimera installs and runs on **bare metal** — that is the default. Requires
-Python 3.12+. External tools (radare2, jadx, Ghidra, Frida) are discovered on
-`PATH` and gracefully skipped when absent.
+- **Cross-platform static analysis** — PE / .NET, ELF, Mach-O, APK, IPA, WASM and
+  firmware: triage → decompile → annotate → patch → export.
+- **Desktop / native RE** — r2 and Ghidra decompilers, a FLIRT-style
+  library-function matcher, persistent renames/comments/types, byte-level
+  patching with anti-debug recipes, UPX auto-unpack, packer detection, and a gdb
+  symbol bridge.
+- **Mobile RE** — APK/IPA pipeline, manifest/NSC hardening findings, protection
+  detection (root/jailbreak/Frida/debugger/packer), Frida instrumentation, and
+  Flutter (B(l)utter) / React Native (Hermes) extraction.
+- **Solving primitives** — symbolic execution (angr), emulation (unicorn), CFG
+  deflattening, dispatch-table recovery, crypto/RSA/AES helpers, YARA solving.
+- **Memory & firmware** — Volatility memory triage, UEFI firmware carving, ELF
+  core-dump triage.
+- **AI-assisted (optional, opt-in)** — LLM-backed decompiler refinement and
+  naming, VarBERT variable recovery, and the EMBER malware classifier. None of
+  this runs on the default `analyze` path.
+
+## Install
+
+Chimera runs on bare metal. Requires Python 3.12+. External tools (radare2,
+jadx, Ghidra, Frida, …) are discovered on `PATH` and skipped gracefully when
+absent.
 
 ```bash
 git clone https://github.com/TyrusRC/chimera.git
@@ -437,405 +45,57 @@ cd chimera
 scripts/setup.sh --native   # installs chimera[dev] into .venv (uv when available)
 ```
 
-`scripts/setup.sh --native` offers to `apt-get install` the free system tools
+`scripts/setup.sh --native` can `apt-get install` the free system tools
 (radare2, upx-ucl, gdb); add `--yes` to skip prompts.
 
 ```bash
-chimera doctor          # exhaustive external-tool + env health check
-chimera info            # quick backend-availability glance
+chimera doctor          # external-tool + environment health check, with install hints
 chimera analyze app.apk
-chimera install         # wire chimera into every agent host on this machine
+chimera install         # register chimera with your MCP agent hosts
 ```
-
-`chimera doctor` sweeps every optional tool this README documents (Ghidra, jadx,
-capa, frida, blutter, ...) plus environment config (`ANTHROPIC_API_KEY`,
-`CHIMERA_DB_URL`) and prints an install hint for anything missing. It exits
-non-zero only if neither core decompiler (radare2, Ghidra) is available —
-everything else is optional and never fails the check.
 
 ### Docker (isolation sandbox)
 
-Docker is **not** the default runtime — it's for reversing an untrusted target
-in a disposable, isolated environment. The image bundles pinned radare2, jadx,
-and Ghidra:
+For reversing an untrusted target in a disposable environment. The image bundles
+pinned radare2, jadx and Ghidra:
 
 ```bash
 docker compose up -d
 docker run --rm -v "$PWD:/projects" chimera:latest analyze /projects/app.apk
 ```
 
----
-
 ## Usage
 
 ```bash
-# Full pipeline on an APK / IPA
-chimera analyze app.apk
+chimera analyze app.apk                    # full pipeline (PE/ELF/Mach-O/APK/IPA)
 chimera analyze app.ipa --ghidra-home /opt/ghidra
-
-# Restore obfuscated identifiers via mapping.txt
-chimera analyze app.apk --mapping-file release.mapping
-
-# Detect protections (root / jailbreak / Frida / debugger / packer)
-chimera detect-protections app.apk
-
-# Manifest + NSC hardening findings (Android)
-chimera manifest app.apk
-chimera manifest app.apk --format json
-
-# Compare two app versions
-chimera analyze app-1.0.0.apk
-chimera analyze app-1.1.0.apk
-chimera diff <sha256-a> <sha256-b>            # markdown output
-chimera diff <sha256-a> <sha256-b> --format json
-
-# List third-party SDKs
-chimera sdks app.apk
-
-# Extract IoCs (URLs, IPs, hosts, paths, mailto) from cached analysis
-chimera ioc app.apk
-
-# List JNI bindings (Java native methods ↔ native symbols)
-chimera jni app.apk
-
-# List PE imports grouped by suspicious-imports bucket
-chimera imports sample.exe
-
-# Author a custom YARA rule against analyzed strings
-chimera yara app.apk --rule-name my_rule
-
-# Frida — list bundled bypass scripts, show one, or run on a device session
-chimera frida list
-chimera frida show ssl-pinning-bypass
-chimera frida run --session <id> --script ssl-pinning-bypass
-
-# Generate a report as SARIF (for SARIF-aware tooling)
-chimera report app.apk --format sarif --out app
-
-# Desktop RE — patch, gdb-export, unpack, attach
-chimera patch sample.exe --list-recipes
-chimera patch sample.exe --recipe pe-isdebuggerpresent-nop --out clean.exe
-chimera patch sample.exe --addr 0x140001000 --bytes 9090909090909090 --dry-run
-
-chimera gdb-export server.bin --out server.gdbinit
-gdb -x server.gdbinit ./server.bin
-
-chimera unpack packed.bin                # detect + auto-unpack (UPX)
-chimera unpack packed.bin --detect-only  # inspect first; emits guidance for VM-protectors
-
-chimera attach --pid 12345                                 # local process via Frida
-chimera attach --target com.example.app --device usb       # mobile attach
-chimera attach --pid 12345 --bypass anti_debug --interactive  # multi-bypass + REPL
-
-# AI-assisted (requires ANTHROPIC_API_KEY)
-chimera ai explain server.bin 0x1234
-chimera ai rename  server.bin 0x1234
-chimera ai comment server.bin 0x1234 --line 12
-chimera ai engines                                                  # list refine engines
-chimera ai refine-decomp server.bin 0x1234 --backend ghidra
-chimera ai refine-decomp server.bin 0x1234 --backend ghidra \
-    --engine idioms --recompile-check --postprocess                 # full stack
-chimera ai eval-decomp dataset.jsonl --engine claude                # REALTYPE-style scoring
-chimera ai batch-rename server.bin --max 50 --threshold 0.7         # preview
-chimera ai batch-rename server.bin --max 50 --threshold 0.7 \
-    --apply --verify                                                # Sidekick-style refute pass
-
-# Notebook (narrative findings with evidence)
-chimera notes add server.bin --title "AES key derivation" \
-    --body "Uses PBKDF2 with hardcoded salt" \
-    --evidence 0x1234 --evidence 0x1300 --tag crypto
-chimera notes list server.bin --tag crypto
-
-# Hermes / Rust / VMP / Android-native paths
-chimera hermes-decompile app/index.android.bundle -o out/
-chimera rust-decompile target/release/agent --limit 50
-# Recover a key from a VM-protected .NET validator at runtime (needs the
-# .NET SDK). Runs a Windows binary on Linux, walks the menu via repeated
-# --input, and reads the target off a hooked comparator / VM memory
-# primitive. --neutralize-pinvoke (default on) stubs kernel32/ntdll:
-chimera dotnet-trace validator.exe --method CompareKey --input GUESS
-chimera dotnet-trace keygenme.exe --input 7 --input AAAAA-BBBB --method ReadByte
-chimera vmp-devirt packed.exe --start 0x401000 -o out/
-chimera android-similarity v1.apk v2.apk -o diff_out/
-
-# Single-function emulation (Unicorn) — resolve a hash / run a decrypt routine
-# without executing the whole binary. x86_64 + arm64; self-contained routines
-# only (a call into an import/syscall stops the run). Needs the [emulate] extra.
-chimera emulate sample.bin --addr 0x401000 --arch x86_64 --arg 20 --arg 22
-chimera emulate sample.bin --addr 0x401000 --read-back 0x1000:64    # dump output buffer
-
-# Carry renames/comments/types from an old build onto a new one via function
-# similarity (wires diff-functions + the overlay). Preview by default.
-chimera overlay propagate old.bin new.bin --threshold 0.85
-chimera overlay propagate old.bin new.bin --apply                  # write new's overlay
-
-# Function-similarity (BinDiff-style; Jaccard + greedy bipartite)
-chimera diff-functions a.bin b.bin --threshold 0.85
-chimera diff-functions a.bin b.bin --heuristic multi   # +call-graph/BB/mnemonic signals
-chimera diff-functions a.bin b.bin --export-bindiff matches.csv
-# NOTE: the KEENHash backend and REVDECODE re-ranker exist in the library API
-# (chimera.diff.function_similarity.diff_models) but are not yet exposed as CLI
-# flags; the KEENHash offline path is a feature-hash surrogate, not the model.
-
-# Capa with new sandbox / backend options
-chimera analyze sample.exe                                          # static (vivisect)
-CHIMERA_CAPA_BACKEND=pyghidra chimera analyze sample.exe            # faster static
-# Span-of-calls dynamic scope from a CAPE/DRAKVUF/VMRay report:
-capa -f cape report.json                                            # (until exposed as a flag)
-
-# Research add-ons (optional extras)
-chimera varbert rename  server.bin 0x1234 --variant ghidra-O2 --apply
-chimera classify sample.exe --threshold 0.5 --format json
-chimera flutter-extract unpacked_apk_dir -o out                     # auto-detects libapp.so
-
-# BinDiff-style function similarity (any two analyzed binaries)
-chimera diff-functions a.bin b.bin --threshold 0.85 --format text
-
-# Annotation sharing — portable overlay export/import
-chimera overlay export server.bin -o server.overlay.json
-chimera overlay import server.bin -i server.overlay.json --mode merge
-
-# Connected devices
-chimera devices
-
-# Web UI (FastAPI)
-chimera serve
-
-# TUI for device operations
-chimera tui
-
-# MCP server (stdio — wire into Claude Desktop / Code)
-chimera mcp
+chimera detect-protections app.apk         # root/jailbreak/Frida/debugger/packer
+chimera manifest app.apk --format json     # Android manifest + NSC findings
+chimera diff <sha-a> <sha-b>               # compare two analyses
+chimera sdks app.apk                        # third-party SDKs
+chimera patch target.exe --nop 0x401000    # byte/asm patching (dry-run by default)
 ```
 
-### MCP integration
+Run `chimera --help` for the full command set.
 
-Chimera exposes ~80 high-level tools over MCP. **Query** tools (`analyze`,
-`get_functions`, `get_function`, `get_strings`, `get_callgraph`,
-`get_disassembly`, `detect_protections`, `run_semgrep`, `dotnet_trace`, …)
-drive the pipeline; **write-back** tools (`rename_function`, `set_comment`,
-`set_function_type`, `set_classification`, `add_note`, `list_annotations`,
-`batch_annotate`) let the model *persist what it finds* into the same
-per-binary `overlay.json` the CLI and web UI use — so a model can name a
-routine and comment it, not just read it, and the change survives restart;
-and `emulate_function` runs one function under Unicorn to resolve a hash or
-decrypt routine without executing the whole binary. List/large-output tools
-page with `offset`/`limit` (`get_callgraph` caps nodes and flags
-`truncated`) so a big binary stays inside a small model's context. Point any
-MCP-compatible client at `chimera mcp` and the model can drive the workflow
-end to end — from static triage, through recording its renames, to running a
-VM-protected .NET binary and reading its key back at runtime.
+## MCP
 
-**Claude Code**: the repo ships a project-scoped `.mcp.json` that
-registers `chimera mcp` (via `.venv/bin/chimera`, so no PATH setup
-needed). Run `claude` from the repo root, approve the server on first
-launch, then check it connected with `claude mcp list`. For Claude
-Desktop or another client, point it at `<repo>/.venv/bin/chimera mcp`
-(stdio) the same way.
+Chimera exposes an MCP server so an agent (Claude Code or any MCP client) can
+drive the whole pipeline — analysis, decompilation, patching, dynamic
+instrumentation, and the solving primitives above. Register it with `chimera
+install`.
 
-#### Install into your agent (Claude Code, Codex, Gemini, Cursor, Windsurf, VS Code, dsh)
+## Optional tools
 
-Chimera's MCP server speaks **stdio**, so any MCP-aware agent can launch it — the
-launch command is the same everywhere; only each host's config *format* differs.
-
-**Launch command** — from a local checkout (recommended; no PATH setup):
-
-```
-<repo>/.venv/bin/chimera mcp
-```
-
-or the no-clone form (resolves deps on first run, then cached):
-
-```
-uvx --from "git+https://github.com/TyrusRC/chimera" chimera mcp
-```
-
-**Where each host reads its MCP config** — drop the block below under the listed key:
-
-| Host | Config file | Key |
-|---|---|---|
-| Claude Code | `.mcp.json` (project) · `~/.claude.json` (user) | `mcpServers` |
-| Claude Desktop | `claude_desktop_config.json` | `mcpServers` |
-| OpenAI Codex CLI | `~/.codex/config.toml` | `[mcp_servers.chimera]` (TOML) |
-| Gemini CLI | `~/.gemini/settings.json` | `mcpServers` |
-| Google Antigravity | `~/.gemini/config/mcp_config.json` | `mcpServers` |
-| Cursor | `.cursor/mcp.json` · `~/.cursor/mcp.json` | `mcpServers` |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` |
-| VS Code (Copilot) | `.vscode/mcp.json` | `servers` |
-| DeepSeek Harness (dsh) | `~/.dsh/cordis.patch.yml` | `@deepseek-ai/dsh-mcp-client` row → tools become `mcp__chimera__*` |
-
-The JSON hosts all take the same block (VS Code uses the same inner value under a
-`servers` key instead of `mcpServers`):
-
-```json
-{
-  "mcpServers": {
-    "chimera": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/TyrusRC/chimera", "chimera", "mcp"]
-    }
-  }
-}
-```
-
-OpenAI Codex CLI uses TOML:
-
-```toml
-[mcp_servers.chimera]
-command = "uvx"
-args = ["--from", "git+https://github.com/TyrusRC/chimera", "chimera", "mcp"]
-```
-
-DeepSeek Harness bridges MCP through its built-in `@deepseek-ai/dsh-mcp-client`
-plugin — add a row to `~/.dsh/cordis.patch.yml` (skills come in via
-`dsh-skill-filesystem` pointed at `<repo>/.claude/skills`):
-
-```yaml
-- insert:
-    - id: mcp-chimera
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: chimera
-        transport: stdio
-        command: uvx
-        args: ['--from', 'git+https://github.com/TyrusRC/chimera', 'chimera', 'mcp']
-        toolCallTimeoutMs: 120000
-    - name: '@deepseek-ai/dsh-skill-filesystem'
-      config:
-        customSkillDirs: ['<repo>/.claude/skills']
-```
-
-> Add chimera as an **MCP server** (the `dsh-mcp-client` insert above), **not**
-> as a profile *bundle*. Listing something like `@local/chimera-mcp` in a
-> profile's `package.json` → `dsh.profile.bundles` makes dsh try to `require` it
-> as a Cordis plugin package and fail with *"skipping profile bundle … cannot
-> resolve"* — chimera's MCP is a stdio server, not a JS plugin. For a local
-> checkout, point `command` at the repo's launcher
-> (`<repo>/scripts/mcp-launch.sh`, which waits for `.venv` then runs
-> `chimera mcp`) instead of `uvx`.
-
-#### Automate the whole flow from Claude Code — no API key
-
-Claude Code *is* the model, so chimera needs **no `ANTHROPIC_API_KEY`**:
-the MCP surface is entirely deterministic tools, and Claude Code does the
-reasoning and the naming. (The key-gated `chimera ai …` commands are a
-separate CLI/HTTP feature — you don't need them here; the write-back tools
-below replace them.) One-time setup, then hand it the target:
-
-```
-claude                      # from the repo root; approve "chimera" on first launch
-> analyze /path/to/app.apk and walk the license check
-```
-
-From there the agent drives the loop end to end over MCP:
-
-1. **Load** — `analyze(path=…)` (once per binary; the session holds it).
-2. **Explore** — `get_functions` / `get_function` / `get_strings` /
-   `get_callgraph` / `get_disassembly` (all paged, so a big binary stays in
-   context), `detect_protections` / `detect_framework`.
-3. **Understand** — `emulate_function` to resolve a hash or run a decrypt
-   routine; `dotnet_trace` for a VM-protected .NET key.
-4. **Record** — `rename_function` / `set_comment` / `set_function_type` /
-   `set_classification` / `add_note`, or `batch_annotate` for many at once.
-   Everything persists to `overlay.json` and survives restart — so a second
-   Claude Code session (or a teammate) picks up the named-up binary.
-5. **Report** — `chimera report <bin> --format sarif|json|html` via a shell
-   command when a deliverable is wanted.
-
-A **team** works the same way on one target: `analyze` once, then several
-Claude Code agents query and `batch_annotate` in parallel, coordinating
-through the shared on-disk overlay. (One loaded binary per MCP session
-today; multi-binary sessions are on the roadmap.)
-
-`tests/integration/test_mcp_protocol.py` drives `chimera mcp` with the
-`mcp` SDK's client (`stdio_client` / `ClientSession`) — a real
-initialize → `list_tools` → `call_tool` round trip, no API key needed.
-It's the check that the server actually speaks MCP correctly, as
-opposed to `tests/unit/test_mcp_server.py`, which only unit-tests two
-internal helper functions.
-
----
-
-## Backend matrix
-
-| Layer             | Backend         | Used for                                            |
-| ----------------- | --------------- | --------------------------------------------------- |
-| Native triage     | radare2         | functions, strings, xrefs, ObjC pool, r2 decompile  |
-| Native deep       | Ghidra          | decompilation, type inference                       |
-| .NET              | ilspycmd        | per-type C# decompilation (Ghidra fallback)         |
-| Java / Kotlin     | jadx, apktool   | source recovery, manifest, resources                |
-| iOS metadata      | class-dump      | ObjC class layout, protocols                        |
-| Symbol demangle   | swift-demangle  | Swift identifier recovery                           |
-| JS bundles        | webcrack        | bundled-JS unpacking                                |
-| Hermes            | hermes-dec      | RN Hermes bytecode disassembly                      |
-| Static rules      | Semgrep         | MASVS rules over decompiled sources                 |
-| Pattern scanning  | YARA / YARA-X   | packer detection, malware fingerprints (`CHIMERA_USE_YARA_X=1` for the Rust rewrite) |
-| Capabilities      | capa            | high-level behavior tagging (optional)              |
-| Dynamic           | Frida           | runtime hooks, bypass scripts, `chimera attach`     |
-| Fuzzing           | AFL++           | native-library fuzzing harness                      |
-| Unpacking         | upx             | UPX auto-unpack (UPX0 / UPX1)                       |
-| Debugger handoff  | gdb             | `chimera gdb-export` consumes `.gdbinit`            |
-| Emulation         | Unicorn         | single-function run — `chimera emulate`, MCP `emulate_function` (optional `[emulate]` extra) |
-| AI assistant      | Anthropic API   | `chimera ai {explain,rename,comment,refine-decomp,batch-rename,eval-decomp}` (urllib, no SDK) |
-| Refine engine     | Claude / Idioms | `--engine {claude,idioms}`; Idioms (NDSS 2026) via `CHIMERA_IDIOMS_CHECKPOINT`           |
-| AI verifier       | second LLM call | Sidekick-style adversarial rename refutation (`ai batch-rename --verify`)               |
-| Recompile gate    | gcc -fsyntax-only | DecLLM (ISSTA 2025) one repair round (`ai refine-decomp --recompile-check`)           |
-| Post-processors   | msynth + PseudoFix | MBA simplifier + structural refactor (`ai refine-decomp --postprocess`)              |
-| Variable-name AI  | VarBERT         | S&P 2024 transformer; `chimera varbert rename` (`[varbert]` extra) |
-| Malware verdict   | EMBER 2024      | LightGBM PE classifier; `chimera classify` (`[ml]` extra) |
-| Flutter / Dart    | B(l)utter       | Dart AOT snapshot extraction; `chimera flutter-extract` (external binary) |
-| Hermes (RN)       | hermes-dec / hermes-decomp | Disassembly + Rust-based decompile; `chimera hermes-decompile` |
-| Rust              | Oxidizer (angr) | Rust-aware decompile (S&P 2026); `chimera rust-decompile`                |
-| VMP / Themida     | Mergen          | LLVM-IR-based devirt (DEF CON 33); `chimera vmp-devirt`                  |
-| Android-native sim | dex2oat + oatdump2binexport + bindiff | OAT-level similarity (Phrack 72.13); `chimera android-similarity` |
-| Function diff     | Jaccard / multi-heuristic / KEENHash / REVDECODE | `chimera diff-functions`; backends + Viterbi re-ranker + BinDiff CSV export |
-| Notebook          | overlay-backed  | Narrative findings with evidence links; `chimera notes` + `/api/.../notes` |
-
-Adapters live in [`src/chimera/adapters/`](src/chimera/adapters) and all
-implement the `BackendAdapter` interface
-([`base.py`](src/chimera/adapters/base.py)). Adding a new backend means
-dropping one file and registering it in
-[`core/engine.py`](src/chimera/core/engine.py).
-
----
-
-## Development
+Everything beyond the core decompilers is optional and auto-detected — a missing
+tool returns an install hint, never a failure. Install the Python extras you
+need:
 
 ```bash
-scripts/setup.sh --native   # or: pip install -e ".[dev]"
-pytest                       # full suite
-pytest tests/unit            # unit tests only
-pytest tests/integration/test_mcp_protocol.py  # MCP protocol round trip
+pip install "chimera[emulate,disasm,solve,patch,capa,pdf,firmware]"
 ```
 
-Layout:
-
-```
-src/chimera/
-├── adapters/      # backend wrappers (radare2, Ghidra, jadx, Frida, varbert, yara-x, blutter, ...)
-├── ai/            # urllib Anthropic client + prompt templates + shared parsers
-├── api/           # FastAPI routes + websocket (annotations, decomp, ai, varbert, flutter, overlay_io, ...)
-├── bypass/        # detection + Frida bypass orchestration
-├── cli/           # Click CLI as a package — one module per command group
-├── core/          # engine, config, cache, resource manager, overlay
-├── data/sigs/     # FLIRT-equivalent library function signature packs
-├── detection_engineering/  # CVSS findings, SARIF, MASVS, EMBER classifier
-├── device/        # adb / libimobiledevice wrappers
-├── diff/          # binary-vs-binary diff + function-similarity (pluggable backends)
-├── frameworks/    # framework detection (RN, Flutter, Unity, Xamarin, ...)
-├── model/         # UnifiedProgramModel + SQLite schema
-├── parsers/       # Mach-O ObjC, ARM64 register tracking, function signatures
-├── patching/      # BinaryPatcher, recipes, recipe packs
-├── pipelines/     # platform-specific orchestration (pe, elf, macho, android, ios, ...)
-├── report/        # builder.py (data layer) + html.py (presentation layer)
-├── unpacking/     # YARA + section + entropy detect; UPX shell-out; guidance
-└── mcp_server.py  # MCP entrypoint
-```
-
-Contributions welcome. Open an issue for substantial work before sending
-a PR so we can align on direction.
-
----
+Run `chimera doctor` for the full tool + extra inventory.
 
 ## License
 
