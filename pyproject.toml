@@ -19,9 +19,18 @@ dependencies = [
     "yara-python>=4.5",
     "pefile>=2024.8.26",
     "pyelftools>=0.31",
+    # Sibling mobile QA + pentest toolkit, wrapped natively (centurion_tools);
+    # lightweight (typer/rich/mcp). The MCP tool import-guards it regardless.
+    "centurion>=0.1",
 ]
 
 [project.optional-dependencies]
+# Sibling SAST auditor wrapped by the mantis_audit tool (RE output -> SAST).
+# LLM-heavy (litellm + providers), so opt-in; the tool degrades to an install
+# hint without it.
+sast = [
+    "mantis-sast>=0.1",
+]
 # capa is heavyweight (vivisect, smda, networkx) and the pinned subdeps
 # can clash with other tooling; install it separately when you want capa
 # capabilities surfaced. Without it, the adapter degrades gracefully.

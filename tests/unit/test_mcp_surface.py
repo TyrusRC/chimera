@@ -40,6 +40,7 @@ EXPECTED_TOOLS = {
     "start_fuzz", "fuzz_status", "dotnet_trace", "py_unwrap", "pdf_tour",
     "evm_tour", "js_deobf", "node_extract", "tauri_extract", "wasm_decompile", "wasm_oracle", "dotnet_extract", "fw_extract", "find_dispatch_tables", "recover_cfg", "pathfind", "run_under_wine",
     "flutter_extract", "flutter_patch", "hermes_decompile", "rust_decompile", "sourcemap", "vmp_devirt",
+    "mantis_audit", "centurion_tools",
     "rsa_recover",
     "symexec", "recover_cmp_string", "recover_data_bytes", "decrypt_blob", "crypto_triage", "decompile", "yara_scan", "yara_solve", "core_triage", "detect_capabilities", "deobfuscate_strings",
     "find_aes_keys", "run_with_breakpoints", "run_sandboxed", "hdl_sim", "eth_fetch", "qemu_boot",

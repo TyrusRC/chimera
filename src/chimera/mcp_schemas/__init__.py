@@ -18,6 +18,7 @@ from . import (
     dynamic,
     unpacking,
     solving,
+    external,
 )
 
 #: submodules whose tools() are concatenated, in advertised order
@@ -33,6 +34,7 @@ _MODULES = (
     dynamic,
     unpacking,
     solving,
+    external,
 )
 
 

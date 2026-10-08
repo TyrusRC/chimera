@@ -20,6 +20,31 @@ logger = logging.getLogger(__name__)
 
 async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
     engine = mcpstate.get_engine()
+    if name == "mantis_audit":
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"path not found: {path}")
+        try:
+            from mantis import audit as _mantis_audit
+        except Exception:
+            return mcpstate.error("mantis not installed \u2014 pip install mantis-sast (chimera[sast])")
+        try:
+            findings = _mantis_audit(
+                path, mode=arguments.get("mode"), packs=arguments.get("packs"),
+                engines=arguments.get("engines"),
+                decompiled=arguments.get("decompiled", True),
+                llm=arguments.get("llm", False))
+        except Exception as exc:  # noqa: BLE001 - surface mantis errors cleanly
+            return mcpstate.error(f"mantis audit failed: {exc}")
+        return mcpstate.json_reply({"count": len(findings), "findings": findings[:200]})
+
+    if name == "centurion_tools":
+        try:
+            from centurion.registry import default_registry
+        except Exception:
+            return mcpstate.error("centurion not installed \u2014 pip install centurion")
+        return mcpstate.json_reply([s.to_dict() for s in default_registry().doctor()])
+
     if name == "rust_decompile":
         from chimera.adapters.oxidizer_adapter import OxidizerAdapter
 
