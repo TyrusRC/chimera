@@ -16,6 +16,88 @@ logger = logging.getLogger(__name__)
 
 
 async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
+    if name == "flutter_extract":
+        from chimera.adapters.blutter_adapter import BlutterAdapter, detect_libapp
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        adapter = BlutterAdapter(binary_path=arguments.get("blutter_bin"))
+        if not adapter.is_available():
+            return mcpstate.error(
+                "blutter not found — install from https://github.com/worawit/blutter, "
+                "put it on PATH, or set CHIMERA_BLUTTER_BIN."
+            )
+        libapp = arguments.get("libapp")
+        target = Path(libapp) if libapp else (
+            detect_libapp(Path(path)) if Path(path).is_dir()
+            else (Path(path) if Path(path).is_file() else None)
+        )
+        if target is None or not target.exists():
+            return mcpstate.error(
+                f"could not locate libapp.so / App binary under {path!r}; "
+                "unpack the APK first (apktool d) or pass 'libapp' explicitly."
+            )
+        out_dir = arguments.get("out_dir") or f"{Path(path).with_suffix('')}_blutter"
+        res = adapter.extract(target, out_dir)
+        return mcpstate.json_reply({
+            "ok": res.success,
+            "out_dir": out_dir,
+            "classes_dumped": res.classes_dumped,
+            "methods_dumped": res.methods_dumped,
+            "error": None if res.success else (res.stderr or "")[:1000],
+        })
+
+    if name == "hermes_decompile":
+        from chimera.adapters.hermes_decomp import HermesDecompAdapter, detect_hbc
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        adapter = HermesDecompAdapter(binary=arguments.get("hermes_bin"))
+        if not adapter.is_available():
+            return mcpstate.error(
+                "hermes-decomp not found — install from "
+                "https://github.com/SymbioticSec/hermes-decomp, put it on PATH, "
+                "or set CHIMERA_HERMES_DECOMP_BIN."
+            )
+        target = Path(path)
+        if target.is_dir():
+            detected = detect_hbc(target)
+            if detected is None:
+                return mcpstate.error(
+                    f"no Hermes bundle found under {path!r} "
+                    "(expected index.android.bundle / main.jsbundle / *.hbc)"
+                )
+            target = detected
+        res = await adapter.analyze(str(target), {
+            "output_dir": arguments.get("out_dir"),
+            "timeout": arguments.get("timeout", 300),
+        })
+        if not res.get("decompiled"):
+            return mcpstate.error(f"hermes-decomp failed: {res.get('error') or 'unknown'}")
+        return mcpstate.json_reply({
+            "ok": True, "bundle": str(target),
+            "output_file": res.get("output_file"), "size": res.get("size"),
+        })
+
+    if name == "sourcemap":
+        from chimera.unpacking.sourcemap import recover_sources, write_sources
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        r = recover_sources(path)
+        if not r.get("ok"):
+            return mcpstate.error(r.get("error", "source map recovery failed"))
+        dest = arguments.get("out_dir") or (str(Path(path).with_suffix("")) + "_src")
+        written = write_sources(r, dest)
+        return mcpstate.json_reply({
+            "ok": True, "count": r.get("count"), "out_dir": dest,
+            "written": written[:200],
+            "missing_content": len(r.get("missing_content") or []),
+        })
+
     if name == "polyglot_scan":
         from chimera.unpacking.polyglot import scan
 

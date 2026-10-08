@@ -20,6 +20,59 @@ logger = logging.getLogger(__name__)
 
 async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
     engine = mcpstate.get_engine()
+    if name == "rust_decompile":
+        from chimera.adapters.oxidizer_adapter import OxidizerAdapter
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        adapter = OxidizerAdapter()
+        if not adapter.is_available():
+            return mcpstate.error("angr not installed — `pip install angr` to enable Oxidizer.")
+        res = await adapter.analyze(path, {
+            "limit": arguments.get("limit", 20),
+            "addresses": arguments.get("addresses") or None,
+            "force": arguments.get("force", False),
+        })
+        if not res.get("available", True):
+            return mcpstate.error(res.get("error") or "oxidizer unavailable")
+        if not res.get("is_rust", True) and not arguments.get("force"):
+            return mcpstate.error(
+                res.get("error") or "binary does not look like Rust (pass force=true to override)"
+            )
+        return mcpstate.json_reply(res)
+
+    if name == "vmp_devirt":
+        from chimera.adapters.mergen_adapter import MergenAdapter
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        start = arguments.get("start")
+        if not start:
+            return mcpstate.error(
+                "vmp_devirt requires 'start' (VM-entry address, e.g. 0x140001000)"
+            )
+        adapter = MergenAdapter(binary=arguments.get("mergen_bin"))
+        if not adapter.is_available():
+            return mcpstate.error(
+                "mergen not found — install from https://github.com/NaC-L/Mergen, "
+                "put it on PATH, or set CHIMERA_MERGEN_BIN."
+            )
+        out_dir = arguments.get("out_dir") or f"{Path(path).with_suffix('')}_mergen"
+        res = await adapter.analyze(path, {
+            "start": start, "out_dir": out_dir,
+            "timeout": arguments.get("timeout", 600),
+        })
+        if res.get("error"):
+            return mcpstate.error(f"mergen failed: {res['error']}")
+        return mcpstate.json_reply({
+            "ok": True,
+            "output_dir": res.get("output_dir"),
+            "lifted_functions": res.get("lifted_functions") or [],
+            "devirt_output": res.get("devirt_output"),
+        })
+
     if name == "status":
         available = [a.name() for a in engine.registry.all_available()]
         unavailable = [a.name() for a in engine.registry.all_registered() if not a.is_available()]

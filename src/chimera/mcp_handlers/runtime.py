@@ -17,6 +17,30 @@ logger = logging.getLogger(__name__)
 
 async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
     engine = mcpstate.get_engine()
+    if name == "flutter_patch":
+        from chimera.adapters.reflutter_adapter import ReflutterAdapter
+
+        apk = arguments["apk"]
+        if not Path(apk).exists():
+            return mcpstate.error(f"file not found: {apk}")
+        mode = arguments.get("mode", "traffic")
+        proxy_ip = arguments.get("proxy_ip")
+        if mode == "traffic" and not proxy_ip:
+            return mcpstate.error("traffic mode requires 'proxy_ip'")
+        adapter = ReflutterAdapter(binary_path=arguments.get("reflutter_bin"))
+        if not adapter.is_available():
+            return mcpstate.error(
+                "reflutter not found — `pip install reflutter`, put it on PATH, "
+                "or set CHIMERA_REFLUTTER_BIN."
+            )
+        out_dir = arguments["out_dir"]
+        res = adapter.patch(apk, out_dir, mode=mode, proxy_ip=proxy_ip)
+        return mcpstate.json_reply({
+            "ok": res.success, "mode": res.mode,
+            "patched_apk": res.patched_apk, "hint": res.hint,
+            "error": None if res.success else (res.stderr or "")[:500],
+        })
+
     if name == "start_fuzz":
         afl = engine.registry.get("afl++")
         if not afl or not afl.is_available():
