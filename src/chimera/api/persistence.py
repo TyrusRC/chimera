@@ -93,9 +93,3 @@ def get_persistence() -> ProjectPersistence:
     if _INSTANCE is None:
         _INSTANCE = ProjectPersistence()
     return _INSTANCE
-
-
-def reset_persistence() -> None:
-    """Test isolation only."""
-    global _INSTANCE
-    _INSTANCE = None

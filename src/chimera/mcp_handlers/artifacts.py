@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
     engine = mcpstate.get_engine()
-    if name in ("run_opengrep", "run_semgrep"):  # run_semgrep kept as a back-compat alias
+    if name == "run_opengrep":
         if not mcpstate.require_model():
             return mcpstate.error("No analysis loaded.")
         scanner = engine.registry.get("opengrep")

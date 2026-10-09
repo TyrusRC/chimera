@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from chimera.adapters.base import BackendAdapter, ResourceRequirement, ToolCategory
@@ -140,14 +139,6 @@ class FridaAdapter(BackendAdapter):
         except Exception as e:
             logger.error("Failed to spawn: %s", e)
             return None
-
-    async def load_script_file(self, session_key: str, script_path: str | Path) -> bool:
-        session = self._sessions.get(session_key)
-        if not session:
-            return False
-        source = Path(script_path).read_text()
-        await session.load_script(source)
-        return True
 
     def active_sessions(self) -> list[str]:
         """Return list of package names for currently active Frida sessions."""

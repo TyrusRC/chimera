@@ -149,24 +149,6 @@ class ProtectionDetector:
 
         return profile
 
-    def detect_packer_from_dex_bytes(self, dex_bytes: bytes) -> tuple[bool, str | None]:
-        """High-entropy classes.dex suggests a packer has encrypted the bytecode."""
-        if not dex_bytes:
-            return False, None
-        import math as _math
-        freq = [0] * 256
-        for b in dex_bytes[:65536]:
-            freq[b] += 1
-        n = min(len(dex_bytes), 65536)
-        ent = 0.0
-        for f in freq:
-            if f:
-                p = f / n
-                ent -= p * _math.log2(p)
-        if ent > 7.5:
-            return True, "unknown-packer"
-        return False, None
-
 
 def _match_any(patterns: list[str], text: str) -> bool:
     return any(re.search(p, text, re.IGNORECASE) for p in patterns)

@@ -15,18 +15,10 @@ from __future__ import annotations
 
 import logging
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class BinQueryMatch:
-    address: str
-    score: float
-    rationale: str = ""
 
 
 class BinQueryAdapter:
@@ -116,7 +108,7 @@ class BinQueryAdapter:
 
 
 def _normalise(raw: Any) -> list[dict]:
-    """Coerce upstream return shapes into our dataclass-aligned list-of-dicts."""
+    """Coerce upstream return shapes into a normalized list-of-dicts."""
     out: list[dict] = []
     if not raw:
         return out
