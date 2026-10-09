@@ -31,7 +31,7 @@ GROUPS = {
     "analyze": {"analyze", "_analyze", "_framework_label",
                 "_per_native_lib_summary", "_summarize_backend_blob"},
     "info": {"info", "_count_yara_rules", "_count_sdk_signatures",
-             "_semgrep_rules_dir"},
+             "_opengrep_rules_dir"},
     "devices_cmd": {"devices", "_devices"},
     "protection": {"detect_protections", "_detect_protections",
                    "_emit_protection_line"},

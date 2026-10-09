@@ -29,11 +29,19 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         except Exception:
             return mcpstate.error("mantis not installed \u2014 pip install mantis-sast (chimera[sast])")
         try:
-            findings = _mantis_audit(
-                path, mode=arguments.get("mode"), packs=arguments.get("packs"),
-                engines=arguments.get("engines"),
-                decompiled=arguments.get("decompiled", True),
-                llm=arguments.get("llm", False))
+            import inspect
+            # Pass only kwargs the installed mantis.audit accepts, so this works
+            # across mantis versions (engines/engines_offline arrived in mantis 0.2).
+            params = inspect.signature(_mantis_audit).parameters
+            opts = {
+                "mode": arguments.get("mode"),
+                "packs": arguments.get("packs"),
+                "decompiled": arguments.get("decompiled", True),
+                "llm": arguments.get("llm", False),
+                "engines": arguments.get("engines"),
+                "engines_offline": arguments.get("engines_offline", False),
+            }
+            findings = _mantis_audit(path, **{k: v for k, v in opts.items() if k in params})
         except Exception as exc:  # noqa: BLE001 - surface mantis errors cleanly
             return mcpstate.error(f"mantis audit failed: {exc}")
         return mcpstate.json_reply({"count": len(findings), "findings": findings[:200]})
