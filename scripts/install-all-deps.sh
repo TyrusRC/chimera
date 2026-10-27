@@ -44,7 +44,9 @@ confirm() {
 }
 
 check_cmd() { command -v "$1" &>/dev/null; }
-check_py()  { python3 -c "import $1" &>/dev/null; }
+VENV_PY="python3"
+[ -f "$ROOT/.venv/bin/python3" ] && VENV_PY="$ROOT/.venv/bin/python3"
+check_py()  { $VENV_PY -c "import $1" &>/dev/null 2>&1; }
 
 status() {
     local name="$1" available="$2"
@@ -55,11 +57,10 @@ status() {
     fi
 }
 
-PIP="pip3"
-if [ -f "$ROOT/.venv/bin/pip" ]; then
-    PIP="$ROOT/.venv/bin/pip"
-elif check_cmd uv; then
-    PIP="uv pip"
+if check_cmd uv; then
+    PIP="uv pip install --quiet"
+else
+    PIP="pip3 install --break-system-packages --quiet"
 fi
 
 echo "=== Chimera Dependency Status ==="
@@ -86,19 +87,18 @@ check_py ropper   && status "ropper"     1 || status "ropper"     0
 echo ""
 
 if [ "$CHECK_ONLY" = "0" ] && confirm "Install exploit tools (pwntools, ROPgadget, ropper)?"; then
-    $PIP install --quiet pwntools ROPgadget ropper 2>/dev/null || true
+    $PIP pwntools ROPgadget ropper 2>/dev/null || true
 fi
 
 # ── Malware analysis (pip) ───────────────────────────────────────────
 echo "── Malware analysis tools ──"
 check_py yara      && status "yara-python" 1 || status "yara-python" 0
-check_cmd capa     && status "flare-capa"  1 || status "flare-capa"  0
-check_cmd floss    && status "flare-floss" 1 || status "flare-floss" 0
+{ check_cmd capa || check_py capa.main; }  && status "flare-capa"  1 || status "flare-capa"  0
+{ check_cmd floss || check_py floss; }    && status "flare-floss" 1 || status "flare-floss" 0
 echo ""
 
 if [ "$CHECK_ONLY" = "0" ] && confirm "Install malware tools (yara-python, flare-capa, flare-floss)?"; then
-    $PIP install --quiet yara-python 2>/dev/null || true
-    $PIP install --quiet flare-capa flare-floss 2>/dev/null || true
+    $PIP yara-python flare-capa flare-floss 2>/dev/null || true
 fi
 
 # ── Dynamic analysis (pip) ───────────────────────────────────────────
@@ -111,8 +111,8 @@ check_py angr      && status "angr"       1 || status "angr"       0
 echo ""
 
 if [ "$CHECK_ONLY" = "0" ] && confirm "Install dynamic tools (frida, unicorn, capstone, keystone, angr)?"; then
-    $PIP install --quiet frida-tools unicorn capstone keystone-engine 2>/dev/null || true
-    $PIP install --quiet angr 2>/dev/null || true
+    $PIP frida-tools unicorn capstone keystone-engine 2>/dev/null || true
+    $PIP angr 2>/dev/null || true
 fi
 
 # ── SAST (sibling projects) ──────────────────────────────────────────
@@ -124,9 +124,9 @@ echo ""
 if [ "$CHECK_ONLY" = "0" ] && confirm "Install mantis-sast (editable from sibling)?"; then
     MANTIS_DIR="$ROOT/../mantis"
     if [ -d "$MANTIS_DIR" ]; then
-        $PIP install --quiet -e "$MANTIS_DIR" 2>/dev/null || true
+        $PIP -e "$MANTIS_DIR" 2>/dev/null || true
     else
-        $PIP install --quiet mantis-sast 2>/dev/null || true
+        $PIP mantis-sast 2>/dev/null || true
     fi
 fi
 
@@ -140,9 +140,9 @@ echo ""
 if [ "$CHECK_ONLY" = "0" ] && confirm "Install centurion (editable from sibling)?"; then
     CENT_DIR="$ROOT/../centurion"
     if [ -d "$CENT_DIR" ]; then
-        $PIP install --quiet -e "$CENT_DIR" 2>/dev/null || true
+        $PIP -e "$CENT_DIR" 2>/dev/null || true
     else
-        $PIP install --quiet centurion 2>/dev/null || true
+        $PIP centurion 2>/dev/null || true
     fi
 fi
 
