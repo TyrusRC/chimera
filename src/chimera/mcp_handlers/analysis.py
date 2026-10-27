@@ -37,9 +37,11 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
                 "mode": arguments.get("mode"),
                 "packs": arguments.get("packs"),
                 "decompiled": arguments.get("decompiled", True),
+                "language": arguments.get("language"),
                 "llm": arguments.get("llm", False),
                 "engines": arguments.get("engines"),
                 "engines_offline": arguments.get("engines_offline", False),
+                "timeout": arguments.get("timeout"),
             }
             findings = _mantis_audit(path, **{k: v for k, v in opts.items() if k in params})
         except Exception as exc:  # noqa: BLE001 - surface mantis errors cleanly

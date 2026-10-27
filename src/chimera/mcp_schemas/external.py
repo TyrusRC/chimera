@@ -11,12 +11,14 @@ def tools() -> list[Tool]:
              description="Run the mantis SAST auditor over a source or decompiled tree — the RE->SAST bridge for chimera: point it at recovered source (jadx/apktool output, Ghidra/Hex-Rays C, a carved frontend) to statically find vulns. mantis runs OpenGrep plus a multi-engine layer (bandit/gosec/njsscan/eslint-security/checkov + trivy/grype) that is ON by default when the engines are installed, and returns finding dicts (rule_id, severity, path, lines, message, verdict). SAST-only by default (no LLM/provider needed); `llm=true` adds mantis's LLM triage. `decompiled=true` (default) detects the stack from source extensions when there's no build file — the usual chimera case. `packs`/`mode` pick rule packs; `engines` narrows or disables the layer (csv of engine names, 'auto'/'all', or 'none'); `engines_offline` skips the network SCA engines (trivy/grype). Needs the mantis-sast package (pip install mantis-sast).",
              inputSchema={"type": "object", "properties": {
                  "path": {"type": "string", "description": "Source or decompiled tree to audit."},
-                 "mode": {"type": "string", "description": "mantis mode/rule-pack selector (quick|deep|secrets|iac|mobile|web|...); mutually exclusive with packs."},
-                 "packs": {"type": "array", "items": {"type": "string"}, "description": "Explicit rule packs (e.g. [\"mobile-android\",\"secrets\"]); bypasses mode + inventory."},
+                 "mode": {"type": "string", "description": "mantis mode/rule-pack selector (quick|deep|secrets|iac|mobile|web|native|...); mutually exclusive with packs."},
+                 "packs": {"type": "array", "items": {"type": "string"}, "description": "Explicit rule packs (e.g. [\"native\",\"secrets\"] for C, [\"mobile-android\",\"secrets\"] for Java); bypasses mode + inventory."},
+                 "language": {"type": "string", "description": "Language hint for decompiled code (c|cpp|java|kotlin|swift|python|javascript|go). Auto-selects appropriate rule packs without inventory guessing."},
                  "engines": {"type": "string", "description": "SAST engine selection (default on): a csv (bandit,gosec,njsscan,eslint-security,checkov,trivy,grype), 'auto', 'all', or 'none' for OpenGrep-only."},
                  "engines_offline": {"type": "boolean", "default": False, "description": "Skip the network SCA engines (trivy/grype) so the run stays fully offline."},
                  "decompiled": {"type": "boolean", "default": True, "description": "Detect the stack from source extensions alone (no build files) — the chimera case."},
                  "llm": {"type": "boolean", "default": False, "description": "Also run mantis's LLM triage (needs a configured provider)."},
+                 "timeout": {"type": "integer", "description": "Timeout in seconds for the SAST scan (default: no limit)."},
              }, "required": ["path"]}),
 
         Tool(name="centurion_tools",
