@@ -27,8 +27,20 @@ compatible model can drive the pipeline.
   Flutter (B(l)utter) / React Native (Hermes) extraction.
 - **Solving primitives** — symbolic execution (angr), emulation (unicorn), CFG
   deflattening, dispatch-table recovery, crypto/RSA/AES helpers, YARA solving.
+- **Binary exploitation** — `checksec`, GOT/PLT extraction, ROP gadget finder
+  (14 presets), vulnerability pattern detection (18 patterns), mutation fuzzer,
+  crash analysis with De Bruijn offsets, GDB-based AppCall, heap analysis.
+- **Malware analysis** — IoC extraction, CobaltStrike beacon config parsing,
+  .NET RAT config extraction (XWorm/AsyncRAT/Warzone), API hash resolution
+  (DJB2/CRC32/ROR13), shellcode triage, YARA rule generation, anti-analysis
+  detection, multi-layer script deobfuscation, packer detection, DLL sideload
+  detection.
 - **Memory & firmware** — Volatility memory triage, UEFI firmware carving, ELF
-  core-dump triage.
+  core-dump triage, Docker/OCI container extraction.
+- **Sibling tools** — [mantis](https://github.com/TyrusRC/mantis) SAST
+  integration (RE→SAST bridge with native C/C++ rules),
+  [centurion](https://github.com/TyrusRC/centurion) mobile toolkit bridge
+  (42 tools for Android/iOS analysis).
 - **AI-assisted (optional, opt-in)** — LLM-backed decompiler refinement and
   naming, VarBERT variable recovery, and the EMBER malware classifier. None of
   this runs on the default `analyze` path.

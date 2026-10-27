@@ -55,6 +55,43 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             return mcpstate.error("centurion not installed \u2014 pip install centurion")
         return mcpstate.json_reply([s.to_dict() for s in default_registry().doctor()])
 
+    if name == "centurion_run":
+        try:
+            from centurion.mcp.server import mcp as _cent_mcp
+        except Exception:
+            return mcpstate.error("centurion not installed \u2014 pip install centurion")
+        command = arguments["command"]
+        target = arguments.get("target", "default")
+        extra = arguments.get("args") or {}
+        # Centurion's MCP server registers tools as plain functions on its FastMCP
+        # instance.  Look up the function by name and call it directly.
+        tool_fn = getattr(_cent_mcp, "_tool_manager", None)
+        # FastMCP stores tools in _tool_manager.tools dict keyed by name.
+        if tool_fn is None:
+            # Fallback: import the function directly from the server module.
+            try:
+                import centurion.mcp.server as _cs
+                fn = getattr(_cs, command, None)
+                if fn is None:
+                    return mcpstate.error(f"centurion has no tool named '{command}'")
+                # Build kwargs: most centurion tools take 'target' as a param.
+                import inspect
+                params = inspect.signature(fn).parameters
+                kwargs = {}
+                if "target" in params:
+                    kwargs["target"] = target
+                kwargs.update({k: v for k, v in extra.items() if k in params})
+                result = fn(**kwargs)
+                # result is dict/list/str \u2014 serialise it.
+                if hasattr(result, "to_dict"):
+                    result = result.to_dict()
+                elif isinstance(result, list) and result and hasattr(result[0], "to_dict"):
+                    result = [r.to_dict() if hasattr(r, "to_dict") else r for r in result]
+                return mcpstate.json_reply(result)
+            except Exception as exc:
+                return mcpstate.error(f"centurion {command} failed: {exc}")
+        return mcpstate.error("centurion tool dispatch not available")
+
     if name == "rust_decompile":
         from chimera.adapters.oxidizer_adapter import OxidizerAdapter
 
