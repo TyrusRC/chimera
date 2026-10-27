@@ -3,17 +3,16 @@
 # Idempotent — safe to re-run.
 #
 # Usage:
-#   scripts/setup.sh              # install everything (prompts for apt/sudo)
-#   scripts/setup.sh --yes        # install everything, no prompts
+#   scripts/setup.sh              # install everything (sudo required for apt)
 #   scripts/setup.sh --check      # dry-run: report what's installed/missing
-#   scripts/setup.sh --minimal    # venv + chimera[dev] only (no extras)
+#   scripts/setup.sh --minimal    # venv + chimera[dev] only, no extras
 #   scripts/setup.sh --docker     # Docker mode (build image + postgres)
 #
-# Flow (default):
+# Installs ALL dependencies by default — no optional tools, no prompts:
 #   1. Create .venv, install chimera[dev]
-#   2. Install all pip extras (pwntools, frida, capa, floss, angr, ...)
+#   2. Install all pip packages (pwntools, frida, capa, floss, angr, ...)
 #   3. Install sibling projects (mantis, centurion) if found
-#   4. Install apt packages (radare2, jadx, gdb, qemu-user, nodejs) — needs sudo
+#   4. Install apt packages (radare2, jadx, gdb, qemu-user, nodejs)
 #   5. Install npm tools (webcrack, prettier)
 #   6. Print dependency status
 
@@ -22,14 +21,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 MODE="full"
-ASSUME_YES=0
 
 for arg in "$@"; do
     case "$arg" in
         --docker)  MODE="docker" ;;
         --minimal) MODE="minimal" ;;
         --check)   MODE="check" ;;
-        --yes|-y)  ASSUME_YES=1 ;;
         -h|--help)
             sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
@@ -40,13 +37,6 @@ for arg in "$@"; do
             ;;
     esac
 done
-
-confirm() {
-    [[ "$ASSUME_YES" == "1" ]] && return 0
-    [[ ! -t 0 ]] && return 1
-    read -r -p "$1 [y/N] " reply
-    [[ "$reply" =~ ^[Yy]$ ]]
-}
 
 check_cmd() { command -v "$1" &>/dev/null; }
 
@@ -164,13 +154,9 @@ done
 # ── Step 4: apt packages (needs sudo) ────────────────────────────────
 echo "=== Step 4: System packages ==="
 if check_cmd apt-get; then
-    if confirm "Install apt packages (radare2, jadx, gdb, upx, qemu-user, nodejs, npm)?"; then
-        sudo apt-get update -qq
-        sudo apt-get install -y radare2 jadx upx-ucl gdb qemu-user qemu-user-static nodejs npm 2>/dev/null || true
-        echo "  apt packages installed"
-    else
-        echo "  skipped (re-run with --yes to auto-approve)"
-    fi
+    sudo apt-get update -qq
+    sudo apt-get install -y radare2 jadx upx-ucl gdb qemu-user qemu-user-static nodejs npm 2>/dev/null || true
+    echo "  apt packages installed"
 fi
 
 # ── Step 5: npm tools ────────────────────────────────────────────────
