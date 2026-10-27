@@ -65,6 +65,10 @@ reading the workspace dir directly from the host between calls.
 ## Composing the RE tools inside the sandbox
 
 - Run the target isolated: `chimera sandbox-run --wine -- target.exe` (net off).
+- Fuzz it in the sandbox: `fuzz_input` runs the target repeatedly with mutated
+  inputs via `run_sandboxed` (overflow/format/int_overflow/random strategies).
+- Triage a crash: `crash_analyze` replays under GDB, extracts registers, detects
+  De Bruijn pattern offsets, and assesses exploitability.
 - Read a runtime-computed value at a breakpoint: `chimera bp-dump` — for an ASLR
   target use a **signature+delta** breakpoint (find a known constant, e.g. an AES
   S-box, break at found+delta). For a Wine PE that loads at its ImageBase, a

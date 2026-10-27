@@ -55,7 +55,15 @@ deep links — the client-side attack surface. On iOS, read entitlements + Info.
 Run untrusted apps confined — see the `sandbox` skill; device work needs a real
 device/emulator you control.
 
-## 5. The deliverable
+## 5. SAST + centurion (the mobile audit lane)
+After decompilation, run SAST on the recovered source:
+- `mantis_audit(path=jadx_output, mode="mobile")` — mobile-specific rules
+  (insecure storage, hardcoded keys, exported components, WebView misconfig)
+- `centurion_run(tool="apkid_scan", args={path: ...})` — packer/obfuscator ID
+- `centurion_run(tool="apkleaks_scan", args={path: ...})` — secret/URL leak scan
+- `run_opengrep` for custom rule scans on jadx output
+
+## 6. The deliverable
 Endpoints + auth/signing scheme + embedded secrets + which client defenses were
 bypassed and how. Persist with `add_note` / `set_classification` so it survives
 compaction. For a malware APK, hand off to the `malware-triage` skill.

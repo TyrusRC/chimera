@@ -14,7 +14,14 @@ context bloat. **Breadth before depth. Name the path before drilling.**
    analyzing how it works. Order, cheapest first:
    - `status` → `detect_framework` / `detect_protections` → `get_info`
    - `get_strings` (paged: `offset`/`limit` — never pull all at once)
+   - `get_imports` / `get_sections` — cheap, no analysis needed, shows the
+     binary's dependency surface and section layout (entropy, sizes, permissions)
    - only then `analyze` (the expensive full pass), then `get_functions`
+   - **Docker/OCI target?** `extract_container` pulls and extracts the filesystem
+     first, then `analyze` individual binaries. Use `switch_binary`/`list_binaries`
+     for multi-binary container projects.
+   - **Frozen Python/Node?** `py_extract` (PyInstaller) / `node_extract` (nexe/SEA)
+     carve the source before wasting a Ghidra pass on the runtime.
    - If recon means reading large dumps (full strings, disassembly, many
      files), **spawn the `re-recon` subagent** so that output never lands in
      your context — you get back a triage summary, not the raw bytes.
@@ -115,7 +122,9 @@ argv and let the solver invert the constraints); when a check is a straight
    `sandbox-runner` agent; see the `sandbox` skill (network off by default).
    Persist findings with the write-back tools (`rename_function`, `set_comment`,
    `add_note`, `batch_annotate`) so the reasoning survives compaction and the
-   next session reads it back.
+   next session reads it back. `diff_functions` compares two analyzed binaries
+   (BinDiff-style Jaccard similarity) — use it for patch analysis or variant
+   comparison when you have both versions cached.
 
 4. **Log the gap, then fill it.** Whenever you step outside chimera (stock
    `ast`/`dis`, a hand-rolled decryptor, an external tool), that's a capability

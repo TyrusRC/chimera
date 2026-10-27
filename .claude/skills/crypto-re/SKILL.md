@@ -31,10 +31,13 @@ and is deterministic/offline unless noted.
   KeyExpansion recurrence (self-checking), and reports the key + a candidate IV
   (tiny-AES layout). Pair with a process dump or a frozen target (see
   `dynamic-analysis`) when the key only exists while running.
+  **The keyfind→decrypt chain is now complete:** `find_aes_keys` recovers the key,
+  then `decrypt_blob` or `symcrypt` (which now supports AES-CBC/CTR/GCM) decrypts
+  the payload — no hand-rolling needed.
 
 - **A blob to decrypt with a KNOWN scheme+key** → `decrypt_blob` (MCP) /
-  `chimera decrypt`. AES-CBC/ECB, XOR, RC4 etc. from a file/hex + key — so you test
-  a recovered key without writing a one-off script.
+  `chimera decrypt`. AES-CBC/ECB/CTR/GCM, XOR, RC4, ChaCha20, Salsa20 from a
+  file/hex + key — so you test a recovered key without writing a one-off script.
 
 - **A stream cipher / keystream** (ChaCha20, Salsa20, RC4) → `symcrypt` — the
   involutive keystream-XOR primitive (needs the `[pdf]`/crypto extra). Recover the

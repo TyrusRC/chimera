@@ -124,10 +124,35 @@ live:
   scan, or dump a core. If every wrong path collapses instantly, a periodic scan
   will miss it; prefer the breakpoint.
 
+## GDB-based function invocation (`appcall`)
+
+The IDA AppCall equivalent: load the binary, invoke ANY function with controlled
+arguments, read the return value + output buffer. Use for:
+- Batch-decrypting malware strings by calling the malware's own decrypt function
+- Extracting C2 configs by calling config-parsing functions
+- Resolving dynamically-loaded API names by calling the resolver
+
+`appcall(function=addr, args=[...], read_buffer={addr, size})` — single call.
+`appcall(function=addr, batch=[{args, read_buffer}, ...])` — multiple calls in
+one GDB session (fast for N encrypted strings). Works on any ELF; PE under Wine
+needs the Wine loader to map the binary first.
+
+## Lightweight fuzzing and crash analysis
+
+`fuzz_input` runs a binary repeatedly with mutated inputs via `run_sandboxed`
+(no AFL++ needed). Strategies: `overflow` (increasing-length patterns),
+`format` (%p/%n sequences), `int_overflow` (boundary values), `random`.
+`crash_analyze` triages a crash: signal, faulting address, register state, De
+Bruijn offset detection (exact offset to RIP/RBP control), and exploitability
+assessment. Together they close the test→analyze loop for exploit development.
+
 ## Anti-analysis: detect it, then neutralize it
 
 Before assuming a target "crashed" or "exits early," check whether it detected
-the analysis environment. Grep the binary first (static scan is free):
+the analysis environment. `detect_protections` now covers anti-VM strings
+(vmware/vbox/qemu), anti-sandbox (cuckoomon/sbiedll), timing checks
+(GetTickCount/rdtsc), and anti-debug imports — with bypass hints for each.
+Also grep the binary (static scan is free):
 `ptrace(`, `/proc/self/status`, `/proc/self/maps`, `rdtsc`, `signal(SIGTRAP`,
 `fork(`, and on Windows `IsDebuggerPresent`, `NtQueryInformationProcess`,
 `QueryPerformanceCounter`/`GetTickCount`, `CheckRemoteDebuggerPresent`.

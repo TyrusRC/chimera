@@ -80,16 +80,15 @@ a fast first pass before the heavier SAST run.
 5. **Confirm exploitability.** For each confirmed finding, switch to the
    `exploit-workflow` skill to build a PoC.
 
-## Integration with centurion
+## Complementary tools
 
-For mobile apps, centurion provides additional MASTG-specific checks:
-
-```
-centurion_tools()  # see what's available
-```
-
-centurion wraps apkid, apkleaks, and the MASVS verification framework.
-Use it alongside mantis for a comprehensive mobile security assessment.
+- **`extract_dotnet_config`** — for .NET RATs, extracts C2 config directly
+  (XWorm/AsyncRAT/Warzone) without needing a full SAST scan.
+- **`generate_yara`** — turn SAST + RE findings into a YARA detection rule
+  (unique strings + opcodes, validated with yara-python).
+- **`centurion_run(tool="apkid_scan")`** / `centurion_run(tool="apkleaks_scan")`
+  — mobile-specific checks (packer/obfuscator ID, secret/URL leak scan).
+- **`centurion_tools()`** — list all available centurion tools and install status.
 
 ## Anti-patterns
 

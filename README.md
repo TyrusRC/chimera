@@ -94,18 +94,35 @@ chimera patch target.exe --nop 0x401000    # byte/asm patching (dry-run by defau
 
 Run `chimera --help` for the full command set.
 
-## MCP
+## MCP (133 tools)
 
 Chimera exposes an MCP server so an agent (Claude Code or any MCP client) can
-drive the whole pipeline — analysis, decompilation, patching, dynamic
-instrumentation, and the solving primitives above. Register it with `chimera
-install`.
+drive the whole pipeline. Register it with `chimera install`.
 
-## Optional tools
+| Module | Tools | Purpose |
+|--------|-------|---------|
+| session | 5 | analyze, status, multi-binary session |
+| query | 17 | functions, strings, imports, sections, callgraph, disasm, diff |
+| detection | 13 | protections, framework, SDKs, protocols, capa, FLOSS, YARA |
+| annotate | 7 | rename, comment, type, classify, note, batch |
+| exploit | 18 | checksec, GOT/PLT, ROP, vuln scan, fuzzer, crash, AppCall, heap |
+| solving | 22 | decompile, symexec, emulate, patch, crypto, cfg, pathfind |
+| unpacking | 14 | PyInstaller, Docker, Node, Tauri, Flutter, .NET, WASM, firmware |
+| dynamic | 11 | AFL++, dotnet-trace, emulate, Wine, sandbox, breakpoints, QEMU |
+| external | 3 | mantis SAST, centurion mobile (list + run) |
+| frida | 7 | spawn, attach, exec, load script, messages |
+| devices | 7 | adb connect, packages, logcat, proxy, pull |
+| vm | 7 | QEMU VM lifecycle (snapshot, revert, start, stop, exec) |
+| skills | 2 | list + get chimera workflow skills |
 
-`scripts/setup.sh` installs all dependencies. Every tool beyond the core
-decompilers is auto-detected — a missing tool returns an install hint, never a
-failure. Run `chimera doctor` for the full 133-tool inventory.
+12 workflow skills ship with chimera: `re-workflow`, `exploit-workflow`,
+`malware-triage`, `desktop-re`, `mobile-re`, `dynamic-analysis`, `crypto-re`,
+`sandbox`, `sast-bridge`, `sast-workflow`, `python-bytecode`, `gpu-acceleration`.
+
+## Dependencies
+
+`scripts/setup.sh` installs everything — no optional tools. Run `chimera doctor`
+for the health check.
 
 ## License
 

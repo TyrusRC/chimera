@@ -15,9 +15,16 @@ native-specific moves.
 arch (x86/x64/arm64), compiler/runtime (MSVC / MinGW / GCC/Clang / Go / Rust /
 VB6-twinBASIC / .NET), packer/protector (UPX, VMProtect, Themida, ConfuserEx),
 and entropy anomalies (a big high-entropy section = encrypted/compressed payload
-— unpack before reading). `get_strings` (paged) then `deobfuscate_strings`
-(FLOSS) for hidden ones; `detect_capabilities` (capa) for a malware "what can it
-do" map.
+— unpack before reading). `detect_protections` now also reports packer
+section-name/entropy detection, anti-VM/anti-sandbox strings, and timing checks.
+`checksec` reports NX/canary/PIE/RELRO + exploit-relevant notes (GOT writability,
+stack protection status). `get_imports` / `get_sections` are cheap pre-analysis
+queries that show the binary's dependency surface and section layout. `get_strings`
+(paged) then `deobfuscate_strings` (FLOSS) for hidden ones; `detect_capabilities`
+(capa) for a malware "what can it do" map.
+**Docker/OCI target?** `extract_container` first, then `switch_binary` to pick the
+target from the filesystem. **PyInstaller ELF?** `py_extract` carves the .pyc
+modules — don't Ghidra-decompile the Python runtime.
 
 ## Unpack / deobfuscate before reading
 - Packed → `unpack` (UPX etc.); VMProtect → `vmp-devirt`; Rust → `rust-decompile`
@@ -28,7 +35,7 @@ do" map.
   flattened-VM recipe. `find_dispatch_tables` locates a generated FSM's state table.
 
 ## Find the logic, then read it
-- `find_dispatch_tables` / `get_callgraph` / xrefs to zero in; `decompile`
+- `find_dispatch_tables` / `get_callgraph` / `got_plt` / xrefs to zero in; `decompile`
   (r2ghidra `pdg` → `pdc`) or `get_function` for C; `get_disassembly` (paged) for
   the exact instructions. `pathfind` walks a recovered FSM to the accepting input.
 - **Choose your decompiler.** `decompile(addr, decompiler=…)` / `chimera decompile
@@ -72,3 +79,5 @@ detect/neutralize, full-image emulation). Grab a runtime-built key with `bp-dump
   routine that matters. Hand-tracing an obfuscated VM instead of `recover_cfg` +
   `emulate_function`. Brute-forcing a check `symexec` would invert. Trusting a
   call graph on an ILT-obscured PE64 or PLT-indirected ELF without resolving thunks.
+  Skipping `diff_functions` when you have the original + patched versions available
+  — it answers "what changed" in seconds.
