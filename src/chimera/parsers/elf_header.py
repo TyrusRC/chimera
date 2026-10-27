@@ -64,6 +64,8 @@ class ELFHeaderInfo:
     #: ARM MTE / MemTag mode from .note.android.memtag: None, or one of
     #: "none"/"async"/"sync", optionally suffixed with "+heap"/"+stack".
     memtag: str | None = None
+    #: Exported function symbols from .dynsym (STB_GLOBAL/STB_WEAK + STT_FUNC).
+    exports: list[dict] = field(default_factory=list)
 
 
 def _decode_memtag(desc: bytes) -> str:
@@ -234,5 +236,30 @@ def parse_elf(path: Path) -> ELFHeaderInfo:
 
         if not any(s.name == ".symtab" for s in info.sections):
             info.is_stripped = True
+
+        # Extract exported functions from .dynsym
+        try:
+            from elftools.elf.sections import SymbolTableSection
+            for sec in elf.iter_sections():
+                if not isinstance(sec, SymbolTableSection):
+                    continue
+                if sec.name not in (".dynsym", ".symtab"):
+                    continue
+                for sym in sec.iter_symbols():
+                    if sym["st_info"]["type"] != "STT_FUNC":
+                        continue
+                    bind = sym["st_info"]["bind"]
+                    if bind not in ("STB_GLOBAL", "STB_WEAK"):
+                        continue
+                    if sym["st_value"] == 0:
+                        continue
+                    info.exports.append({
+                        "name": sym.name,
+                        "address": sym["st_value"],
+                        "size": sym["st_size"],
+                        "bind": bind,
+                    })
+        except Exception:
+            pass
 
         return info

@@ -21,8 +21,9 @@ import binascii
 
 from chimera.unpacking.pdfcrypt import rc4 as _rc4
 
-ALGOS = ("rc4", "xor", "chacha20", "salsa20")
+ALGOS = ("rc4", "xor", "chacha20", "salsa20", "aes-cbc", "aes-ctr", "aes-gcm")
 _STREAM_ALGOS = ("chacha20", "salsa20")   # need a nonce (+ optional counter)
+_AES_ALGOS = ("aes-cbc", "aes-ctr", "aes-gcm")
 _INPUT_ENCODINGS = ("raw", "hex", "base64")
 _KEY_ENCODINGS = ("raw", "hex", "utf16le")
 
@@ -64,6 +65,44 @@ def _chacha_salsa(data: bytes, key: bytes, nonce: bytes, counter: int, algo: str
     return cipher.decrypt(data)
 
 
+def _aes_decrypt(data: bytes, key: bytes, iv: bytes, algo: str) -> bytes:
+    """AES-CBC/CTR/GCM decrypt. Uses the `cryptography` library."""
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    except ImportError as exc:
+        raise SymCryptError(f"AES needs `cryptography` library: {exc}") from exc
+    if len(key) not in (16, 24, 32):
+        raise SymCryptError(f"AES key must be 16/24/32 bytes, got {len(key)}")
+    if algo == "aes-cbc":
+        if len(iv) != 16:
+            raise SymCryptError(f"AES-CBC IV must be 16 bytes, got {len(iv)}")
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+        dec = cipher.decryptor()
+        padded = dec.update(data) + dec.finalize()
+        # PKCS7 unpad (best-effort: if padding is invalid, return raw)
+        if padded:
+            pad_len = padded[-1]
+            if 1 <= pad_len <= 16 and padded[-pad_len:] == bytes([pad_len]) * pad_len:
+                return padded[:-pad_len]
+        return padded
+    elif algo == "aes-ctr":
+        if len(iv) != 16:
+            raise SymCryptError(f"AES-CTR nonce must be 16 bytes, got {len(iv)}")
+        cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+        dec = cipher.decryptor()
+        return dec.update(data) + dec.finalize()
+    elif algo == "aes-gcm":
+        if len(iv) not in (12, 16):
+            raise SymCryptError(f"AES-GCM nonce must be 12 or 16 bytes, got {len(iv)}")
+        if len(data) < 16:
+            raise SymCryptError("AES-GCM ciphertext too short (need 16-byte tag)")
+        ct, tag = data[:-16], data[-16:]
+        cipher = Cipher(algorithms.AES(key), modes.GCM(iv, tag))
+        dec = cipher.decryptor()
+        return dec.update(ct) + dec.finalize()
+    raise SymCryptError(f"unknown AES mode: {algo}")
+
+
 def decrypt(data: bytes, key: bytes, algo: str = "rc4", *,
             nonce: bytes = b"", counter: int = 0) -> bytes:
     """Apply `algo` — all supported ciphers are involutive, so decrypt == encrypt.
@@ -78,6 +117,8 @@ def decrypt(data: bytes, key: bytes, algo: str = "rc4", *,
         return _xor(data, key)
     if algo in _STREAM_ALGOS:
         return _chacha_salsa(data, key, nonce, counter, algo)
+    if algo in _AES_ALGOS:
+        return _aes_decrypt(data, key, nonce, algo)
     raise SymCryptError(f"unknown algo {algo!r}; supported: {', '.join(ALGOS)}")
 
 

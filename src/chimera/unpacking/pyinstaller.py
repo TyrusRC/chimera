@@ -45,6 +45,9 @@ class PyEntry:
     size: int            # uncompressed size
     is_pyc: bool
 
+    def to_dict(self) -> dict:
+        return {"name": self.name, "type": self.type, "size": self.size, "is_pyc": self.is_pyc}
+
 
 @dataclass
 class ExtractResult:
@@ -57,6 +60,17 @@ class ExtractResult:
     entries: list[PyEntry] = field(default_factory=list)
     error: str | None = None
     note: str | None = None
+
+    def to_dict(self) -> dict:
+        d: dict = {"ok": self.ok, "python_version": self.python_version,
+                    "out_dir": self.out_dir, "entry_points": self.entry_points,
+                    "modules": self.modules, "pyz_modules": self.pyz_modules,
+                    "entries": [e.to_dict() for e in self.entries]}
+        if self.error:
+            d["error"] = self.error
+        if self.note:
+            d["note"] = self.note
+        return d
 
 
 def is_pyinstaller(data: bytes) -> bool:

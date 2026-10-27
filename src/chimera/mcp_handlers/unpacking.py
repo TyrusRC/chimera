@@ -146,6 +146,30 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         except MachoCodeSignError as exc:
             return mcpstate.error(str(exc))
 
+    if name == "extract_container":
+        from chimera.unpacking.container import extract_container
+
+        image = arguments["image"]
+        out_dir = arguments.get("out_dir")
+        try:
+            manifest = extract_container(image, out_dir)
+        except RuntimeError as e:
+            return mcpstate.error(str(e))
+        return mcpstate.json_reply(manifest.to_dict())
+
+    if name == "py_extract":
+        from chimera.unpacking.pyinstaller import extract_pyinstaller, is_pyinstaller_file
+
+        path = arguments["path"]
+        if not Path(path).exists():
+            return mcpstate.error(f"file not found: {path}")
+        if not is_pyinstaller_file(path):
+            return mcpstate.error(f"not a PyInstaller archive: {path}")
+        result = extract_pyinstaller(path, arguments.get("out_dir"))
+        if not result.ok:
+            return mcpstate.error(result.error or "extraction failed")
+        return mcpstate.json_reply(result.to_dict())
+
     if name == "py_unwrap":
         from chimera.unpacking.pybytecode import disassemble, unwrap
 

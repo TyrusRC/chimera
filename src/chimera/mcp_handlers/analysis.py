@@ -109,8 +109,10 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
     if name == "status":
         available = [a.name() for a in engine.registry.all_available()]
         unavailable = [a.name() for a in engine.registry.all_registered() if not a.is_available()]
+        loaded_count = len(mcpstate._models)
         result = {
             "loaded": mcpstate.current_model is not None,
+            "loaded_count": loaded_count,
             "backends_available": available,
             "backends_missing": unavailable,
         }
@@ -140,13 +142,37 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             result["hint"] = "Call analyze(path=...) to load a binary."
         return mcpstate.json_reply(result)
 
+    # ── list_binaries ──────────────────────────────────────────────────
+    if name == "list_binaries":
+        models = mcpstate.list_models()
+        return mcpstate.json_reply({"count": len(models), "binaries": models})
+
+    # ── switch_binary ──────────────────────────────────────────────────
+    if name == "switch_binary":
+        sha = arguments["sha"]
+        try:
+            model = mcpstate.switch_model(sha)
+        except ValueError as e:
+            return mcpstate.error(str(e))
+        b = model.binary
+        return mcpstate.json_reply({
+            "status": "switched",
+            "sha256": b.sha256[:16],
+            "path": str(b.path),
+            "platform": b.platform.value,
+            "format": b.format.value,
+            "framework": b.framework.value,
+            "functions": len(model.functions),
+            "strings": len(model.get_strings()),
+        })
+
     # ── analyze ─────────────────────────────────────────────────────────
     if name == "analyze":
         path = arguments["path"]
         mapping_file = arguments.get("mapping_file")
         engine.config.mapping_file = Path(mapping_file) if mapping_file else None
         model = await engine.analyze(path)
-        mcpstate.current_model = model
+        mcpstate.add_model(model)
         mcpstate.analysis_config = {
             "path": str(Path(path).resolve()),
             "backends_used": [a.name() for a in engine.registry.all_available()],
@@ -231,6 +257,46 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "strings": [{"address": s.address, "value": s.value, "section": s.section}
                         for s in page],
         })
+
+    # ── get_imports ─────────────────────────────────────────────────────
+    if name == "get_imports":
+        if not mcpstate.require_model():
+            return mcpstate.error("No analysis loaded. Call analyze first.")
+        import re as _re
+        pattern = arguments.get("pattern")
+        dll_filter = arguments.get("dll", "").lower()
+        limit = arguments.get("limit", 100)
+        offset = arguments.get("offset", 0)
+        all_imports = mcpstate.current_model.imports
+        if dll_filter:
+            all_imports = [i for i in all_imports if dll_filter in (i.dll or "").lower()]
+        if pattern:
+            try:
+                rx = _re.compile(pattern, _re.IGNORECASE)
+                all_imports = [i for i in all_imports if rx.search(i.name)]
+            except _re.error:
+                pass
+        page = all_imports[offset:offset + limit]
+        return mcpstate.json_reply({
+            "total": len(all_imports), "offset": offset, "limit": limit,
+            "has_more": offset + limit < len(all_imports),
+            "imports": [
+                {"dll": i.dll, "name": i.name, "address": i.address,
+                 "ordinal": i.ordinal, "bucket": i.bucket}
+                for i in page
+            ],
+        })
+
+    # ── get_sections ───────────────────────────────────────────────────
+    if name == "get_sections":
+        if not mcpstate.require_model():
+            return mcpstate.error("No analysis loaded. Call analyze first.")
+        sha = mcpstate.current_model.binary.sha256
+        # Try ELF header cache first, then PE header cache
+        elf_hdr = engine.cache.get_json(sha, "elf_header") or {}
+        pe_hdr = engine.cache.get_json(sha, "pe_header") or {}
+        sections = elf_hdr.get("sections") or pe_hdr.get("sections") or []
+        return mcpstate.json_reply({"sections": sections})
 
     # ── get_callgraph ───────────────────────────────────────────────────
     if name == "get_callgraph":
@@ -328,6 +394,50 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         except ValueError as e:
             return mcpstate.json_reply({"error": str(e)})
         return mcpstate.json_reply(render_json(_diff(snap_a, snap_b)))
+
+    # ── diff_functions ─────────────────────────────────────────────────
+    if name == "diff_functions":
+        from chimera.diff.function_similarity import diff_models
+        from chimera.diff.loader import ProjectNotInCacheError, _resolve_sha
+        from chimera.model.binary import BinaryInfo, BinaryFormat, Framework, Architecture
+        from chimera.model.program import UnifiedProgramModel
+        from chimera.pipelines.common import _rehydrate_from_cache
+
+        def _model_from_cache(spec: str) -> UnifiedProgramModel:
+            sha = _resolve_sha(spec, engine.cache)
+            info = engine.cache.get_json(sha, "triage") or {}
+            bi = BinaryInfo(path="<cached>", sha256=sha, size_bytes=0)
+            try:
+                bi.format = BinaryFormat(info.get("format", "elf_standalone"))
+            except ValueError:
+                pass
+            try:
+                bi.framework = Framework(info.get("framework", "native"))
+            except ValueError:
+                pass
+            try:
+                bi.arch = Architecture(info.get("arch", "x86_64"))
+            except ValueError:
+                pass
+            m = UnifiedProgramModel(bi)
+            _rehydrate_from_cache(m, engine.cache, sha, language="c", layer="native")
+            return m
+
+        a_spec = arguments["a"]
+        b_spec = arguments["b"]
+        try:
+            model_a = _model_from_cache(a_spec)
+            model_b = _model_from_cache(b_spec)
+        except ProjectNotInCacheError as e:
+            return mcpstate.json_reply({"error": f"project not in cache: {e}"})
+        except ValueError as e:
+            return mcpstate.json_reply({"error": str(e)})
+        result = diff_models(
+            model_a, model_b,
+            threshold=arguments.get("threshold", 0.85),
+            heuristic=arguments.get("heuristic", "jaccard"),
+        )
+        return mcpstate.json_reply(result)
 
     # ── get_info ────────────────────────────────────────────────────────
     if name == "get_info":

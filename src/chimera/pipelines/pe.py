@@ -212,7 +212,10 @@ async def analyze_pe(
         try:
             from chimera.frameworks.native_pe import detect_native_runtime
             dlls = [d.get("dll", "") for d in header.imports] if header else []
-            rt = detect_native_runtime(pe_path.read_bytes(), dlls)
+            _RT_SCAN_CAP = 10 * 1024 * 1024
+            with open(pe_path, "rb") as _fh:
+                _head = _fh.read(_RT_SCAN_CAP)
+            rt = detect_native_runtime(_head, dlls)
             if rt:
                 binary.framework = Framework(rt[0])
                 cache.put_json(sha, "native_runtime", {"framework": rt[0], "detail": rt[1]})
@@ -417,6 +420,14 @@ async def analyze_pe(
                         value=val,
                         section="floss_decoded",
                     )
+                cache.put_json(sha, "floss_strings", {
+                    "strings": [
+                        {"address": str(s.get("address", "0x0")),
+                         "value": s.get("string") or s.get("value", "")}
+                        for s in floss_result.get("decoded_strings", [])
+                        if isinstance(s, dict) and (s.get("string") or s.get("value"))
+                    ],
+                })
                 logger.info("floss: %d decoded strings",
                             len(floss_result.get("decoded_strings", [])))
             except Exception as exc:

@@ -9,6 +9,7 @@ Phases
 5.  Persistence-string scan — Linux-specific path heuristics.
 6.  Syscall scoring — bucket annotation on symbol names.
 7.  XOR-string heuristic — single-byte XOR decoding of raw file bytes.
+7b. FLOSS — emulation-based string deobfuscation (stack/decoded/tight).
 8.  YARA — crypto constants + commercial packer detection.
 9.  Capa — capability tags.
 10. Ghidra deep — gated by config.ghidra_skip and file size.
@@ -115,13 +116,34 @@ async def analyze_elf(
     try:
         from chimera.frameworks.native_elf import detect_elf_runtime
 
-        rt = detect_elf_runtime(elf_path.read_bytes())
+        _RT_SCAN_CAP = 10 * 1024 * 1024  # 10 MB — runtime patterns are near the top
+        with open(elf_path, "rb") as _fh:
+            _head = _fh.read(_RT_SCAN_CAP)
+        rt = detect_elf_runtime(_head)
         if rt:
             binary.framework = Framework(rt[0])
             cache.put_json(sha, "native_runtime", {"framework": rt[0], "detail": rt[1]})
             logger.info("native runtime fingerprint: %s", rt[1])
     except Exception as exc:  # detection is best-effort; never fail the pipeline
         logger.warning("ELF native runtime detection failed: %s", exc)
+
+    # PyInstaller detection — a Linux frozen Python app looks like a native ELF
+    # but should be extracted, not disassembled.
+    is_pyinstaller_bundle = False
+    try:
+        from chimera.unpacking.pyinstaller import is_pyinstaller_file
+        is_pyinstaller_bundle = is_pyinstaller_file(elf_path)
+        if is_pyinstaller_bundle:
+            binary.framework = Framework.PYINSTALLER
+            logger.info(
+                "PyInstaller bundle detected (%s) — payload is marshalled Python "
+                "in an appended CArchive, not the native bootloader. Run "
+                "`chimera pyextract %s` or the py_extract MCP tool to recover "
+                "the .pyc; Ghidra/r2 deep analysis skipped.",
+                elf_path.name, elf_path.name)
+    except Exception:
+        pass
+
     logger.info("ELF pipeline: %s [%s]", elf_path.name, binary.format.value)
 
     # -----------------------------------------------------------------------
@@ -139,6 +161,20 @@ async def analyze_elf(
         # Add DT_NEEDED shared libraries as imports
         for lib_name in header.needed:
             model.add_import(ImportEntry(dll="", name=lib_name))
+
+        # Seed exported functions from .dynsym so the model carries the
+        # authoritative export list even before r2 runs.
+        for exp in header.exports:
+            addr = hex(exp["address"])
+            model.add_function(FunctionInfo(
+                address=addr,
+                name=exp["name"],
+                original_name=exp["name"],
+                language="c",
+                classification="export",
+                layer="native",
+                source_backend="elf_header",
+            ))
 
         cache.put_json(sha, "elf_header", {
             "file_class": header.file_class,
@@ -160,6 +196,7 @@ async def analyze_elf(
             "section_count": len(header.sections),
             "has_symbols": header.has_symbols,
             "is_stripped": header.is_stripped,
+            "export_count": len(header.exports),
         })
         logger.info(
             "ELF header: machine=%s, %d NEEDED libs, relro=%s, pie=%s",
@@ -312,12 +349,58 @@ async def analyze_elf(
             cache.put_json(sha, "xor_strings", {
                 "total_candidates": len(xor_results),
                 "high_confidence": len(high_conf),
+                "strings": [{"address": hex(r["address"]), "value": r["value"]}
+                            for r in high_conf],
             })
             if high_conf:
                 logger.info("XOR heuristic: %d high-confidence strings", len(high_conf))
     except Exception as exc:
         logger.warning("xor_strings phase failed: %s", exc)
         skipped_phases.append("xor_strings")
+
+    # -----------------------------------------------------------------------
+    # Phase 7b: FLOSS (emulation-based string deobfuscation)
+    # -----------------------------------------------------------------------
+    if getattr(config, "skip_floss", False):
+        skipped_phases.append("floss:config")
+    elif elf_path.stat().st_size > _XOR_SIZE_LIMIT:
+        skipped_phases.append(f"floss:size>{_XOR_SIZE_LIMIT // (1024*1024)}MB")
+    else:
+        floss = registry.get("floss")
+        if not (floss and floss.is_available()):
+            skipped_phases.append("floss:unavailable")
+            logger.debug("floss unavailable — skipping decoded strings")
+        else:
+            try:
+                timeout = getattr(config, "floss_timeout", 90)
+                async with resource_mgr.light():
+                    floss_result = await floss.analyze(
+                        str(elf_path), {"timeout": timeout}
+                    )
+                for s in floss_result.get("decoded_strings", []):
+                    if not isinstance(s, dict):
+                        continue
+                    val = s.get("string") or s.get("value")
+                    if not val:
+                        continue
+                    model.add_string(
+                        address=str(s.get("address", "0x0")),
+                        value=val,
+                        section="floss_decoded",
+                    )
+                cache.put_json(sha, "floss_strings", {
+                    "strings": [
+                        {"address": str(s.get("address", "0x0")),
+                         "value": s.get("string") or s.get("value", "")}
+                        for s in floss_result.get("decoded_strings", [])
+                        if isinstance(s, dict) and (s.get("string") or s.get("value"))
+                    ],
+                })
+                logger.info("floss: %d decoded strings",
+                            len(floss_result.get("decoded_strings", [])))
+            except Exception as exc:
+                logger.warning("floss phase failed: %s", exc)
+                skipped_phases.append("floss:error")
 
     # -----------------------------------------------------------------------
     # Phase 8: YARA

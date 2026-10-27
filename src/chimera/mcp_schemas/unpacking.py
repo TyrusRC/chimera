@@ -6,6 +6,18 @@ from mcp.types import Tool
 
 def tools() -> list[Tool]:
     return [
+        Tool(name="py_extract",
+             description="Extract modules from a PyInstaller-frozen executable (PE or ELF). Recovers .pyc files from the CArchive + PYZ, reconstructs pyc headers for decompilation. Use when `analyze` reports framework=pyinstaller, or on any large native binary that is actually a frozen Python app (the classic 'asks for a flag but Ghidra shows a Python runtime' dead end). After extraction, use py_unwrap on individual .pyc files. Read-only; never executes the target.",
+             inputSchema={"type": "object", "properties": {
+                 "path": {"type": "string", "description": "Path to the PyInstaller executable (PE or ELF)."},
+                 "out_dir": {"type": "string", "description": "Output directory (default: <name>_pyinstaller beside the input)."},
+             }, "required": ["path"]}),
+        Tool(name="extract_container",
+             description="Extract a Docker/OCI container image filesystem without running it. Returns a manifest of the image config (entrypoint, env) and a list of interesting binary targets found inside (ELF executables, .NET assemblies, PyInstaller bundles). Use this to triage a containerized application before analyzing individual binaries. Requires Docker CLI. After extraction, call analyze(path=...) on individual targets from the manifest.",
+             inputSchema={"type": "object", "properties": {
+                 "image": {"type": "string", "description": "Docker image reference (e.g. 'secfa/docker-awvs:latest')."},
+                 "out_dir": {"type": "string", "description": "Output directory for the extracted filesystem."},
+             }, "required": ["image"]}),
         Tool(name="py_unwrap",
              description="Recursively peel marshal/zlib/base64/base85/bz2/lzma layers from a .py/.pyc/blob and dump the version-independent co_names/co_consts tree for every code object found; read-only, never executes the target. Use for obfuscated/packed Python — a .py that exec()s a marshalled/compressed/encoded blob, or nested-encoded bytecode. Set disasm to also disassemble each recovered code node (uses xdis for cross-version when installed).",
              inputSchema={"type": "object", "properties": {

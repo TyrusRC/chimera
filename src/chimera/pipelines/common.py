@@ -603,6 +603,24 @@ def _rehydrate_from_cache(model, cache, sha256: str, *, language: str, layer: st
         ghidra_result = cache.get_json(sha256, name)
         ingest_ghidra_functions(model, ghidra_result, language=language, layer=layer)
 
+    # Third pass: replay FLOSS/XOR decoded strings so they survive warm-cache runs.
+    for cache_key, section_label in (
+        ("floss_strings", "floss_decoded"),
+        ("xor_strings", "xor_decoded"),
+    ):
+        if cache_key not in keys:
+            continue
+        blob = cache.get_json(sha256, cache_key)
+        if not isinstance(blob, dict):
+            continue
+        for s in blob.get("strings", []):
+            if isinstance(s, dict) and s.get("value"):
+                model.add_string(
+                    address=str(s.get("address", "0x0")),
+                    value=s["value"],
+                    section=section_label,
+                )
+
 
 def find_mapping_file(unpack_dir: Path, apk_path: Path | None = None) -> Path | None:
     """Locate a ProGuard/R8 mapping file to restore original identifiers.

@@ -1,9 +1,8 @@
 """Session state and reply helpers shared by the MCP tool handlers.
 
-An MCP stdio server is a single long-lived conversation: one binary is
-loaded by `analyze`, and every query tool afterwards reads that same
-model. That state has to be reachable from each handler module, so it
-lives here rather than as globals in one of them.
+An MCP stdio server is a single long-lived conversation. Multiple binaries
+can be loaded by successive `analyze` calls; query tools read the *active*
+model (``current_model``), switchable via ``switch_binary``.
 
 Handlers mutate it through this module's attributes
 (``session.current_model = model``) rather than importing the names
@@ -29,6 +28,9 @@ engine: ChimeraEngine | None = None
 #: The binary currently loaded by `analyze`, or None.
 current_model = None
 
+#: All loaded models keyed by full sha256 (multi-binary support).
+_models: dict = {}
+
 #: What the last analysis actually ran: backends used, paths, options.
 analysis_config: dict = {}
 
@@ -38,6 +40,51 @@ def get_engine() -> ChimeraEngine:
     if engine is None:
         engine = ChimeraEngine(ChimeraConfig())
     return engine
+
+
+def add_model(model) -> None:
+    """Register a model and make it the active target."""
+    global current_model
+    sha = model.binary.sha256
+    _models[sha] = model
+    current_model = model
+    logger.info("model added: %s (%s), %d total",
+                model.binary.path.name, sha[:12], len(_models))
+
+
+def switch_model(sha_prefix: str):
+    """Switch the active target by sha256 prefix (>=8 chars). Returns the model or raises ValueError."""
+    global current_model
+    if len(sha_prefix) < 8:
+        raise ValueError("sha256 prefix must be at least 8 characters")
+    matches = [(sha, m) for sha, m in _models.items() if sha.startswith(sha_prefix)]
+    if not matches:
+        raise ValueError(f"no loaded binary matches prefix {sha_prefix!r}")
+    if len(matches) > 1:
+        raise ValueError(f"ambiguous prefix {sha_prefix!r} — matches {len(matches)} binaries")
+    current_model = matches[0][1]
+    return current_model
+
+
+def list_models() -> list[dict]:
+    """Return summary info for every loaded model."""
+    active_sha = current_model.binary.sha256 if current_model else None
+    result = []
+    for sha, m in _models.items():
+        b = m.binary
+        result.append({
+            "sha256": sha[:16],
+            "sha256_full": sha,
+            "path": str(b.path),
+            "name": b.path.name,
+            "platform": b.platform.value,
+            "format": b.format.value,
+            "framework": b.framework.value,
+            "functions": len(m.functions),
+            "strings": len(m.get_strings()),
+            "active": sha == active_sha,
+        })
+    return result
 
 
 def json_reply(data) -> list[TextContent]:

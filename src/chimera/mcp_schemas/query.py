@@ -26,6 +26,17 @@ def tools() -> list[Tool]:
                  "offset": {"type": "integer", "default": 0},
                  "limit": {"type": "integer", "default": 100},
              }}),
+        Tool(name="get_imports",
+             description="List imports (DLLs/shared libraries and their functions). Filter by dll name or function name pattern. Returns dll, name, address, ordinal, and suspicious-API bucket classification.",
+             inputSchema={"type": "object", "properties": {
+                 "pattern": {"type": "string", "description": "Regex pattern to filter import names (e.g. 'Create|Open|Write')"},
+                 "dll": {"type": "string", "description": "Filter by DLL/library name substring"},
+                 "offset": {"type": "integer", "default": 0},
+                 "limit": {"type": "integer", "default": 100},
+             }}),
+        Tool(name="get_sections",
+             description="List binary sections/segments with name, size, virtual address, flags (rwx), and entropy. High entropy (>7.0) suggests packed/encrypted data. RWX sections are suspicious.",
+             inputSchema={"type": "object", "properties": {}}),
         Tool(name="get_callgraph",
              description="Get call graph around a function (callers + callees) up to specified depth.",
              inputSchema={"type": "object", "properties": {
@@ -50,6 +61,25 @@ def tools() -> list[Tool]:
                           "properties": {
                               "a": {"type": "string", "description": "sha256 or prefix of project A"},
                               "b": {"type": "string", "description": "sha256 or prefix of project B"},
+                          },
+                          "required": ["a", "b"]}),
+        Tool(name="diff_functions",
+             description=(
+                 "Function-level binary diff between two analyzed binaries — BinDiff-style "
+                 "shingled-mnemonic Jaccard similarity. Returns matched (name+similarity), "
+                 "changed (below threshold), added, and removed functions. "
+                 "Both binaries must be analyzed in this session (call analyze on each). "
+                 "Inputs are sha256 hashes or prefixes (>=8 chars)."
+             ),
+             inputSchema={"type": "object",
+                          "properties": {
+                              "a": {"type": "string", "description": "sha256 or prefix of binary A"},
+                              "b": {"type": "string", "description": "sha256 or prefix of binary B"},
+                              "threshold": {"type": "number", "default": 0.85,
+                                            "description": "Similarity threshold (0.0-1.0) for matching."},
+                              "heuristic": {"type": "string", "default": "jaccard",
+                                            "enum": ["jaccard", "multi"],
+                                            "description": "Matching heuristic."},
                           },
                           "required": ["a", "b"]}),
         Tool(name="list_source_files",

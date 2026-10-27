@@ -19,7 +19,8 @@ class Radare2Adapter(BackendAdapter):
         return shutil.which("r2") is not None or shutil.which("radare2") is not None
 
     def supported_formats(self) -> list[str]:
-        return ["elf", "macho", "dex", "fat", "dylib"]
+        return ["elf", "elf_standalone", "macho", "dex", "fat", "dylib",
+                "pe", "pe32", "pe64", "dotnet_pe", "wasm"]
 
     def resource_estimate(self, binary_path: str) -> ResourceRequirement:
         return ResourceRequirement(memory_mb=512, category=ToolCategory.LIGHT, estimated_seconds=10)
@@ -46,6 +47,12 @@ class Radare2Adapter(BackendAdapter):
                 return self._decompile_one(r2, options)
             elif mode == "disasm_at":
                 return self._disasm_at(r2, options)
+            elif mode == "xrefs":
+                return self._xrefs(r2, options)
+            elif mode == "sections":
+                return self._sections(r2)
+            elif mode == "exports":
+                return self._exports(r2)
             elif mode == "full":
                 return self._full(r2)
             else:
@@ -236,6 +243,54 @@ class Radare2Adapter(BackendAdapter):
     def _imports(self, r2) -> dict:
         imports = _cmd_json(r2, "iij")
         return {"imports": imports if isinstance(imports, list) else []}
+
+    def _xrefs(self, r2, options: dict) -> dict:
+        """Get cross-references to/from an address."""
+        addr = options.get("address")
+        if not addr:
+            return {"ok": False, "error": "address required"}
+        direction = options.get("direction", "to")
+        r2.cmd("aa")
+        if direction == "from":
+            raw = _cmd_json(r2, f"axfj @ {addr}")
+        else:
+            raw = _cmd_json(r2, f"axtj @ {addr}")
+        refs = raw if isinstance(raw, list) else []
+        return {
+            "ok": True, "address": str(addr), "direction": direction,
+            "count": len(refs),
+            "xrefs": [
+                {"from": hex(x.get("from", 0)), "to": hex(x.get("addr", 0)),
+                 "type": x.get("type", ""), "opcode": x.get("opcode", "")}
+                for x in refs
+            ],
+        }
+
+    def _sections(self, r2) -> dict:
+        """Get binary sections with flags and entropy."""
+        sections = _cmd_json(r2, "iSj")
+        slist = sections if isinstance(sections, list) else []
+        return {
+            "sections": [
+                {"name": s.get("name", ""), "size": s.get("size", 0),
+                 "vsize": s.get("vsize", 0), "vaddr": hex(s.get("vaddr", 0)),
+                 "paddr": hex(s.get("paddr", 0)),
+                 "flags": s.get("perm", ""), "entropy": s.get("entropy", 0)}
+                for s in slist
+            ],
+        }
+
+    def _exports(self, r2) -> dict:
+        """Get binary exports."""
+        exports = _cmd_json(r2, "iEj")
+        elist = exports if isinstance(exports, list) else []
+        return {
+            "exports": [
+                {"name": e.get("name", ""), "vaddr": hex(e.get("vaddr", 0)),
+                 "type": e.get("type", ""), "bind": e.get("bind", "")}
+                for e in elist
+            ],
+        }
 
     def _full(self, r2) -> dict:
         # Tune analysis knobs before running deep analysis.

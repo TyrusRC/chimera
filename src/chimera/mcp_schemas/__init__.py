@@ -19,6 +19,7 @@ from . import (
     unpacking,
     solving,
     external,
+    exploit,
 )
 
 #: submodules whose tools() are concatenated, in advertised order
@@ -35,6 +36,7 @@ _MODULES = (
     unpacking,
     solving,
     external,
+    exploit,
 )
 
 
