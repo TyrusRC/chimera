@@ -10,7 +10,7 @@ def tools() -> list[Tool]:
              description="Get binary metadata: platform, framework, format, SHA256, size, package name.",
              inputSchema={"type": "object", "properties": {}}),
         Tool(name="detect_protections",
-             description="Detect active security protections: root/jailbreak detection, anti-Frida, anti-debug, SSL pinning, integrity checks.",
+             description="Detect active security protections and anti-analysis techniques. Returns: root/jailbreak detection, anti-Frida, anti-debug, SSL pinning, integrity checks, packer identification (VMProtect/Themida/UPX with section entropy), anti-VM (VMware/VirtualBox/QEMU), anti-sandbox (Cuckoo/Joe/ANY.RUN), timing checks, debug-tool detection, and ELF hardening posture (RELRO/NX/PIE/canary). Each anti-analysis finding includes a bypass hint.",
              inputSchema={"type": "object", "properties": {}}),
         Tool(name="detect_sdks",
              description="Fingerprint third-party SDKs from function package names.",

@@ -54,11 +54,15 @@ absent.
 ```bash
 git clone https://github.com/TyrusRC/chimera.git
 cd chimera
-scripts/setup.sh --native   # installs chimera[dev] into .venv (uv when available)
+scripts/setup.sh          # full install: venv + all pip deps + apt tools + sibling projects
+scripts/setup.sh --check  # dry-run: show what's installed and what's missing
+scripts/setup.sh --yes    # non-interactive: install everything including apt packages
 ```
 
-`scripts/setup.sh --native` can `apt-get install` the free system tools
-(radare2, upx-ucl, gdb); add `--yes` to skip prompts.
+The setup script installs the full toolkit by default: RE (radare2, jadx, gdb),
+exploit (pwntools, ropper, frida, keystone), malware analysis (yara, capa, floss),
+and sibling projects (mantis SAST, centurion mobile) when found alongside chimera.
+Use `--minimal` for just the venv + core Python deps.
 
 ```bash
 chimera doctor          # external-tool + environment health check, with install hints
@@ -99,15 +103,9 @@ install`.
 
 ## Optional tools
 
-Everything beyond the core decompilers is optional and auto-detected — a missing
-tool returns an install hint, never a failure. Install the Python extras you
-need:
-
-```bash
-pip install "chimera[emulate,disasm,solve,patch,capa,pdf,firmware]"
-```
-
-Run `chimera doctor` for the full tool + extra inventory.
+`scripts/setup.sh` installs all dependencies. Every tool beyond the core
+decompilers is auto-detected — a missing tool returns an install hint, never a
+failure. Run `chimera doctor` for the full 133-tool inventory.
 
 ## License
 

@@ -512,6 +512,25 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
         # runtime-reconstructed (cached by the PE pipeline's ilspy phase).
         dotnet_obf = engine.cache.get_json(
             mcpstate.current_model.binary.sha256, "dotnet_obfuscation") or {}
+        # Anti-analysis detection (anti-VM, anti-sandbox, timing, debug tools).
+        # Folded from the former standalone detect_anti_analysis exploit tool.
+        anti_analysis = {}
+        try:
+            from chimera.exploit.anti_analysis import detect_anti_analysis as _aa
+            import_names = [i.name for i in mcpstate.current_model.imports]
+            anti_analysis = _aa(strings, imports=import_names or None)
+        except Exception:
+            pass
+
+        # Enhanced packer detection (section entropy, overlay, protector names).
+        # Folded from the former standalone detect_packer exploit tool.
+        packer_detail = {}
+        try:
+            from chimera.exploit.packer_detect import detect_packer as _pd
+            packer_detail = _pd(str(mcpstate.current_model.binary.path))
+        except Exception:
+            pass
+
         return mcpstate.json_reply({
             "root_detection": profile.has_root_detection,
             "jailbreak_detection": profile.has_jailbreak_detection,
@@ -519,15 +538,21 @@ async def dispatch(name: str, arguments: dict) -> list[TextContent] | None:
             "anti_debug": profile.has_anti_debug,
             "ssl_pinning": profile.has_ssl_pinning,
             "integrity": profile.has_integrity_check,
-            "packer": profile.has_packer, "packer_name": profile.packer_name,
-            # ELF exploit-mitigation posture (RELRO/NX/PIE, stack canary,
-            # FORTIFY, and ARM MTE/PAC/BTI + seccomp). Empty on non-ELF.
+            "packer": profile.has_packer or bool(packer_detail.get("packer")),
+            "packer_name": profile.packer_name or packer_detail.get("packer"),
             "hardening": native.get("hardening") or {},
             "has_any_protection": profile.has_any_protection,
             "bypass_order": profile.bypass_order(),
             "details": profile.details[:20],
-            # Present only on a CIL-obfuscated .NET assembly; absent otherwise.
             "dotnet_obfuscation": dotnet_obf or None,
+            # Enhanced packer detail (section entropy, overlay, confidence).
+            "packer_detail": packer_detail if packer_detail.get("packer") else None,
+            # Anti-analysis: anti-VM, anti-sandbox, timing, debug tool detection.
+            "anti_vm": anti_analysis.get("anti_vm", []),
+            "anti_sandbox": anti_analysis.get("anti_sandbox", []),
+            "timing_checks": anti_analysis.get("timing_checks", []),
+            "debug_tool_detection": anti_analysis.get("debug_tool_detection", []),
+            "hardware_checks": anti_analysis.get("hardware_checks", []),
         })
 
     # ── detect_sdks ─────────────────────────────────────────────────────

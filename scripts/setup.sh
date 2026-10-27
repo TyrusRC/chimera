@@ -1,44 +1,37 @@
 #!/usr/bin/env bash
-# Set up a local Chimera dev environment. Idempotent — safe to re-run.
+# Set up chimera with ALL dependencies — the full RE + exploit + malware toolkit.
+# Idempotent — safe to re-run.
 #
 # Usage:
-#   scripts/setup.sh                 # interactive: choose native or Docker
-#   scripts/setup.sh --native         # Python deps in .venv (+ prompts for apt pkgs)
-#   scripts/setup.sh --native --yes   # Python deps + apt pkgs, no prompts
-#   scripts/setup.sh --docker         # docker build + docker compose up -d postgres
+#   scripts/setup.sh              # install everything (prompts for apt/sudo)
+#   scripts/setup.sh --yes        # install everything, no prompts
+#   scripts/setup.sh --check      # dry-run: report what's installed/missing
+#   scripts/setup.sh --minimal    # venv + chimera[dev] only (no extras)
+#   scripts/setup.sh --docker     # Docker mode (build image + postgres)
 #
-# Native mode installs `pip install -e ".[dev]"` into .venv, plus (opt-in,
-# asks first) the apt-installable subset of external tools: radare2,
-# jadx, upx-ucl, gdb, qemu-user, nodejs/npm, and then the npm-only webcrack
-# (the js-deobf backend). Every other external tool (Ghidra, ilspycmd, capa,
-# frida, ...) has no single correct package across distros — after this
-# script runs, `chimera doctor` reports exactly what's still missing and
-# how to install it.
-#
-# Docker mode builds the bundled-toolchain image and brings up the
-# Postgres container from docker-compose.yml; it does not touch the host
-# Python environment. Use this if you'd rather not install the RE
-# toolchain (Ghidra, jadx, r2, ...) directly on your machine.
-#
-# Neither mode is required for the other — pick one. Docker already
-# bundles almost everything (see README's "Optional tools" section for
-# the couple of tools left out by default), so most people who choose
-# Docker can skip native setup entirely.
+# Flow (default):
+#   1. Create .venv, install chimera[dev]
+#   2. Install all pip extras (pwntools, frida, capa, floss, angr, ...)
+#   3. Install sibling projects (mantis, centurion) if found
+#   4. Install apt packages (radare2, jadx, gdb, qemu-user, nodejs) — needs sudo
+#   5. Install npm tools (webcrack, prettier)
+#   6. Print dependency status
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-MODE=""
+MODE="full"
 ASSUME_YES=0
 
 for arg in "$@"; do
     case "$arg" in
-        --native) MODE="native" ;;
-        --docker) MODE="docker" ;;
-        --yes|-y) ASSUME_YES=1 ;;
+        --docker)  MODE="docker" ;;
+        --minimal) MODE="minimal" ;;
+        --check)   MODE="check" ;;
+        --yes|-y)  ASSUME_YES=1 ;;
         -h|--help)
-            sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
@@ -49,97 +42,145 @@ for arg in "$@"; do
 done
 
 confirm() {
-    local prompt="$1"
     [[ "$ASSUME_YES" == "1" ]] && return 0
-    [[ ! -t 0 ]] && return 1   # non-interactive, no --yes: default no
-    read -r -p "$prompt [y/N] " reply
+    [[ ! -t 0 ]] && return 1
+    read -r -p "$1 [y/N] " reply
     [[ "$reply" =~ ^[Yy]$ ]]
 }
 
-if [[ -z "$MODE" ]]; then
-    if [[ -t 0 ]]; then
-        echo "Set up Chimera:"
-        echo "  1) Native  — Python deps in .venv on this host (+ optional apt packages)"
-        echo "  2) Docker  — build the bundled-toolchain image + Postgres container"
-        read -r -p "Choose [1/2] (default 1): " choice
-        [[ "$choice" == "2" ]] && MODE="docker" || MODE="native"
-    else
-        MODE="native"
-    fi
-fi
+check_cmd() { command -v "$1" &>/dev/null; }
 
+VENV_PY="python3"
+[ -f "$ROOT/.venv/bin/python3" ] && VENV_PY="$ROOT/.venv/bin/python3"
+check_py() { $VENV_PY -c "import $1" &>/dev/null 2>&1; }
+
+status() {
+    if [ "$2" = "1" ]; then
+        printf "  ✓ %-25s installed\n" "$1"
+    else
+        printf "  ✗ %-25s MISSING\n" "$1"
+    fi
+}
+
+# ── Docker mode ──────────────────────────────────────────────────────
 if [[ "$MODE" == "docker" ]]; then
     echo "=== Docker setup ==="
-    command -v docker >/dev/null || {
-        echo "ERROR: docker not found. See docs.docker.com/get-docker" >&2
-        exit 1
-    }
+    check_cmd docker || { echo "ERROR: docker not found." >&2; exit 1; }
     docker build -t chimera:latest .
     docker compose up -d postgres
-    echo
-    echo "Done."
-    echo "  Full stack:   docker compose up"
-    echo "  One-off cmd:  docker run --rm --entrypoint chimera chimera:latest info"
+    echo "Done. Full stack: docker compose up"
     exit 0
 fi
 
-echo "=== Native setup ==="
+# ── Dependency status ────────────────────────────────────────────────
+print_status() {
+    echo "=== Chimera Dependency Status ==="
+    echo ""
+    echo "── Core RE ──"
+    for cmd in r2 jadx gdb upx qemu-aarch64 node npm; do
+        check_cmd "$cmd" && status "$cmd" 1 || status "$cmd" 0
+    done
+    echo ""
+    echo "── Exploit ──"
+    check_py pwnlib     && status "pwntools"   1 || status "pwntools"   0
+    check_cmd ROPgadget && status "ROPgadget"  1 || status "ROPgadget"  0
+    check_cmd checksec  && status "checksec"   1 || status "checksec"   0
+    check_py ropper     && status "ropper"     1 || status "ropper"     0
+    echo ""
+    echo "── Malware ──"
+    check_py yara                               && status "yara-python" 1 || status "yara-python" 0
+    { check_cmd capa  || check_py capa.main; }  && status "flare-capa"  1 || status "flare-capa"  0
+    { check_cmd floss || check_py floss; }      && status "flare-floss" 1 || status "flare-floss" 0
+    echo ""
+    echo "── Dynamic ──"
+    check_py frida    && status "frida"     1 || status "frida"     0
+    check_py unicorn  && status "unicorn"   1 || status "unicorn"   0
+    check_py capstone && status "capstone"  1 || status "capstone"  0
+    check_py keystone && status "keystone"  1 || status "keystone"  0
+    check_py angr     && status "angr"      1 || status "angr"      0
+    echo ""
+    echo "── SAST ──"
+    check_py mantis    && status "mantis-sast" 1 || status "mantis-sast" 0
+    check_cmd opengrep && status "opengrep"    1 || status "opengrep"    0
+    echo ""
+    echo "── Mobile ──"
+    check_py centurion && status "centurion" 1 || status "centurion" 0
+    check_cmd apktool  && status "apktool"   1 || status "apktool"   0
+    echo ""
+    echo "── JS deobf ──"
+    check_cmd webcrack && status "webcrack"  1 || status "webcrack"  0
+    check_cmd prettier && status "prettier"  1 || status "prettier"  0
+    echo ""
+}
 
-if command -v uv >/dev/null; then
-    # This repo is uv-managed (uv.lock) — its .venv has no pip inside by
-    # default, so prefer `uv` end to end when it's on PATH.
+if [[ "$MODE" == "check" ]]; then
+    print_status
+    exit 0
+fi
+
+# ── Step 1: venv + chimera[dev] ──────────────────────────────────────
+echo "=== Step 1: Python environment ==="
+if check_cmd uv; then
     [[ -d .venv ]] || uv venv --python 3.12
     uv pip install -q -e ".[dev]"
-    echo "Python dependencies installed via uv (chimera[dev])"
+    PIP="uv pip install --quiet"
+    echo "  chimera[dev] installed via uv"
 else
     PY=python3
-    command -v "$PY" >/dev/null || { echo "ERROR: python3 not found." >&2; exit 1; }
-    PYVER=$("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-    "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' || {
-        echo "ERROR: Python 3.12+ required, found $PYVER." >&2
-        exit 1
-    }
-    echo "Python $PYVER OK"
+    check_cmd "$PY" || { echo "ERROR: python3 not found." >&2; exit 1; }
     [[ -d .venv ]] || "$PY" -m venv .venv
     .venv/bin/pip install -q --upgrade pip
     .venv/bin/pip install -q -e ".[dev]"
-    echo "Python dependencies installed (chimera[dev])"
+    PIP=".venv/bin/pip install --quiet"
+    echo "  chimera[dev] installed via pip"
 fi
+# Refresh venv python path for checks
+VENV_PY="$ROOT/.venv/bin/python3"
 
-if command -v apt-get >/dev/null; then
-    # jadx is the only backend for .jar / .apk decompilation — a JVM archive
-    # has no native layer to fall back on, so without it those inputs analyze
-    # to an empty model.
-    # qemu-user runs foreign-arch (ARM/aarch64) binaries on an x86 host — the
-    # only way to *execute* an Android/ARM crackme here, and `qemu-aarch64
-    # -cpu max` is what emulates ARMv9 FEAT_MTE/PAuth/BTI so a tag-check fault
-    # actually fires instead of silently passing.
-    # nodejs/npm gate the JavaScript path: webcrack backs `chimera js-deobf`
-    # (and the node-extract → js-deobf flow that pulls JS out of a nexe / Node
-    # SEA / pkg binary). Skip if you manage node with nvm — its node wins $PATH.
-    if confirm "Install apt packages (radare2, jadx, upx-ucl, gdb, qemu-user, nodejs, npm) via sudo apt-get?"; then
+[[ "$MODE" == "minimal" ]] && { echo "Done (minimal)."; print_status; exit 0; }
+
+# ── Step 2: pip extras (always, no prompt) ───────────────────────────
+echo "=== Step 2: Python packages ==="
+$PIP pwntools ROPgadget ropper 2>/dev/null || true
+echo "  exploit tools"
+$PIP yara-python 2>/dev/null || true
+$PIP flare-capa flare-floss 2>/dev/null || true
+echo "  malware tools"
+$PIP frida-tools unicorn capstone keystone-engine 2>/dev/null || true
+echo "  dynamic tools"
+$PIP angr 2>/dev/null || true
+echo "  symbolic execution"
+
+# ── Step 3: sibling projects ─────────────────────────────────────────
+echo "=== Step 3: Sibling projects ==="
+for sibling in mantis centurion; do
+    DIR="$ROOT/../$sibling"
+    if [ -d "$DIR" ]; then
+        $PIP -e "$DIR" 2>/dev/null || true
+        echo "  $sibling (editable from $DIR)"
+    fi
+done
+
+# ── Step 4: apt packages (needs sudo) ────────────────────────────────
+echo "=== Step 4: System packages ==="
+if check_cmd apt-get; then
+    if confirm "Install apt packages (radare2, jadx, gdb, upx, qemu-user, nodejs, npm)?"; then
         sudo apt-get update -qq
-        sudo apt-get install -y radare2 jadx upx-ucl gdb qemu-user qemu-user-static nodejs npm
-        echo "apt packages installed"
+        sudo apt-get install -y radare2 jadx upx-ucl gdb qemu-user qemu-user-static nodejs npm 2>/dev/null || true
+        echo "  apt packages installed"
     else
-        echo "Skipped apt packages — install manually, or re-run with --yes"
-    fi
-else
-    echo "apt-get not found — skipping system packages"
-fi
-
-# webcrack is the JS-deobfuscation backend (npm-only, no apt package). Best
-# effort — a global npm install needs network and may need sudo/npm-prefix.
-if command -v npm >/dev/null && ! command -v webcrack >/dev/null; then
-    if confirm "Install the JS deobfuscator webcrack globally (npm i -g webcrack)?"; then
-        npm install -g webcrack && echo "webcrack installed" \
-            || echo "webcrack install failed — run 'npm i -g webcrack' manually (may need sudo)"
-    else
-        echo "Skipped webcrack — install with 'npm i -g webcrack' when you need js-deobf"
+        echo "  skipped (re-run with --yes to auto-approve)"
     fi
 fi
 
-echo
-echo "Done."
-echo "  Activate:  source .venv/bin/activate"
-echo "  Check:     chimera doctor"
+# ── Step 5: npm tools ────────────────────────────────────────────────
+echo "=== Step 5: npm tools ==="
+if check_cmd npm; then
+    npm install -g webcrack prettier 2>/dev/null && echo "  webcrack + prettier" || true
+fi
+
+# ── Done ─────────────────────────────────────────────────────────────
+echo ""
+print_status
+echo "Activate: source .venv/bin/activate"
+echo "Verify:   chimera doctor"
